@@ -1,0 +1,47 @@
+# Step 1: Use a lightweight build image
+FROM debian:bookworm-slim AS builder
+
+# Step 2: Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    # git \
+    libpcap-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Step 3: Set the working directory
+WORKDIR /app
+
+# RUN git clone --recursive https://github.com/ENTEL-WNG/lwIP-tun-dtn.git .
+COPY . .
+
+# Step 5: Build the binary
+# Note: If the Makefile is in a specific subdirectory (e.g., /unix or /build), 
+# you may need to 'cd' into it. Most lwIP linux ports build from the root or a 'proj' folder.
+RUN make
+
+# Step 6: Create the final runtime image
+FROM debian:bookworm-slim
+
+# Install runtime dependencies:
+# - libpcap0.8: for the binary
+# - iproute2: for 'ip' commands
+# - iptables: for 'ip6tables' commands
+# - iputils-ping: for 'ping'
+# - tcpdump: for 'tcpdump'
+RUN apt-get update && apt-get install -y \
+    libpcap0.8 \
+    iproute2 \
+    iptables \
+    procps \
+    iputils-ping \
+    tcpdump \ 
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /root/
+
+COPY --from=builder /app/lwip_tun .
+COPY init_dtn_node.sh .
+COPY init_dtn_node_2.sh .
+RUN chmod +x init_dtn_node.sh init_dtn_node_2.sh
+
+# ENTRYPOINT ["./init_dtn_node.sh"]

@@ -21,7 +21,7 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/sys.h"
 
-#define TARGET_DTN_NODE_ADDR "fd00:33::2"
+#define TARGET_DTN_NODE_ADDR "fd00:33::2" // <- CHANGE
 
 Routing_Function* dtn_routing_create(DTN_Module* parent) {
     Routing_Function* routing = (Routing_Function*)malloc(sizeof(Routing_Function));

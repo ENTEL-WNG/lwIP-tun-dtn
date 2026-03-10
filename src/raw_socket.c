@@ -117,8 +117,9 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
         return -1;
     }
 
+    
     // If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
-    int use_second_interface = 0;
+    int use_second_interface = 0; // <- adjust interface
     if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
         dest_addr->addr[1] == 0 &&
         dest_addr->addr[2] == 0) {

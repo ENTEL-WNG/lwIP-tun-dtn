@@ -257,7 +257,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
     // Check if it's for this LwIP stack
     bool is_for_this_lwip_stack = false;
     ip6_addr_t local_lwip_addr;
-    if (ip6addr_aton("fd00::2", &local_lwip_addr))
+    if (ip6addr_aton("fd00::2", &local_lwip_addr)) // <- CHANGE
     {
         ip6_addr_t dest_addr_nozone = temp_dest_addr;
 #if LWIP_IPV6_SCOPES
@@ -423,7 +423,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller *controller, struct ne
 
                     bool is_for_this_lwip_stack = false;
                     ip6_addr_t local_lwip_addr;
-                    if (ip6addr_aton("fd00::2", &local_lwip_addr))
+                    if (ip6addr_aton("fd00::2", &local_lwip_addr)) // <- CHANGE
                     {
                         ip6_addr_t retrieved_dest_nozone;
                         memcpy(&retrieved_dest_nozone, &packet_copy->original_dest, sizeof(ip6_addr_t));

@@ -1,0 +1,51 @@
+services:
+  dtn_node_1:
+    environment:
+      PS1: "dtn_node_1# "
+      NODE_NR: 1
+      # ENP_0_S_8: "fd00:12"
+      # ENP_0_S_9: "fd00:01"
+    build: .
+    container_name: dtn_node_1
+    # volumes:
+    #   - ./init_dtn_node.sh:/root/init_dtn_node.sh:ro
+    privileged: true
+    entrypoint: ["/root/init_dtn_node.sh"]
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    networks:
+      - net_01  # 0 - 1
+      - net_12  # 1 - 2
+    cap_add:
+      - NET_ADMIN
+    
+  dtn_node_2:
+    environment:
+      PS1: "dtn_node_2# "
+      NODE_NR: 2
+    #   ENP_0_S_8: "fd00:12"
+    #   ENP_0_S_9: "fd00:01"
+    build: .
+    container_name: dtn_node_2
+    # volumes:
+    #   - ./init_dtn_node_2.sh:/root/init_dtn_node.sh:ro
+    privileged: true
+    entrypoint: ["/root/init_dtn_node_2.sh"]
+    devices:
+      - "/dev/net/tun:/dev/net/tun"
+    networks:
+      - net_12  # 1 - 2
+      - net_23  # 2 - 3
+    cap_add:
+      - NET_ADMIN
+
+networks:
+  net_01:
+    enable_ipv6: true
+    internal: true
+  net_12:
+    enable_ipv6: true
+    internal: true
+  net_23:
+    enable_ipv6: true
+    internal: true

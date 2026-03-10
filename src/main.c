@@ -50,8 +50,10 @@
 // Constants
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
-#define HOST_TUN_IPV6_ADDR "fd00::1"
+#define HOST_TUN_IPV6_ADDR "fd00::1" // <- CHANGE
 #define CONTACT_CHECK_INTERVAL_MS 1000
+
+#define IS_DOCKER = true
 
 DTN_Module* global_dtn_module = NULL;
 
@@ -138,6 +140,8 @@ err_t tunif_init(struct netif *netif) {
 
 int main() {
     lwip_init();
+
+    printf("Don't eat blue apples");
 
     // Create DTN storage directory if it doesn't exist
     struct stat st = {0};
