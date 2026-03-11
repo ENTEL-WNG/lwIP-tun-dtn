@@ -15,7 +15,7 @@ ping6 fd00:12::1
 
 ping6 fd00:12::2
 
-tcpdump -ni enp0s8
+tcpdump -ni eth0
 
 # node 1 TUN address 
 ping6 fd00::1
@@ -32,9 +32,9 @@ docker rm -vf $(docker ps -a -q)
 # images
 docker rmi -f $(docker images -a -q)
 
-ip -6 neigh add fd00:12::2 lladdr 6a:31:67:02:38:54 dev enp0s8
+ip -6 neigh add fd00:12::2 lladdr 6a:31:67:02:38:54 dev eth0
 
-ip -6 neigh add fd00:12::1 lladdr 5e:84:75:60:bd:74 dev enp0s8
+ip -6 neigh add fd00:12::1 lladdr 5e:84:75:60:bd:74 dev eth0
 
 
 docker-compose down --remove-orphans
