@@ -1,3 +1,13 @@
+#
+
+##
+
+### build 
+
+# docker build -f Dockerfile.build  -t dtn_node_build .
+
+docker build -f Dockerfile.build .
+
 docker build -t lwip-tun-dtn .
 
 
@@ -15,7 +25,7 @@ ping6 fd00:12::1
 
 ping6 fd00:12::2
 
-tcpdump -ni eth0
+tcpdump -ni enp0s9
 
 # node 1 TUN address 
 ping6 fd00::1

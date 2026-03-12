@@ -42,7 +42,7 @@ echo "Applying Node 2 Policy Based Routing..."
 ip6tables -t mangle -F PREROUTING
 
 # CRITICAL: Bypass Neighbor Discovery so ping/ARP works
-ip6tables -t mangle -A PREROUTING -p icmpv6 -j ACCEPT
+# ip6tables -t mangle -A PREROUTING -p icmpv6 -j ACCEPT
 
 # Mark packets from physical interfaces not destined for local machine
 ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1

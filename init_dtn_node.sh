@@ -42,7 +42,7 @@ echo "Applying Node $NODE_NR Policy Based Routing..."
 ip6tables -t mangle -F PREROUTING
 
 # CRITICAL: Bypass Neighbor Discovery so ping/ARP works
-ip6tables -t mangle -A PREROUTING -p icmpv6 -j ACCEPT
+# ip6tables -t mangle -A PREROUTING -p icmpv6 -j ACCEPT
 
 # Mark packets from physical interfaces not destined for local machine
 ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
@@ -54,4 +54,4 @@ ip -6 rule add fwmark 1 table 100 priority 10000
 ip -6 route replace default via fd00::2 dev tun0 table 100
 
 echo "--- Node $NODE_NR Setup Complete. Starting Binary ---"
-exec ./lwip_tun
+exec stdbuf -oL -eL ./lwip_tun 2>&1

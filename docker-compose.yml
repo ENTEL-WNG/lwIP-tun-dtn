@@ -3,6 +3,7 @@ services:
     environment:
       PS1: "dtn_node_1# "
       NODE_NR: 1
+      HOST_TUN_IPV6_ADDR: "fd00::1"
       # ENP_0_S_8: "fd00:12"
       # ENP_0_S_9: "fd00:01"
     build: .
