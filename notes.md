@@ -2,7 +2,18 @@
 
 ##
 
-### build 
+### Testing
+
+`LwIP: docker exec -it dtn_node_2 ping6 fd00:11::2`
+
+`LwIP: docker exec -it dtn_node_1 ping6 fd00:22::2`
+
+`LwIP: docker exec -it dtn_node_2 ping6 fd00:12::2`
+
+
+
+
+
 
 # docker build -f Dockerfile.build  -t dtn_node_build .
 

@@ -27,6 +27,8 @@
 #include <errno.h>
 #include "lwip/pbuf.h"
 #include "lwip/ip6_addr.h"
+#include "dtn_logger.h"
+#include "dtn_config.h"
 
 // Interface indices
 static int if_index_1 = 0;  // enp0s8
@@ -92,9 +94,9 @@ int raw_socket_init(const char* if_name_1, const char* if_name_2) {
         return -1;
     }
     
-    printf("Raw sockets initialized:\n");
-    printf("  %s: socket %d, index %d\n", if_name_1, raw_socket_enp0s8, if_index_1);
-    printf("  %s: socket %d, index %d\n", if_name_2, raw_socket_enp0s9, if_index_2);
+    DTN_INFO("Raw sockets initialized:");
+    DTN_INFO("%s: socket %d, index %d", if_name_1, raw_socket_enp0s8, if_index_1);
+    DTN_INFO("%s: socket %d, index %d", if_name_2, raw_socket_enp0s9, if_index_2);
     
     return 0;
 }
@@ -117,14 +119,14 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
         return -1;
     }
 
-    
+    // TODO:: make this better
     // If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
-    int use_second_interface = 0; // <- adjust interface
-    if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
-        dest_addr->addr[1] == 0 &&
-        dest_addr->addr[2] == 0) {
-        use_second_interface = 1;
-    }
+    int use_second_interface = dtn_config.NODE % 2; // <- adjust interface
+    // if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
+    //     dest_addr->addr[1] == 0 &&
+    //     dest_addr->addr[2] == 0) {
+    //     use_second_interface = 1;
+    // }
     
     if (use_second_interface) {
         socket_to_use = raw_socket_enp0s9;
@@ -154,7 +156,7 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
                        (struct sockaddr *)&sin6, sizeof(sin6));
                        
     if (sent_bytes < 0) {
-        perror("Failed to send packet via raw socket");
+        DTN_ERROR("Failed to send packet via raw socket");
         return -1;
     } else if ((size_t)sent_bytes != p->tot_len) {
         fprintf(stderr, "Sent only %d bytes out of %d\n", sent_bytes, p->tot_len);

@@ -1,42 +1,44 @@
 services:
   dtn_node_1:
     environment:
-      PS1: "dtn_node_1# "
-      NODE_NR: 1
+      IS_DOCKER: true
+      APP_NAME: "fast monkey"
+      DEBUG: true
+      NODE: 1
+      INT_1: "enp0s8"
+      INT_2: "enp0s9" 
       HOST_TUN_IPV6_ADDR: "fd00::1"
-      # ENP_0_S_8: "fd00:12"
-      # ENP_0_S_9: "fd00:01"
+      HOST_LWIP_IPV6_ADDR: "fd00::2"
     build: .
     container_name: dtn_node_1
-    # volumes:
-    #   - ./init_dtn_node.sh:/root/init_dtn_node.sh:ro
     privileged: true
     entrypoint: ["/root/init_dtn_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_01  # 0 - 1
-      - net_12  # 1 - 2
+      - net_01
+      - net_12
     cap_add:
       - NET_ADMIN
-    
+
   dtn_node_2:
     environment:
-      PS1: "dtn_node_2# "
-      NODE_NR: 2
-    #   ENP_0_S_8: "fd00:12"
-    #   ENP_0_S_9: "fd00:01"
+      APP_NAME: "orange rabbit"
+      DEBUG: true
+      NODE: 2
+      INT_1: "enp0s8"
+      INT_2: "enp0s9" 
+      HOST_TUN_IPV6_ADDR: "fd00:22::1"
+      HOST_LWIP_IPV6_ADDR: "fd00:22::2"
     build: .
     container_name: dtn_node_2
-    # volumes:
-    #   - ./init_dtn_node_2.sh:/root/init_dtn_node.sh:ro
     privileged: true
     entrypoint: ["/root/init_dtn_node_2.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_12  # 1 - 2
-      - net_23  # 2 - 3
+      - net_12
+      - net_23
     cap_add:
       - NET_ADMIN
 
@@ -44,9 +46,18 @@ networks:
   net_01:
     enable_ipv6: true
     internal: true
+    ipam:
+      config:
+        - subnet: "fd00:01::/64"
   net_12:
     enable_ipv6: true
     internal: true
+    ipam:
+      config:
+        - subnet: "fd00:12::/64"
   net_23:
     enable_ipv6: true
     internal: true
+    ipam:
+      config:
+        - subnet: "fd00:23::/64"

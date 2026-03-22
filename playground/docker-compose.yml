@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  node1:
+    build: ./node1
+    container_name: lwip-node1
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv6.conf.all.forwarding=1
+    networks:
+      lwip_ipv6_net:
+        ipv6_address: fd00::1
+
+  node2:
+    build: ./node2
+    container_name: lwip-node2
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+    networks:
+      lwip_ipv6_net:
+        ipv6_address: fd00::2
+    depends_on:
+      - node1
+
+networks:
+  lwip_ipv6_net:
+    enable_ipv6: true
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: fd00::/64

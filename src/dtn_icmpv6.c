@@ -30,6 +30,7 @@
 #include "dtn_module.h"
 #include "dtn_controller.h" 
 #include "dtn_custody.h"
+#include "dtn_logger.h"
 
 extern void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr);
 
@@ -127,9 +128,10 @@ static err_t dtn_icmpv6_send_message(struct netif *netif, struct pbuf *p, u8_t t
     ip6addr_ntoa_r(&dest_addr, dst_str, sizeof(dst_str));
     
     if (err != ERR_OK) {
-        printf("DTN ICMPv6: Failed to send message to %s via raw socket, err=%d\n", dst_str, err);
+
+        DTN_ERROR("DTN ICMPv6: Failed to send message to %s via raw socket, err=%d", dst_str, err);
     } else {
-        printf("DTN ICMPv6: Sent type %d code %d to %s via raw socket\n", type, code, dst_str);
+        DTN_INFO("DTN ICMPv6: Sent type %d code %d to %s via raw socket", type, code, dst_str);
     }
     
     pbuf_free(complete_pkt);

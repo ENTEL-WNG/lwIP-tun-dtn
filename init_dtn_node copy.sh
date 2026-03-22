@@ -6,41 +6,47 @@ sysctl -w net.ipv6.conf.all.forwarding=1
 
 echo "--- DTN $NODE ($APP_NAME): Initializing ---"
 
+# --- Identify interfaces by which Docker subnet they're on ---
+# Docker pre-assigns addresses from the IPAM subnets we defined
 detect_iface() {
     local prefix=$1
     ip -6 addr show | awk "/$prefix/{print \$NF}" | head -1
 }
 
+# Wait briefly for Docker to finish address assignment
 sleep 1
 
+RAW_NET01=$(detect_iface "fd00:01:")
 RAW_NET12=$(detect_iface "fd00:12:")
-RAW_NET23=$(detect_iface "fd00:23:")
 
-if [ -z "$RAW_NET12" ] || [ -z "$RAW_NET23" ]; then
+if [ -z "$RAW_NET01" ] || [ -z "$RAW_NET12" ]; then
     echo "ERROR: Could not identify interfaces by subnet. Dumping addresses:"
     ip -6 addr show
     exit 1
 fi
 
-echo "Detected: net_12=$RAW_NET12, net_23=$RAW_NET23"
+echo "Detected: net_01=$RAW_NET01, net_12=$RAW_NET12"
 
-# INT_1="enp0s8"   # will face net_12
-# INT_2="enp0s9"   # will face net_23
+INT_1="enp0s8"   # will face net_01
+INT_2="enp0s9"   # will face net_12
 
-ip link set "$RAW_NET12" down && ip link set "$RAW_NET12" name temp0
-ip link set "$RAW_NET23" down && ip link set "$RAW_NET23" name temp1
+# Rename to stable names via temp to avoid conflicts
+ip link set "$RAW_NET01" down && ip link set "$RAW_NET01" name temp0
+ip link set "$RAW_NET12" down && ip link set "$RAW_NET12" name temp1
 ip link set temp0 name "$INT_1" && ip link set "$INT_1" up
 ip link set temp1 name "$INT_2" && ip link set "$INT_2" up
 
+# --- Configure IPv6 ---
+# Remove Docker's auto-assigned addresses — we use our own static ones
 ip -6 addr flush dev "$INT_1" scope global || true
 ip -6 addr flush dev "$INT_2" scope global || true
 
-ip -6 addr add fd00:12::2/64 dev "$INT_1" || true
-ip -6 addr add fd00:23::2/64 dev "$INT_2" || true
+ip -6 addr add fd00:01::1/64 dev "$INT_1" || true
+ip -6 addr add fd00:12::1/64 dev "$INT_2" || true
 
-# Route back to Node 1's networks
-ip -6 route add fd00:01::/64 via fd00:12::1 dev "$INT_1" || true
-ip -6 route add fd00::/64    via fd00:12::1 dev "$INT_1" || true
+# Routes to reach Node 2's networks via net_12
+ip -6 route add fd00:23::/64 via fd00:12::2 dev "$INT_2" || true
+ip -6 route add fd00:22::/64 via fd00:12::2 dev "$INT_2" || true
 
 # --- Setup tun0 ---
 mkdir -p /dev/net

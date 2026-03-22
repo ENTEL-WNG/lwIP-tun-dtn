@@ -20,8 +20,9 @@
 #include <stdbool.h>
 #include "lwip/ip6_addr.h"
 #include "lwip/sys.h"
+#include "dtn_logger.h"
 
-#define TARGET_DTN_NODE_ADDR "fd00:33::2" // <- CHANGE
+#define TARGET_DTN_NODE_ADDR "fd00:55::2" // <- CHANGE
 
 Routing_Function* dtn_routing_create(DTN_Module* parent) {
     Routing_Function* routing = (Routing_Function*)malloc(sizeof(Routing_Function));
@@ -36,7 +37,8 @@ Routing_Function* dtn_routing_create(DTN_Module* parent) {
         if (ip6addr_aton(TARGET_DTN_NODE_ADDR, &target_node)) {
             ip6_addr_copy(next_hop, target_node); 
             dtn_routing_add_contact(routing, &target_node, &next_hop, 
-                                  sys_now() + 15000, // Start in 15 seconds
+                                //   sys_now() + 15000, // Start in 15 seconds
+                                  sys_now() + 30000, // Start in 15 seconds
                                   sys_now() + 3600000, // End in 1 hour
                                   true);
         }
@@ -198,10 +200,10 @@ void dtn_routing_update_contacts(Routing_Function* routing) {
             ip6addr_ntoa_r(&contact->node_addr, node_addr_str, sizeof(node_addr_str));
             
             if (is_active) {
-                printf("DTN Routing: Contact for %s became AVAILABLE at time %u ms\n", 
+                DTN_INFO("DTN Routing: Contact for %s became AVAILABLE at time %u ms", 
                        node_addr_str, current_time);
             } else {
-                printf("DTN Routing: Contact for %s became UNAVAILABLE at time %u ms\n", 
+                DTN_INFO("DTN Routing: Contact for %s became UNAVAILABLE at time %u ms", 
                        node_addr_str, current_time);
             }
             
@@ -289,13 +291,13 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, const ip6_addr_t* de
             if (current_time >= contact->start_time_ms && current_time <= contact->end_time_ms) {
                 char dest_addr_str[IP6ADDR_STRLEN_MAX];
                 ip6addr_ntoa_r(dest_ip, dest_addr_str, sizeof(dest_addr_str));
-                printf("DTN Routing: Contact AVAILABLE for DTN destination %s. Providing next hop.\n", dest_addr_str);
+                DTN_INFO("DTN Routing: Contact AVAILABLE for DTN destination %s. Providing next hop.", dest_addr_str);
                 ip6_addr_copy(*next_hop_ip, contact->next_hop);
                 return 1;
             } else {
                 char dest_addr_str[IP6ADDR_STRLEN_MAX];
                 ip6addr_ntoa_r(dest_ip, dest_addr_str, sizeof(dest_addr_str));
-                printf("DTN Routing: Contact EXISTS but NOT ACTIVE for DTN destination %s.\n", dest_addr_str);
+                DTN_INFO("DTN Routing: Contact EXISTS but NOT ACTIVE for DTN destination %s.", dest_addr_str);
                 ip6_addr_set_any(next_hop_ip);
                 return 0;
             }
@@ -306,7 +308,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, const ip6_addr_t* de
     // No contact found
     char dest_addr_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(dest_ip, dest_addr_str, sizeof(dest_addr_str));
-    printf("DTN Routing: No contact found for %s\n", dest_addr_str);
+    DTN_WARN("DTN Routing: No contact found for %s\n", dest_addr_str);
     ip6_addr_set_any(next_hop_ip);
     return 0;
 }

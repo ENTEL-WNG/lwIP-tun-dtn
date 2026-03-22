@@ -31,13 +31,15 @@ LWIP_SRC = \
 
 APP_SRC = \
     src/main.c \
+	src/dtn_config.c \
     src/dtn_module.c \
     src/dtn_controller.c \
     src/dtn_routing.c \
 	src/dtn_icmpv6.c \
 	src/raw_socket.c \
     src/dtn_storage.c \
-	src/dtn_custody.c
+	src/dtn_custody.c \
+	src/dtn_logger.c \
 
 SOURCES = $(APP_SRC) port/sys_arch.c $(LWIP_SRC)
 OBJECTS = $(SOURCES:.c=.o)

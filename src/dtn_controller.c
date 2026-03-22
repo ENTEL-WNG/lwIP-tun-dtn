@@ -30,6 +30,8 @@
 #include "raw_socket.h"
 #include "lwip/sys.h"
 #include "dtn_custody.h"
+#include "dtn_logger.h"
+#include "dtn_config.h"
 
 DTN_Controller *dtn_controller_create(DTN_Module *parent)
 {
@@ -207,9 +209,22 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         return;
     }
 
+//     struct ip6_hdr *ip6h = (struct ip6_hdr *)p->payload;
+// if (IP6H_NEXTH(ip6h) == IP6_NEXTH_ICMP6) {
+//     struct icmp6_hdr *icmp6h = (struct icmp6_hdr *)
+//         ((u8_t *)p->payload + IP6_HLEN);
+//     uint8_t type = icmp6h->icmp6type;
+//     if (type == 135 || type == 136) {
+//         // Neighbour Solicitation/Advertisement — let LwIP answer it
+//         return ip6_input(p, netif);
+//     }
+// }
+
     ip6_addr_t temp_src_addr, temp_dest_addr;
     memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
     memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
+
+    DTN_INFO("Received package with src: %s :: dest: %s", ip6addr_ntoa(&temp_src_addr), ip6addr_ntoa(&temp_dest_addr));
 
     Routing_Function *routing = controller->parent_module->routing;
     Storage_Function *storage = controller->parent_module->storage;
@@ -257,7 +272,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
     // Check if it's for this LwIP stack
     bool is_for_this_lwip_stack = false;
     ip6_addr_t local_lwip_addr;
-    if (ip6addr_aton("fd00::2", &local_lwip_addr)) // <- CHANGE
+    if (ip6addr_aton(dtn_config.HOST_LWIP_IPV6_ADDR, &local_lwip_addr)) // <- CHANGE
     {
         ip6_addr_t dest_addr_nozone = temp_dest_addr;
 #if LWIP_IPV6_SCOPES
@@ -423,7 +438,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller *controller, struct ne
 
                     bool is_for_this_lwip_stack = false;
                     ip6_addr_t local_lwip_addr;
-                    if (ip6addr_aton("fd00::2", &local_lwip_addr)) // <- CHANGE
+                    if (ip6addr_aton(dtn_config.HOST_LWIP_IPV6_ADDR, &local_lwip_addr)) // <- CHANGE
                     {
                         ip6_addr_t retrieved_dest_nozone;
                         memcpy(&retrieved_dest_nozone, &packet_copy->original_dest, sizeof(ip6_addr_t));
