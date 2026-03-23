@@ -4,11 +4,12 @@ services:
       IS_DOCKER: true
       APP_NAME: "fast monkey"
       DEBUG: true
+      PS1: "dtn_node_1# "
       NODE: 1
-      INT_1: "enp0s8"
-      INT_2: "enp0s9" 
       HOST_TUN_IPV6_ADDR: "fd00::1"
       HOST_LWIP_IPV6_ADDR: "fd00::2"
+      INT_1: "enp0s8"
+      INT_2: "enp0s9"
     build: .
     container_name: dtn_node_1
     privileged: true
@@ -16,20 +17,21 @@ services:
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_01
-      - net_12
+      - net_01  # 0 - 1
+      - net_12  # 1 - 2
     cap_add:
       - NET_ADMIN
-
+    
   dtn_node_2:
     environment:
       APP_NAME: "orange rabbit"
       DEBUG: true
+      PS1: "dtn_node_2# "
       NODE: 2
-      INT_1: "enp0s8"
-      INT_2: "enp0s9" 
       HOST_TUN_IPV6_ADDR: "fd00:22::1"
       HOST_LWIP_IPV6_ADDR: "fd00:22::2"
+      INT_1: "enp0s8"
+      INT_2: "enp0s9"
     build: .
     container_name: dtn_node_2
     privileged: true
@@ -37,8 +39,8 @@ services:
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_12
-      - net_23
+      - net_12  # 1 - 2
+      - net_23  # 2 - 3
     cap_add:
       - NET_ADMIN
 
@@ -46,18 +48,9 @@ networks:
   net_01:
     enable_ipv6: true
     internal: true
-    ipam:
-      config:
-        - subnet: "fd00:01::/64"
   net_12:
     enable_ipv6: true
     internal: true
-    ipam:
-      config:
-        - subnet: "fd00:12::/64"
   net_23:
     enable_ipv6: true
     internal: true
-    ipam:
-      config:
-        - subnet: "fd00:23::/64"

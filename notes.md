@@ -1,6 +1,34 @@
 #
 
-##
+### Testing
+
+Ping lwIP directly `docker exec -it dtn_node_2 ping6 fd00::2`
+
+Ping lwIP directly `docker exec -it dtn_node_1 ping6 fd00:22::2`
+
+check pings `docker exec -it dtn_node_1 tcpdump -i tun0 -n icmp6`
+
+docker exec -it dtn_node_1 tcpdump -i enp0s9 -n icmp6
+
+
+
+docker exec -it dtn_node_1 ip6tables -t mangle -L PREROUTING -n -v
+Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)
+ pkts bytes target     prot opt in     out     source               destination         
+    3   168 ACCEPT     58   --  *      *       ::/0                 ::/0                 ipv6-icmptype 133
+    0     0 ACCEPT     58   --  *      *       ::/0                 ::/0                 ipv6-icmptype 134
+   21  1512 ACCEPT     58   --  *      *       ::/0                 ::/0                 ipv6-icmptype 135
+   12   768 ACCEPT     58   --  *      *       ::/0                 ::/0                 ipv6-icmptype 136
+   15  1880 MARK       0    --  enp0s86 *       ::/0                 ::/0                 MARK set 0x1
+   69  7395 MARK       0    --  enp0s96 *       ::/0                 ::/0                 MARK set 0x1
+
+docker exec -it dtn_node_1 ip -6 rule show
+0:      from all lookup local
+10000:  from all fwmark 0x1 lookup 100
+32766:  from all lookup main
+
+docker exec -it dtn_node_1 ip -6 route show table 100
+default via fd00::2 dev tun0 metric 1024 pref medium
 
 ### Testing
 
@@ -10,7 +38,7 @@
 
 `LwIP: docker exec -it dtn_node_2 ping6 fd00:12::2`
 
-
+docker exec -it dtn_node_2 ping6 fd00:00::2
 
 
 
