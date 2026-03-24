@@ -135,3 +135,22 @@ bool dtn_strip_custodian_option(struct pbuf **p) {
     *p = newp;
     return true;
 }
+
+bool dtn_update_or_add_custodian_option(struct pbuf **p, const ip6_addr_t *custodian) {
+    if (!p || !*p || !custodian) return false;
+    struct pbuf *orig = *p;
+    struct ip6_hdr *ip6hdr = (struct ip6_hdr *)orig->payload;
+
+    if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_HOPOPTS) {
+        struct hbh_hdr *hbh = (struct hbh_hdr *)((uint8_t*)orig->payload + IP6_HLEN);
+        if (hbh->opt_type == CUSTODY_OPTION_TYPE && hbh->opt_data_len == 16) {
+            memcpy(hbh->addr, custodian->addr, 16);
+            return true;
+        } else {
+            if (!dtn_strip_custodian_option(p)) return false;
+            return dtn_add_custodian_option(p, custodian);
+        }
+    } else {
+        return dtn_add_custodian_option(p, custodian);
+    }
+}

@@ -10,7 +10,7 @@ The implementation uses a modified version of the LwIP (Lightweight IP) stack in
 
 - **Store-and-Forward**: Persistent packet storage for handling network disruptions
 - **Custom ICMPv6 Signaling**: DTN status reporting (RECEIVED, FORWARDED, DELIVERED, DELETED)
-- **Contact-Based Routing**: Schedule-aware routing for intermittent connectivity
+- **Contact Graph Routing**: Routing mechanism for intermittent connectivity
 - **Custody Transfer**: Optional hop-by-hop reliability mechanism
 - **Modular Architecture**: Separate controller, routing and storage functions
 
@@ -37,9 +37,8 @@ The current configuration is set to run on a node with the following characteris
 - fd00:01::2 (enp0s9) — Interface connecting to a neighbor Node
 - fd00:12::1 (enp0s8) — Interface connecting to another neighbor Node
 - fd00::1 (tun0) — TUN interface for kernel-userspace communication
-- fd00::2 — lwIP/DTN userspace address
+- fd00::2, fd00:01::2, fd00:12::1 — lwIP/DTN userspace address
 - Two raw sockets connected to interfaces enp0s8 and enp0s9
-- Scheduled contact for a node with address fd00:33::2
 
 For deployment on nodes/environments with other characteristics, all corresponding configurations in this project have to be adjusted. Namely:
 
@@ -63,6 +62,9 @@ inside src/ and include/
 ├── dtn_custody.[ch]       # Custody transfer mechanisms
 ├── dtn_icmpv6.[ch]        # Custom ICMPv6 messages
 ├── raw_socket.[ch]        # Raw socket interface
+inside py_cgr/
+├── contact_plans/         # Contact Plan examples              
+├── py_cgr_lib.py          # CGR functions library
 others
 ├── lwipopts.h             # LwIP configuration
 ├── lwip/                  # Modified LwIP library
@@ -81,6 +83,7 @@ others
 ## AUTHORS
 
 - Michael Karpov <michael.karpov@estudiantat.upc.edu> — Initial author and main developer
+- Cèlia Torras <celia.torras@estudiantat.upc.edu> — CGR integrator and further developer
 - Anna Calveras <anna.calveras@upc.edu> — Project supervisor
 
 ## FUNDING
@@ -97,6 +100,11 @@ This project is licensed under the GNU Affero General Public License Version 3 (
 - This project includes a modified version of the LwIP (Lightweight IP) library
 - Original LwIP is Copyright (c) 2001, 2002 Swedish Institute of Computer Science under a BSD License
 - Modification adds the configurable option (IP FORWARD ALLOW TX ON RX NETIF) to ip6.c.
+
+**Modified CGR Library:**
+- This project includes a modifies version of the CGR funcion library
+- Copiright (c) 2023 Juan Fraire
+- Modifications allow IPv6 functionalities instead of BPv7
 
 ## ACKNOWLEDGEMENTS
 

@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "select.h": "c"
+        "select.h": "c",
+        "if_packet.h": "c"
     }
 }

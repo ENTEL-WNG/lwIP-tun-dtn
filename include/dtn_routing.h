@@ -23,17 +23,18 @@
 
 // Contact opportunity
 typedef struct Contact_Info {
-    ip6_addr_t node_addr;      
-    ip6_addr_t next_hop;       
-    u32_t start_time_ms;      
-    u32_t end_time_ms;        
-    bool is_dtn_node;       
-    struct Contact_Info *next;  
+    ip6_addr_t node_addr;        // contact address (destination)
+    ip6_addr_t next_hop;         // address of the node to reach the destination
+    u32_t start_time_ms;         // start of the contact window
+    u32_t end_time_ms;           // end of the contact window
+    bool is_dtn_node;            // whether the node is DTN-capable
+    struct Contact_Info *next;   // pointer to the next contact in the list
 } Contact_Info;
 
 typedef struct Routing_Function {
     DTN_Module* parent_module;
     char* routing_algorithm_name;
+    u32_t base_time;
     
     Contact_Info* contact_list_head;
 } Routing_Function;
@@ -44,7 +45,7 @@ void dtn_routing_destroy(Routing_Function* routing);
 
 bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t* dest_ip);
 
-int dtn_routing_get_dtn_next_hop(Routing_Function* routing, const ip6_addr_t* dest_ip, ip6_addr_t* next_hop_ip);
+int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_t* plen, u8_t* hoplim, ip6_addr_t* dest_ip, ip6_addr_t* sender, ip6_addr_t* next_hop_ip);
 
 int dtn_routing_add_contact(Routing_Function* routing, 
                           const ip6_addr_t* node_addr, 
@@ -55,8 +56,16 @@ int dtn_routing_add_contact(Routing_Function* routing,
 
 int dtn_routing_remove_contact(Routing_Function* routing, const ip6_addr_t* node_addr);
 
-void dtn_routing_update_contacts(Routing_Function* routing);
+bool dtn_routing_update_contacts(Routing_Function* routing);
 
 bool dtn_routing_has_active_contact(Routing_Function* routing, const ip6_addr_t* dest_ip);
+
+int ip6_addr_to_str(const ip6_addr_t *a, char *buf, size_t buflen);
+
+long ipv6_to_nodeid(const char *ip6);
+
+int nodeid_to_ipv6(long node_id, ip6_addr_t *out);
+
+int dtn_routing_load_contacts(Routing_Function* routing, const char* filename);
 
 #endif
