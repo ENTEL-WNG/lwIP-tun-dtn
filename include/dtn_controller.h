@@ -19,6 +19,7 @@
 #include "lwip/pbuf.h"
 #include "lwip/netif.h"
 #include "dtn_module.h"
+#include "dtn_routing.h"
 #include <stdbool.h> 
 
 #define MAX_DESTINATIONS 10
