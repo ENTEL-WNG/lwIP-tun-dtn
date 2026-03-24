@@ -275,7 +275,7 @@ int main() {
     //         }
     //     } else {
     //         fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", HOST_LWIP_IPV6_ADDR);
-    //     }
+        }
     }
 
     ip6_addr_t ip6addr_lwip_stack_enp0s9;
@@ -401,8 +401,7 @@ int main() {
         }
     }
 
-    if (global_dtn_module && global_dtn_module->routing) {
-    }
+    if (global_dtn_module && global_dtn_module->routing) {}
 
     printf("Shutting down...\n");
     netif_set_down(&tun_netif);
