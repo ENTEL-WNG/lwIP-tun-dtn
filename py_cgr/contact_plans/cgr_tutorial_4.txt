@@ -1,0 +1,4 @@
+# a contact +<start> +<end> <from> <to> <rate> <range>
+# A-B
+a contact +00 +600 01 02 1 1
+a contact +00 +600 02 01 1 1

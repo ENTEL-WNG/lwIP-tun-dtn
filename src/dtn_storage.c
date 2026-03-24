@@ -535,8 +535,6 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip
     printf("DTN Storage: Looking for stored packet matching src=%s, dest=%s\n", 
            orig_src_str, orig_dest_str);
     
-
-    
     Stored_Packet_Entry* current = storage->packet_list_head;
     Stored_Packet_Entry* prev = NULL;
     bool found = false;
@@ -651,8 +649,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
             struct ip6_hdr* stored_ip6hdr = (struct ip6_hdr*)current->p->payload;
             
             // 1. Check src/dst addresses
-            if (memcmp(&stored_ip6hdr->src, &orig_ip6hdr->src, 16) == 0 &&
-                memcmp(&stored_ip6hdr->dest, &orig_ip6hdr->dest, 16) == 0) {
+            if (memcmp(&stored_ip6hdr->src, &orig_ip6hdr->src, 16) == 0) {
                 
                 // 2. Check next header protocol
                 u8_t stored_nexth = stored_ip6hdr->_nexth;

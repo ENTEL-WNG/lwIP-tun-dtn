@@ -1,0 +1,13 @@
+# a contact +<start> +<end> <from> <to> <rate> <range>
+# A-B
+a contact +00 +600 01 02 1 2
+a contact +00 +600 02 01 1 2
+# A-C
+a contact +00 +600 01 03 1 3
+a contact +00 +600 03 01 1 3
+# B-C
+a contact +00 +600 02 03 1 1
+a contact +00 +600 03 02 1 1
+# C-D
+a contact +00 +600 03 04 1 1
+a contact +00 +600 04 03 1 1

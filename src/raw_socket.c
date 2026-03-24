@@ -117,9 +117,10 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
         return -1;
     }
 
-    // If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
+    // Node1 --> If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
+    // Node2 --> If destination is in fd00:23::/64, use enp0s9, otherwise use enp0s8
     int use_second_interface = 0;
-    if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
+    if ((dest_addr->addr[0] == PP_HTONL(0xfd000023) || dest_addr->addr[0] == PP_HTONL(0xfd000033)) &&
         dest_addr->addr[1] == 0 &&
         dest_addr->addr[2] == 0) {
         use_second_interface = 1;
@@ -153,7 +154,7 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
                        (struct sockaddr *)&sin6, sizeof(sin6));
                        
     if (sent_bytes < 0) {
-        perror("Failed to send packet via raw socket");
+        perror("Failed to send packet via raw socket"); //canvis al node 2
         return -1;
     } else if ((size_t)sent_bytes != p->tot_len) {
         fprintf(stderr, "Sent only %d bytes out of %d\n", sent_bytes, p->tot_len);

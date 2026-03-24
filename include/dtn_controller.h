@@ -43,6 +43,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf *p,
 void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct netif *netif_out);
 void dtn_controller_remove_tracking(DTN_Controller* controller, const ip6_addr_t* dest_addr);
 
+static bool is_next_hop_active_contact(Routing_Function *routing, ip6_addr_t *next_hop_ip);
 int dtn_controller_process_icmpv6(DTN_Controller* controller, struct pbuf *p, struct netif *inp_netif);
 
 #endif
