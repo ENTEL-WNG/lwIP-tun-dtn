@@ -1,9 +1,11 @@
 CC = gcc
 
+# PY_INCLUDES := $(shell python3-config --includes)
+# PY_LDFLAGS  := $(shell python3-config --ldflags)
 PY_INCLUDES := $(shell python3-config --includes)
-PY_LDFLAGS  := $(shell python3-config --ldflags)
+PY_LDFLAGS  := $(shell python3-config --ldflags --embed)
 
-PY_LIBS := -lpython3.12 -lpthread -lutil
+# PY_LIBS := -lpython3.12 -lpthread -lutil
 
 CFLAGS = -Wall \
 	-DNO_SYS=1 \
@@ -15,7 +17,7 @@ CFLAGS = -Wall \
 	-Ilwip/contrib/addons/ipv6_static_routing \
 	$(PY_INCLUDES)
 
-LDFLAGS = $(PY_LDFLAGS) $(PY_LIBS)
+LDFLAGS = $(PY_LDFLAGS) -lpthread -lutil
 
 LWIP_SRC = \
 	lwip/src/core/mem.c \

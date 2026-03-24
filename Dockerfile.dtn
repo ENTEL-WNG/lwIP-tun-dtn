@@ -4,8 +4,8 @@ FROM debian:bookworm-slim AS builder
 # Step 2: Install build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
-    # git \
     libpcap-dev \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Step 3: Set the working directory
@@ -35,6 +35,7 @@ RUN apt-get update && apt-get install -y \
     procps \
     iputils-ping \
     tcpdump \ 
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /root/

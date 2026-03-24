@@ -13,7 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#include "dtn_routing.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -25,6 +25,9 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+
+#include "dtn_routing.h"
+#include "dtn_logger.h"
 
 #define CURR_NODE_ADDR "fd00:01::2"
 #define MAX_LENGTH 5000

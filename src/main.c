@@ -175,6 +175,7 @@ int main() {
     }
     printf("TUN device '%s' created successfully (fd: %d).\n", tun_name, tun_fd);
 
+    // TODO:: make this a loop
     if (raw_socket_init(dtn_config.interfaces[0]->name, dtn_config.interfaces[0]->name) < 0) {
         fprintf(stderr, "Failed to initialize raw sockets\n");
         netif_remove(&tun_netif);
