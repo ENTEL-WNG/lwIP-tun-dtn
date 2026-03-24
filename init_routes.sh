@@ -1,28 +1,73 @@
 #!/bin/bash
 set -e
 
-# 1. Mac/Docker stability settings
-sysctl -w net.ipv6.conf.all.accept_dad=0
-sysctl -w net.ipv6.conf.all.forwarding=1
+echo "--- Setting interfaces and routes ---"
 
-echo "--- DTN $NODE_NR: Initializing Network Environment ---"
+i=1
+ALL_INTERFACES=()
+while true; do
+    VAR_NAME="INT_$i"
+    TEMP_NAME="TEMP_$i"
+    
+    if [[ -n "${!VAR_NAME}" ]]; then
+        IFS=', ' read -r -a ARRAY <<< "${!VAR_NAME}"
+        length=${#ARRAY[@]}
+        INT="${ARRAY[0]}"
+        ADDR="${ARRAY[1]}"
+        ALL_INTERFACES+=("$INT")
 
-# 2. Safe Interface Renaming (Rotate through temp names)
-OLD_INT1=$(ip -o link show | awk -F': ' '{print $2}' | grep '^eth' | sed 's/@.*//' | sed -n '1p')
-OLD_INT2=$(ip -o link show | awk -F': ' '{print $2}' | grep '^eth' | sed 's/@.*//' | sed -n '2p')
+        echo "=== $i $INT ==="
+        OLD_INT=$(ip -o link show | awk -F': ' '{print $2}' | grep '^eth' | sed 's/@.*//' | sed -n '1p')
+        if [ -n "$OLD_INT" ]; then
+            echo "Renaming Docker interfaces: $OLD_INT->$INT"
+            echo "ip link set "$OLD_INT" down && ip link set "$OLD_INT" name $TEMP_NAME"
+            echo "ip link set $TEMP_NAME name "$INT" && ip link set "$INT" up"
+            ip link set "$OLD_INT" down && ip link set "$OLD_INT" name $TEMP_NAME
+            ip link set $TEMP_NAME name "$INT" && ip link set "$INT" up
+        else
+            echo "Warning: Could not find two eth interfaces to rename. Using existing names."
+        fi
 
-ip link set "$OLD_INT1" down && ip link set "$OLD_INT1" name temp0
-ip link set "$OLD_INT2" down && ip link set "$OLD_INT2" name temp1
-ip link set temp0 name enp0s8 && ip link set enp0s8 up
-ip link set temp1 name enp0s9 && ip link set enp0s9 up
+        echo "ip -6 addr add $ADDR/64 dev $INT || true"
+        ip -6 addr add $ADDR/64 dev $INT || true
 
-# 3. Configure IPv6 (Static IPs & Routes)
-echo "Configuring Node $NODE_NR static IPv6 addresses..."
-# enp0s8 Config
-ip -6 addr add fd00:00::1/64 dev enp0s8 || true
+        if [ "${#ARRAY[@]}" -gt 2 ]; then
+            VIA_ADDR="${ARRAY[2]}"
 
-# enp0s9 Config (This is plugged into net_12 -> Connects to Node 2)
-ip -6 addr add fd00:01::1/64 dev enp0s9 || true
-ip -6 route add fd00:12::/64 via fd00:01::2 dev enp0s9 || true
-ip -6 route add fd00:22::/64 via fd00:01::2 dev enp0s9 || true
-ip -6 route add fd00:33::/64 via fd00:01::2 dev enp0s9 || true
+            for (( j=3; j<${#ARRAY[@]}; j++ ));
+            do
+                ROUTE="${ARRAY[$j]}"
+
+                echo "ip -6 route add $ROUTE/64 via $VIA_ADDR dev $INT || true"
+                ip -6 route add $ROUTE/64 via $VIA_ADDR dev $INT || true
+            done
+        fi
+    else
+        echo "No interface for $VAR_NAME. Route setup complete"
+        break
+    fi
+    
+    ((i++))
+done
+
+echo "--- Seeding static NDP neighbor entries ---"
+ 
+j=1
+while true; do
+    NEIGH_VAR="NEIGH_$j"
+ 
+    if [[ -n "${!NEIGH_VAR}" ]]; then
+        IFS=', ' read -r -a NEIGH <<< "${!NEIGH_VAR}"
+        NEIGH_DEV="${NEIGH[0]}"
+        NEIGH_IP="${NEIGH[1]}"
+        NEIGH_MAC="${NEIGH[2]}"
+ 
+        echo "ip -6 neigh replace $NEIGH_IP lladdr $NEIGH_MAC dev $NEIGH_DEV nud permanent"
+        ip -6 neigh replace "$NEIGH_IP" lladdr "$NEIGH_MAC" dev "$NEIGH_DEV" nud permanent || true
+    else
+        echo "No neighbor for $NEIGH_VAR. NDP seeding complete."
+        break
+    fi
+ 
+    ((j++))
+done

@@ -55,10 +55,10 @@ done
 
 # Mark ALL traffic from physical interfaces (not just non-LOCAL destinations)
 # The ND exemption above already protects neighbour resolution
-# ip6tables -t mangle -A PREROUTING -i "$INT_1" -j MARK --set-mark 1
-# ip6tables -t mangle -A PREROUTING -i "$INT_2" -j MARK --set-mark 1
-ip6tables -t mangle -A PREROUTING -i "$INT_1" -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
-ip6tables -t mangle -A PREROUTING -i "$INT_2" -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+ip6tables -t mangle -A PREROUTING -i "$INT_1" -j MARK --set-mark 1
+ip6tables -t mangle -A PREROUTING -i "$INT_2" -j MARK --set-mark 1
+# ip6tables -t mangle -A PREROUTING -i "$INT_1" -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+# ip6tables -t mangle -A PREROUTING -i "$INT_2" -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
 
 ip -6 rule del fwmark 1 table 100 2>/dev/null || true
 ip -6 rule add fwmark 1 table 100 priority 10000

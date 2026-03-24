@@ -121,22 +121,50 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
 
     // TODO:: make this better
     // If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
-    int use_second_interface = dtn_config.NODE % 2; // <- adjust interface
-    // if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
-    //     dest_addr->addr[1] == 0 &&
-    //     dest_addr->addr[2] == 0) {
-    //     use_second_interface = 1;
-    // }
+    // int use_second_interface = dtn_config.NODE % 2; // <- adjust interface
+
+    // dtn_config.interfaces
     
-    if (use_second_interface) {
-        socket_to_use = raw_socket_enp0s9;
-        if_index_to_use = if_index_2;
-        if_name_to_use = if_name_2_global;
+    int interface_to_use = -1;
+
+    if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
+        dest_addr->addr[1] == 0 &&
+        dest_addr->addr[2] == 0) {
+        interface_to_use = 0;
     } else {
-        socket_to_use = raw_socket_enp0s8;
-        if_index_to_use = if_index_1;
-        if_name_to_use = if_name_1_global;
+        interface_to_use = dtn_config.NODE % 2;
     }
+
+    // interface_to_use = 1;
+
+    switch (interface_to_use) {
+        case 0:
+            socket_to_use = raw_socket_enp0s8;
+            if_index_to_use = if_index_1;
+            if_name_to_use = if_name_1_global;
+            break;
+        case 1:
+            socket_to_use = raw_socket_enp0s9;
+            if_index_to_use = if_index_2;
+            if_name_to_use = if_name_2_global;
+            break;
+        default:
+            char dest_str[IP6ADDR_STRLEN_MAX];
+            DTN_ERROR("No route/interface defined for destination %s", ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str)));
+    }
+
+
+
+    
+    // if (use_second_interface) {
+    //     socket_to_use = raw_socket_enp0s9;
+    //     if_index_to_use = if_index_2;
+    //     if_name_to_use = if_name_2_global;
+    // } else {
+    //     socket_to_use = raw_socket_enp0s8;
+    //     if_index_to_use = if_index_1;
+    //     if_name_to_use = if_name_1_global;
+    // }
     
     memset(&sin6, 0, sizeof(sin6));
     sin6.sin6_family = AF_INET6;
@@ -156,7 +184,7 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
                        (struct sockaddr *)&sin6, sizeof(sin6));
                        
     if (sent_bytes < 0) {
-        DTN_ERROR("Failed to send packet via raw socket");
+        // DTN_ERROR("Failed to send packet via raw socket");
         return -1;
     } else if ((size_t)sent_bytes != p->tot_len) {
         fprintf(stderr, "Sent only %d bytes out of %d\n", sent_bytes, p->tot_len);

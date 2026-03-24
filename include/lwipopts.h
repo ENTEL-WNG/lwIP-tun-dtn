@@ -59,7 +59,8 @@
 #define LWIP_NETCONN 0
 
 // Debugging
-//#define LWIP_DEBUG
-//#define IP6_DEBUG       LWIP_DBG_ON
+#define LWIP_DEBUG 1
+#define IP6_DEBUG       LWIP_DBG_ON
+#define ICMP_DEBUG      LWIP_DBG_ON
 
 #endif

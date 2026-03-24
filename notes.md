@@ -8,9 +8,64 @@ Ping lwIP directly `docker exec -it dtn_node_1 ping6 fd00:22::2`
 
 check pings `docker exec -it dtn_node_1 tcpdump -i tun0 -n icmp6`
 
+
+
+docker exec -it reg_node_0 ping6 -c 4 fd00:22::2
+docker exec -it reg_node_0 ping6 -c 4 fd00:12::2
+docker exec -it reg_node_0 ping6 -c 4 fd00:12::1
+
+docker exec -it dtn_node_2 ping6 -c 4 fd00:22::2
+docker exec -it dtn_node_2 ping6 -c 4 fd00:12::2
+
+docker exec -it dtn_node_1 ping6 -c 4 fd00:01::1
+
 docker exec -it dtn_node_1 tcpdump -i enp0s9 -n icmp6
 
+docker exec -it dtn_node_1 ip -6 neigh show     
 
+docker exec -it reg_node_0 tcpdump -i enp0s9 -n icmp6
+
+docker exec -it dtn_node_2 tcpdump -i enp0s8 -n icmp6
+
+
+#### Show routes
+docker exec reg_node_0 ip -6 route show
+
+docker exec dtn_node_1 ip -6 route show
+
+docker exec dtn_node_2 ip -6 route show
+
+(ml1) tiredbluewhale@Kiste lwIP-tun-dtn % docker exec reg_node_0 ip -6 route show
+fd00:1::/64 dev enp0s9 proto kernel metric 256 pref medium
+fd00:11::/64 via fd00:1::2 dev enp0s9 metric 1024 pref medium
+fd00:12::/64 via fd00:1::2 dev enp0s9 metric 1024 pref medium
+fd00:22::/64 via fd00:1::2 dev enp0s9 metric 1024 pref medium
+fd00:23::/64 via fd00:1::2 dev enp0s9 metric 1024 pref medium
+fe80::/64 dev enp0s9 proto kernel metric 256 pref medium
+(ml1) tiredbluewhale@Kiste lwIP-tun-dtn % docker exec dtn_node_2 ip -6 route show
+fd00:1::/64 via fd00:12::1 dev enp0s8 metric 1024 pref medium
+fd00:11::/64 via fd00:12::1 dev enp0s8 metric 1024 pref medium
+fd00:12::/64 dev enp0s8 proto kernel metric 256 pref medium
+fd00:22::/64 dev tun0 proto kernel metric 256 pref medium
+fd00:23::/64 dev enp0s9 proto kernel metric 256 pref medium
+fd00:33::/64 via fd00:23::3 dev enp0s9 metric 1024 pref medium
+fe80::/64 dev enp0s8 proto kernel metric 256 pref medium
+fe80::/64 dev enp0s9 proto kernel metric 256 pref medium
+fe80::/64 dev tun0 proto kernel metric 256 pref medium
+(ml1) tiredbluewhale@Kiste lwIP-tun-dtn % docker exec dtn_node_1 ip -6 route show
+fd00:1::/64 dev enp0s8 proto kernel metric 256 pref medium
+fd00:11::/64 dev tun0 proto kernel metric 256 pref medium
+fd00:12::/64 dev enp0s9 proto kernel metric 256 pref medium
+fd00:22::/64 via fd00:12::2 dev enp0s9 metric 1024 pref medium
+fd00:23::/64 via fd00:12::2 dev enp0s9 metric 1024 pref medium
+fd00:33::/64 via fd00:12::2 dev enp0s9 metric 1024 pref medium
+fe80::/64 dev enp0s8 proto kernel metric 256 pref medium
+fe80::/64 dev enp0s9 proto kernel metric 256 pref medium
+fe80::/64 dev tun0 proto kernel metric 256 pref medium
+
+####
+
+docker exec -it reg_node_0 ping6 fd00:22::2
 
 docker exec -it dtn_node_1 ip6tables -t mangle -L PREROUTING -n -v
 Chain PREROUTING (policy ACCEPT 0 packets, 0 bytes)

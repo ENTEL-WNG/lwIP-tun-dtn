@@ -209,22 +209,24 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         return;
     }
 
-//     struct ip6_hdr *ip6h = (struct ip6_hdr *)p->payload;
-// if (IP6H_NEXTH(ip6h) == IP6_NEXTH_ICMP6) {
-//     struct icmp6_hdr *icmp6h = (struct icmp6_hdr *)
-//         ((u8_t *)p->payload + IP6_HLEN);
-//     uint8_t type = icmp6h->icmp6type;
-//     if (type == 135 || type == 136) {
-//         // Neighbour Solicitation/Advertisement — let LwIP answer it
-//         return ip6_input(p, netif);
-//     }
-// }
-
+    
+    
+    // ip6_addr_t temp_src, temp_dest;
+    // ip6_addr_copy_from_packed(temp_src, ip6hdr->src);
+    // ip6_addr_copy_from_packed(temp_dest, ip6hdr->dest);
+    
+    
+    char src_str[IP6ADDR_STRLEN_MAX];
+    char dest_str[IP6ADDR_STRLEN_MAX];
     ip6_addr_t temp_src_addr, temp_dest_addr;
-    memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
-    memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
+    // memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
+    // memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
+    ip6_addr_copy_from_packed(temp_src_addr, ip6hdr->src);
+    ip6_addr_copy_from_packed(temp_dest_addr, ip6hdr->dest);
+    ip6addr_ntoa_r(&temp_src_addr, src_str, sizeof(src_str));
+    ip6addr_ntoa_r(&temp_dest_addr, dest_str, sizeof(dest_str));
+    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %d", src_str, dest_str, IP6H_NEXTH(ip6hdr));
 
-    DTN_INFO("Received package with src: %s :: dest: %s", ip6addr_ntoa(&temp_src_addr), ip6addr_ntoa(&temp_dest_addr));
 
     Routing_Function *routing = controller->parent_module->routing;
     Storage_Function *storage = controller->parent_module->storage;
@@ -235,14 +237,14 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         struct pbuf *q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
         if (!q)
         {
-            fprintf(stderr, "DTN Controller: Failed to allocate pbuf for ICMPv6 processing.\n");
+            DTN_ERROR("DTN Controller: Failed to allocate pbuf for ICMPv6 processing.");
             pbuf_free(p);
             return;
         }
 
         if (pbuf_copy(q, p) != ERR_OK)
         {
-            fprintf(stderr, "DTN Controller: Failed to copy pbuf for ICMPv6 processing.\n");
+            DTN_ERROR("DTN Controller: Failed to copy pbuf for ICMPv6 processing.");
             pbuf_free(q);
             pbuf_free(p);
             return;
@@ -251,7 +253,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         // Skip IPv6 header to get to ICMPv6 header
         if (pbuf_header(q, -IP6_HLEN) != 0)
         {
-            fprintf(stderr, "DTN Controller: Failed to adjust pbuf header for ICMPv6 processing.\n");
+            DTN_ERROR("DTN Controller: Failed to adjust pbuf header for ICMPv6 processing.");
             pbuf_free(q);
             pbuf_free(p);
             return;
@@ -338,7 +340,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
             err_t err = raw_socket_send_ipv6(p, &temp_dest_addr) == 0 ? ERR_OK : ERR_IF;
             if (err != ERR_OK)
             {
-                fprintf(stderr, "DTN Controller: Error sending packet via raw socket: %d.\n", err);
+                DTN_ERROR("DTS destination sending packet src: %s -> dest: %s  via raw socket: %d.", src_str, dest_str, err);
             }
             pbuf_free(p);
             return;
@@ -386,7 +388,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         err_t err = raw_socket_send_ipv6(p, &temp_dest_addr) == 0 ? ERR_OK : ERR_IF;
         if (err != ERR_OK)
         {
-            fprintf(stderr, "DTN Controller: Error sending packet via raw socket: %d.\n", err);
+            DTN_ERROR("Error sending packet src: %s -> dest: %s  via raw socket: %d.", src_str, dest_str, err);
         }
         pbuf_free(p);
         return;

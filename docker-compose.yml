@@ -1,4 +1,25 @@
 services:
+  dtn_node_0:
+    environment:
+      APP_NAME: "plain node"
+      DEBUG: true
+      PS1: "reg_node_0# "
+      NODE: 0
+      INT_1: "enp0s9, fd00:01::1, fd00:01::2, fd00:11::, fd00:12::, fd00:22::, fd00:23::"
+
+      NEIGH_1: "enp0s9, fd00:01::2, 02:42:01:00:00:01"
+    build:
+      context: .
+      dockerfile: Dockerfile.reg
+    container_name: reg_node_0
+    privileged: true
+    entrypoint: ["/root/init_reg_node.sh"]
+    networks:
+      net_01:
+        mac_address: "02:42:01:00:00:00"
+    cap_add:
+      - NET_ADMIN
+
   dtn_node_1:
     environment:
       IS_DOCKER: true
@@ -6,21 +27,37 @@ services:
       DEBUG: true
       PS1: "dtn_node_1# "
       NODE: 1
-      HOST_TUN_IPV6_ADDR: "fd00::1"
-      HOST_LWIP_IPV6_ADDR: "fd00::2"
-      INT_1: "enp0s8"
-      INT_2: "enp0s9"
-    build: .
+      HOST_TUN_IPV6_ADDR: "fd00:11::1"
+      HOST_LWIP_IPV6_ADDR: "fd00:11::2"
+      INT_1: "enp0s8, fd00:01::2"
+      # ip -6 addr add fd00:12::1/64 dev enp0s9 || true
+      # ip -6 route add fd00:22::/64 via fd00:12::2 dev enp0s9 || true
+      # ip -6 route add fd00:23::/64 via fd00:12::2 dev enp0s9 || true
+      # ip -6 route add fd00:33::/64 via fd00:12::2 dev enp0s9 || true
+      # interface, addr, via, routes...
+      INT_2: "enp0s9, fd00:12::1, fd00:12::2, fd00:22::, fd00:23::, fd00:33::"
+
+      NEIGH_1: "enp0s8, fd00:01::1, 02:42:01:00:00:00"
+      NEIGH_2: "enp0s9, fd00:12::2, 02:42:12:00:00:02"
+    build:
+      context: .
+      dockerfile: Dockerfile.dtn
+      # dockerfile: Dockerfile.reg
     container_name: dtn_node_1
     privileged: true
     entrypoint: ["/root/init_dtn_node.sh"]
+    # entrypoint: ["/root/init_reg_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_01  # 0 - 1
-      - net_12  # 1 - 2
+      net_01:
+        mac_address: "02:42:01:00:00:01"
+      net_12:
+        mac_address: "02:42:12:00:00:01"
     cap_add:
       - NET_ADMIN
+    depends_on:
+      - dtn_node_0
     
   dtn_node_2:
     environment:
@@ -30,19 +67,29 @@ services:
       NODE: 2
       HOST_TUN_IPV6_ADDR: "fd00:22::1"
       HOST_LWIP_IPV6_ADDR: "fd00:22::2"
-      INT_1: "enp0s8"
-      INT_2: "enp0s9"
-    build: .
+      INT_1: "enp0s8, fd00:12::2, fd00:12::1, fd00:11::, fd00:01::"
+      INT_2: "enp0s9, fd00:23::2, fd00:23::3, fd00:33::"
+
+      NEIGH_1: "enp0s8, fd00:12::1, 02:42:12:00:00:01"
+    build:
+      context: .
+      dockerfile: Dockerfile.dtn
+      # dockerfile: Dockerfile.reg
     container_name: dtn_node_2
     privileged: true
-    entrypoint: ["/root/init_dtn_node_2.sh"]
+    entrypoint: ["/root/init_dtn_node.sh"]
+    # entrypoint: ["/root/init_reg_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
-      - net_12  # 1 - 2
-      - net_23  # 2 - 3
+      net_12:
+        mac_address: "02:42:12:00:00:02"
+      net_23:
+        mac_address: "02:42:23:00:00:02"
     cap_add:
       - NET_ADMIN
+    depends_on:
+      - dtn_node_1
 
 networks:
   net_01:

@@ -108,7 +108,7 @@ fi
 ip -6 route replace default via fd00:22::2 dev tun0 table 100
 
 
-Node 3:
+# Node 3:
 /etc/network/interfaces:
 auto enp0s8
 iface enp0s8 inet6 static
