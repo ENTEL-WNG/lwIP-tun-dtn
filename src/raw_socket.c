@@ -18,6 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdbool.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
@@ -30,157 +31,145 @@
 #include "dtn_logger.h"
 #include "dtn_config.h"
 
-// Interface indices
-static int if_index_1 = 0;  // enp0s8
-static int if_index_2 = 0;  // enp0s9
-static char if_name_1_global[IFNAMSIZ] = {0};
-static char if_name_2_global[IFNAMSIZ] = {0};
-
-// Socket handles
-int raw_socket_enp0s8 = -1;
-int raw_socket_enp0s9 = -1;
-
-int raw_socket_init(const char* if_name_1, const char* if_name_2) {
+int raw_socket_init(void) {
     struct ifreq ifr;
-    
-    strncpy(if_name_1_global, if_name_1, IFNAMSIZ-1);
-    strncpy(if_name_2_global, if_name_2, IFNAMSIZ-1);
-    
-    raw_socket_enp0s8 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
-    if (raw_socket_enp0s8 < 0) {
-        perror("Failed to create raw socket for first interface");
-        return -1;
-    }
-    
-    raw_socket_enp0s9 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
-    if (raw_socket_enp0s9 < 0) {
-        perror("Failed to create raw socket for second interface");
-        close(raw_socket_enp0s8);
-        return -1;
-    }
-    
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, if_name_1, IFNAMSIZ-1);
-    if (ioctl(raw_socket_enp0s8, SIOCGIFINDEX, &ifr) < 0) {
-        perror("Failed to get interface index for first interface");
-        close(raw_socket_enp0s8);
-        close(raw_socket_enp0s9);
-        return -1;
-    }
-    if_index_1 = ifr.ifr_ifindex;
-    
-    memset(&ifr, 0, sizeof(ifr));
-    strncpy(ifr.ifr_name, if_name_2, IFNAMSIZ-1);
-    if (ioctl(raw_socket_enp0s9, SIOCGIFINDEX, &ifr) < 0) {
-        perror("Failed to get interface index for second interface");
-        close(raw_socket_enp0s8);
-        close(raw_socket_enp0s9);
-        return -1;
-    }
-    if_index_2 = ifr.ifr_ifindex;
-    
+    int error = 0;
     int on = 1;
-    if (setsockopt(raw_socket_enp0s8, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
-        perror("Failed to set IPV6_HDRINCL option on first socket");
-        close(raw_socket_enp0s8);
-        close(raw_socket_enp0s9);
-        return -1;
+    for (int i = 0; i < dtn_config.interface_count; i++) {
+        char interface_name[IFNAMSIZ];
+        strncpy(interface_name, dtn_config.interfaces[i]->name, IFNAMSIZ - 1);
+        interface_name[IFNAMSIZ - 1] = '\0';
+
+        // dtn_config.interfaces[i]->socket = i;
+
+        int raw_socket = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
+        if (raw_socket < 0) {
+            DTN_ERROR("Failed to create raw socket for interface %s", interface_name);
+            error = -1;
+            break;
+        }
+
+        memset(&ifr, 0, sizeof(ifr));
+        strncpy(ifr.ifr_name, interface_name, IFNAMSIZ - 1);
+        if (ioctl(raw_socket, SIOCGIFINDEX, &ifr) < 0) {
+            DTN_ERROR("Failed to get interface index for interface %s", interface_name);
+            error = -2;
+            break;
+        }
+
+        if (setsockopt(raw_socket, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
+           DTN_ERROR("Failed to set IPV6_HDRINCL option on socket for interface %s", interface_name);
+           error = -3;
+           break;
+        }
+
+        if (error != 0) {
+            break;
+        }
+
+        dtn_config.interfaces[i]->socket = raw_socket;
+        dtn_config.interfaces[i]->socket_index = ifr.ifr_ifindex;
     }
-    
-    if (setsockopt(raw_socket_enp0s9, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
-        perror("Failed to set IPV6_HDRINCL option on second socket");
-        close(raw_socket_enp0s8);
-        close(raw_socket_enp0s9);
-        return -1;
+
+    if (error != 0) {
+        raw_socket_cleanup();
+        return error;
     }
-    
-    DTN_INFO("Raw sockets initialized:");
-    DTN_INFO("%s: socket %d, index %d", if_name_1, raw_socket_enp0s8, if_index_1);
-    DTN_INFO("%s: socket %d, index %d", if_name_2, raw_socket_enp0s9, if_index_2);
-    
+
+    for (int i = 0; i < dtn_config.interface_count; i++) {
+        DTN_INFO("Initialized raw socket with name %s: socket %d, index %d",
+            dtn_config.interfaces[i]->name, dtn_config.interfaces[i]->socket,
+            dtn_config.interfaces[i]->socket_index);
+    }
+
+    return error;
+}
+
+bool is_dest_addresse_for_interface(const ip6_addr_t *dest_addr, const char *addr) {
+    ip6_addr_t route_addr;
+
+    if (ip6addr_aton(addr, &route_addr)) {
+        if (dest_addr->addr[0] == route_addr.addr[0] &&
+            dest_addr->addr[1] == route_addr.addr[1]) {
+                return 1;
+        }
+    }
     return 0;
 }
 
 int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
     struct sockaddr_in6 sin6;
-    int socket_to_use;
-    int if_index_to_use;
-    char *if_name_to_use;
     int sent_bytes;
     char buf[2048];
     
     if (p->tot_len > sizeof(buf)) {
-        fprintf(stderr, "Packet too large for raw socket buffer\n");
+        DTN_ERROR("Packet too large for raw socket buffer.");
         return -1;
     }
     
     if (pbuf_copy_partial(p, buf, p->tot_len, 0) != p->tot_len) {
-        fprintf(stderr, "Failed to copy pbuf data\n");
+        DTN_ERROR("Failed to copy pbuf data");
         return -1;
     }
-
-    // TODO:: make this better
-    // If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
-    // int use_second_interface = dtn_config.NODE % 2; // <- adjust interface
-
-    // dtn_config.interfaces
     
+    // TODO:: more addresses
     int interface_to_use = -1;
+    for (int i = 0; i < dtn_config.interface_count; i++) {
+        // if (dtn_config.interfaces[i]->route_count > 0) {
+        for (int j = 0; j < dtn_config.interfaces[i]->route_count; j++) {
+            if (is_dest_addresse_for_interface(dest_addr, dtn_config.interfaces[i]->routes[j])) {
+                interface_to_use = i;
+                break;
+            }
 
-    if (dest_addr->addr[0] == PP_HTONL(0xfd000001) &&
-        dest_addr->addr[1] == 0 &&
-        dest_addr->addr[2] == 0) {
+            // ip6_addr_t route_addr;
+            // if (ip6addr_aton(dtn_config.interfaces[i]->routes[j], &route_addr)) {
+            //     // Check if destination matches the route prefix (simplified check for /64)
+            //     if (dest_addr->addr[0] == route_addr.addr[0] &&
+            //         dest_addr->addr[1] == route_addr.addr[1]) {
+            //         interface_to_use = i;
+            //         break;
+            //     }
+            // }
+        }
+
+        if (is_dest_addresse_for_interface(dest_addr, dtn_config.interfaces[i]->addr_via)) {
+            interface_to_use = i;
+        }
+        
+        if (interface_to_use != -1) {
+            break;
+        }
+    }
+
+    char dest_str_log[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(dest_addr, dest_str_log, sizeof(dest_str_log));
+    if (interface_to_use == -1) {
+        DTN_WARN("No route/interface defined for destination %s, using default", dest_str_log);
         interface_to_use = 0;
-    } else {
-        interface_to_use = dtn_config.NODE % 2;
     }
 
-    // interface_to_use = 1;
-
-    switch (interface_to_use) {
-        case 0:
-            socket_to_use = raw_socket_enp0s8;
-            if_index_to_use = if_index_1;
-            if_name_to_use = if_name_1_global;
-            break;
-        case 1:
-            socket_to_use = raw_socket_enp0s9;
-            if_index_to_use = if_index_2;
-            if_name_to_use = if_name_2_global;
-            break;
-        default:
-            char dest_str[IP6ADDR_STRLEN_MAX];
-            DTN_ERROR("No route/interface defined for destination %s", ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str)));
-    }
-
-
-
-    
-    // if (use_second_interface) {
-    //     socket_to_use = raw_socket_enp0s9;
-    //     if_index_to_use = if_index_2;
-    //     if_name_to_use = if_name_2_global;
-    // } else {
-    //     socket_to_use = raw_socket_enp0s8;
-    //     if_index_to_use = if_index_1;
-    //     if_name_to_use = if_name_1_global;
-    // }
+    DTNInterfaceConfig* interface_config = dtn_config.interfaces[interface_to_use];
+    char dest_str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
+    DTN_INFO("Sending packet to %s using socket_to_use %d socket %d (interface %s)",
+        dest_str_log, interface_config->socket, interface_config->socket_index, interface_config->name);
     
     memset(&sin6, 0, sizeof(sin6));
     sin6.sin6_family = AF_INET6;
     sin6.sin6_port = 0;
     sin6.sin6_flowinfo = 0;
-    sin6.sin6_scope_id = if_index_to_use;
+    sin6.sin6_scope_id = interface_config->socket_index;
     
     memcpy(&sin6.sin6_addr, dest_addr, sizeof(struct in6_addr));
     
-    if (setsockopt(socket_to_use, SOL_SOCKET, SO_BINDTODEVICE, 
-                  if_name_to_use, strlen(if_name_to_use)) < 0) {
-        perror("Failed to bind socket to interface");
+    if (setsockopt(interface_config->socket, SOL_SOCKET, SO_BINDTODEVICE, 
+                  interface_config->name, strlen(interface_config->name)) < 0) {
+        DTN_ERROR("Failed to bind socket to interface");
         return -1;
     }
     
-    sent_bytes = sendto(socket_to_use, buf, p->tot_len, 0, 
+    sent_bytes = sendto(interface_config->socket, buf, p->tot_len, 0, 
                        (struct sockaddr *)&sin6, sizeof(sin6));
                        
     if (sent_bytes < 0) {
@@ -198,13 +187,12 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
 }
 
 void raw_socket_cleanup(void) {
-    if (raw_socket_enp0s8 >= 0) {
-        close(raw_socket_enp0s8);
-        raw_socket_enp0s8 = -1;
+     for (int i = 0; i < dtn_config.interface_count; i++) {
+        if (dtn_config.interfaces[i]->socket >= 0) {
+            close(dtn_config.interfaces[i]->socket);
+            dtn_config.interfaces[i]->socket = -1;
+        }
     }
-    if (raw_socket_enp0s9 >= 0) {
-        close(raw_socket_enp0s9);
-        raw_socket_enp0s9 = -1;
-    }
-    printf("Raw sockets closed\n");
+
+    DTN_INFO("Raw sockets clean up complete.");
 }

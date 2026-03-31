@@ -1,7 +1,7 @@
 services:
   dtn_node_0:
     environment:
-      APP_NAME: "plain node"
+      APP_NAME: "plain eagle"
       DEBUG: true
       PS1: "reg_node_0# "
       NODE: 0
@@ -29,14 +29,14 @@ services:
       NODE: 1
       HOST_TUN_IPV6_ADDR: "fd00:11::1"
       HOST_LWIP_IPV6_ADDR: "fd00:11::2"
-      INT_1: "enp0s8, fd00:01::2"
+      INT_1: "enp0s8, fd00:01::2, fd00:01::1"
       # ip -6 addr add fd00:12::1/64 dev enp0s9 || true
       # ip -6 route add fd00:22::/64 via fd00:12::2 dev enp0s9 || true
       # ip -6 route add fd00:23::/64 via fd00:12::2 dev enp0s9 || true
       # ip -6 route add fd00:33::/64 via fd00:12::2 dev enp0s9 || true
       # interface, addr, via, routes...
       INT_2: "enp0s9, fd00:12::1, fd00:12::2, fd00:22::, fd00:23::, fd00:33::"
-
+      # fd00:1::1
       NEIGH_1: "enp0s8, fd00:01::1, 02:42:01:00:00:00"
       NEIGH_2: "enp0s9, fd00:12::2, 02:42:12:00:00:02"
     build:

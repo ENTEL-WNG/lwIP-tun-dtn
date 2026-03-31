@@ -56,13 +56,14 @@ void dtn_log_write(dtn_level_t level, const char *file, int line, const char *fm
     // fprintf(stderr, "%s[%s:%d]\033[0m %s\n", color, file, line, user_buffer);
 
     // Format: [Timestamp.ms] [LEVEL] [file:line] Message
-    fprintf(stderr, "[%s.%03ld] [%s] [%s:%d] %s\n", 
+    fprintf(stderr, "[%s.%03ld] [%s] [%s:%03d] %s\n", 
             time_buffer, 
             (long)tv.tv_usec / 1000, 
             level_strings[level], 
             file, 
             line, 
             user_buffer);
+
 
     // fflush(stderr);
 }

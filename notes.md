@@ -9,13 +9,21 @@ Ping lwIP directly `docker exec -it dtn_node_1 ping6 fd00:22::2`
 check pings `docker exec -it dtn_node_1 tcpdump -i tun0 -n icmp6`
 
 
+docker exec -it dtn_node_1 ping6 -c 1 fd00:12::1
+
+docker exec -it dtn_node_1 ping6 -c 1 fd00:11::2
+
+docker exec -it dtn_node_2 ping6 -c 1 fd00:12::1
+
+
+docker exec -it reg_node_0 ping6 -c 1 fd00:12::2
 
 docker exec -it reg_node_0 ping6 -c 4 fd00:22::2
 docker exec -it reg_node_0 ping6 -c 4 fd00:12::2
 docker exec -it reg_node_0 ping6 -c 4 fd00:12::1
 
 docker exec -it dtn_node_2 ping6 -c 4 fd00:22::2
-docker exec -it dtn_node_2 ping6 -c 4 fd00:12::2
+docker exec -it dtn_node_1 ping6 -c 4 fd00:22::2
 
 docker exec -it dtn_node_1 ping6 -c 4 fd00:01::1
 
@@ -26,6 +34,9 @@ docker exec -it dtn_node_1 ip -6 neigh show
 docker exec -it reg_node_0 tcpdump -i enp0s9 -n icmp6
 
 docker exec -it dtn_node_2 tcpdump -i enp0s8 -n icmp6
+
+
+docker exec -it reg_node_0 ping6 -c 4 fd00:12::1
 
 
 #### Show routes
@@ -151,3 +162,35 @@ docker run -it --rm \
 
 
 docker run -it --privileged --entrypoint /bin/bash lwip-tun-dtn
+
+## Node 1
+interfaces
+fd00:0001::1
+fd00:0001::2
+fd00:0001::3
+
+lwIP
+fd00:0001::100
+fd00:0001::101
+
+## Node 2
+interfaces
+fd00:0002::1
+fd00:0002::2
+
+lwIP
+fd00:0002::100
+fd00:0002::101
+
+## Node 3
+interfaces
+fd00:0003::1
+
+lwIP
+fd00:0003::100
+fd00:0003::101
+
+## Network
+
+node 1 <1-1> node 2 <2-1> node 3
+
