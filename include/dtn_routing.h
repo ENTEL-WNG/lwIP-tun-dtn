@@ -1,5 +1,5 @@
-// dtn_routing.h: Header file for DTN routing functions implementing contact-based and schedule-aware routing
-// Copyright (C) 2025 Michael Karpov
+// dtn_routing.h: Header file for DTN routing functions implementing contact-based and
+// schedule-aware routing Copyright (C) 2025 Michael Karpov
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -16,25 +16,26 @@
 #ifndef DTN_ROUTING_H
 #define DTN_ROUTING_H
 
-#include "dtn_module.h"
-#include "lwip/ip6_addr.h"
 #include <stdbool.h>
 #include <time.h>
 
+#include "dtn_module.h"
+#include "lwip/ip6_addr.h"
+
 // Contact opportunity
 typedef struct Contact_Info {
-    ip6_addr_t node_addr;      
-    ip6_addr_t next_hop;       
-    u32_t start_time_ms;      
-    u32_t end_time_ms;        
-    bool is_dtn_node;       
-    struct Contact_Info *next;  
+    ip6_addr_t node_addr;
+    ip6_addr_t next_hop;
+    u32_t start_time_ms;
+    u32_t end_time_ms;
+    bool is_dtn_node;
+    struct Contact_Info* next;
 } Contact_Info;
 
 typedef struct Routing_Function {
     DTN_Module* parent_module;
     char* routing_algorithm_name;
-    
+
     Contact_Info* contact_list_head;
 } Routing_Function;
 
@@ -44,14 +45,12 @@ void dtn_routing_destroy(Routing_Function* routing);
 
 bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t* dest_ip);
 
-int dtn_routing_get_dtn_next_hop(Routing_Function* routing, const ip6_addr_t* dest_ip, ip6_addr_t* next_hop_ip);
+int dtn_routing_get_dtn_next_hop(Routing_Function* routing, const ip6_addr_t* dest_ip,
+                                 ip6_addr_t* next_hop_ip);
 
-int dtn_routing_add_contact(Routing_Function* routing, 
-                          const ip6_addr_t* node_addr, 
-                          const ip6_addr_t* next_hop,
-                          u32_t start_time_ms, 
-                          u32_t end_time_ms,
-                          bool is_dtn_node);
+int dtn_routing_add_contact(Routing_Function* routing, const ip6_addr_t* node_addr,
+                            const ip6_addr_t* next_hop, u32_t start_time_ms, u32_t end_time_ms,
+                            bool is_dtn_node);
 
 int dtn_routing_remove_contact(Routing_Function* routing, const ip6_addr_t* node_addr);
 

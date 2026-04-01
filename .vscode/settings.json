@@ -1,5 +1,6 @@
 {
     "files.associations": {
         "select.h": "c"
-    }
+    },
+    "editor.formatOnSave": true
 }

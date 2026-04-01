@@ -2,10 +2,10 @@
 #define DTN_CONFIG_H
 
 typedef struct {
-    char *name;
-    char *addr;
-    char *addr_via;
-    char **routes;
+    char* name;
+    char* addr;
+    char* addr_via;
+    char** routes;
     int route_count;
     // assigned during raw_socket_init
     int socket;
@@ -14,11 +14,11 @@ typedef struct {
 } DTNInterfaceConfig;
 
 typedef struct {
-    int     DEBUG;
-    char    APP_NAME[128];
-    int     NODE;
-    char    HOST_TUN_IPV6_ADDR[128];
-    char    HOST_LWIP_IPV6_ADDR[128];
+    int DEBUG;
+    char APP_NAME[128];
+    int NODE;
+    char HOST_TUN_IPV6_ADDR[128];
+    char HOST_LWIP_IPV6_ADDR[128];
     DTNInterfaceConfig** interfaces;
     int interface_count;
 } DTNConfig;
