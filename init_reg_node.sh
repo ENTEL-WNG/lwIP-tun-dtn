@@ -4,7 +4,7 @@ echo "--- DTN $NODE: Initializing Regular Node ---"
 
 sysctl -w net.ipv6.conf.all.accept_dad=0 || true
 # sysctl -w net.ipv6.conf.all.forwarding=0 || true
-sysctl -w net.ipv6.conf.all.forwarding=0 || true
+sysctl -w net.ipv6.conf.all.forwarding=1 || true
 
 ./init_routes.sh
 

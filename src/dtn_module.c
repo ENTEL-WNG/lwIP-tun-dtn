@@ -14,11 +14,13 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 #include "dtn_module.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "dtn_controller.h"
 #include "dtn_routing.h"
 #include "dtn_storage.h"
-#include <stdlib.h> 
-#include <stdio.h>  
 
 DTN_Module* dtn_module_init(void) {
     printf("Initializing DTN Module...\n");
@@ -38,7 +40,7 @@ DTN_Module* dtn_module_init(void) {
 
     if (!module->controller || !module->routing || !module->storage) {
         fprintf(stderr, "Failed to create one or more DTN components.\n");
-        dtn_module_cleanup(module); 
+        dtn_module_cleanup(module);
         return NULL;
     }
 
@@ -47,7 +49,8 @@ DTN_Module* dtn_module_init(void) {
 }
 
 void dtn_module_cleanup(DTN_Module* module) {
-    if (!module) return;
+    if (!module)
+        return;
     printf("Cleaning up DTN Module...\n");
 
     dtn_controller_destroy(module->controller);

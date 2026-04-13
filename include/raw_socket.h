@@ -1,5 +1,5 @@
-// raw_socket.h: Header file for raw socket interface managing IPv6 packet transmission on multiple network interfaces
-// Copyright (C) 2025 Michael Karpov
+// raw_socket.h: Header file for raw socket interface managing IPv6 packet transmission on multiple
+// network interfaces Copyright (C) 2025 Michael Karpov
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU Affero General Public License as published by
@@ -17,17 +17,18 @@
 #define RAW_SOCKET_H
 
 #include <netinet/in.h>
+
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
 extern int raw_socket_enp0s8;
 extern int raw_socket_enp0s9;
 
-int raw_socket_init(const char* if_name_1, const char* if_name_2);
+int raw_socket_init(void);
 
 // Send an IPv6 packet through a raw socket on the appropriate interface
 // Returns 0 on success, -1 on failure
-int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr);
+int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr);
 
 void raw_socket_cleanup(void);
 

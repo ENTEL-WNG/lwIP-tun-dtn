@@ -40,12 +40,12 @@ services:
       NEIGH_2: "enp0s9, fd00:1:2::2, 02:00:01:00:02:02"
     build:
       context: .
-      dockerfile: Dockerfile.dtn
-      # dockerfile: Dockerfile.reg
+      # dockerfile: Dockerfile.dtn
+      dockerfile: Dockerfile.reg
     container_name: dtn_node_1
     privileged: true
-    entrypoint: ["/root/init_dtn_node.sh"]
-    # entrypoint: ["/root/init_reg_node.sh"]
+    # entrypoint: ["/root/init_dtn_node.sh"]
+    entrypoint: ["/root/init_reg_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
@@ -74,12 +74,12 @@ services:
       NEIGH_2: "enp0s9, fd00:2:3::2, 02:00:02:00:03:03"
     build:
       context: .
-      dockerfile: Dockerfile.dtn
-      # dockerfile: Dockerfile.reg
+      # dockerfile: Dockerfile.dtn
+      dockerfile: Dockerfile.reg
     container_name: dtn_node_2
     privileged: true
-    entrypoint: ["/root/init_dtn_node.sh"]
-    # entrypoint: ["/root/init_reg_node.sh"]
+    # entrypoint: ["/root/init_dtn_node.sh"]
+    entrypoint: ["/root/init_reg_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:
@@ -105,12 +105,12 @@ services:
       NEIGH_1: "enp0s8, fd00:2:3::1, 02:00:02:00:03:02"
     build:
       context: .
-      dockerfile: Dockerfile.dtn
-      # dockerfile: Dockerfile.reg
+      # dockerfile: Dockerfile.dtn
+      dockerfile: Dockerfile.reg
     container_name: dtn_node_3
     privileged: true
-    entrypoint: ["/root/init_dtn_node.sh"]
-    # entrypoint: ["/root/init_reg_node.sh"]
+    # entrypoint: ["/root/init_dtn_node.sh"]
+    entrypoint: ["/root/init_reg_node.sh"]
     devices:
       - "/dev/net/tun:/dev/net/tun"
     networks:

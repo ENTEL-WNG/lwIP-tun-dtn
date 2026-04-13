@@ -1,8 +1,8 @@
-echo "Node 1 -> Node 2 "
-docker exec -it dtn_node_2 ping6 -c3 fd00:12::2
+echo "Node 0 -> Node 1"
+docker exec -it reg_node_0 ping6 -c 1 fd00:0:1::2
 
-echo "Node 2 -> Node 1 "
-docker exec -it dtn_node_2 ping6 -c3 fd00:12::1
+echo "Node 0 -> Node 3"
+docker exec -it reg_node_0 ping6 -c 1 fd00:2:3::2
 
-echo "Node 1 -> Node 2 "
-docker exec -it dtn_node_2 ping6 -c3 fd00:12::1
+echo "Node 3 -> Node 0"
+docker exec -it dtn_node_3 ping6 -c 1 fd00:0:1::1
