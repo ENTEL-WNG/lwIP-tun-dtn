@@ -9,27 +9,38 @@ Ping lwIP directly `docker exec -it dtn_node_1 ping6 fd00:22::2`
 check pings `docker exec -it dtn_node_1 tcpdump -i tun0 -n icmp6`
 
 
-docker exec -it dtn_node_1 ping6 -c 1 fd00:12::1
+##### node 0 -> node 1
 
-docker exec -it dtn_node_1 ping6 -c 1 fd00:11::2
+docker exec -it reg_node_0 ping6 -c 1 fd00:0:1::1
 
-docker exec -it dtn_node_2 ping6 -c 1 fd00:12::1
+docker exec -it reg_node_0 ping6 -c 1 fd00:1:2::1
 
+docker exec -it reg_node_0 ping6 -c 1 fd00:2:3::1
 
-docker exec -it reg_node_0 ping6 -c 1 fd00:12::2
+##### node 0 <- node 1
+docker exec -it dtn_node_1 ping6 -c 1 fd00:0:1::1
 
-docker exec -it reg_node_0 ping6 -c 4 fd00:22::2
-docker exec -it reg_node_0 ping6 -c 4 fd00:12::2
-docker exec -it reg_node_0 ping6 -c 4 fd00:12::1
+docker exec -it dtn_node_1 ping6 -c 1 fd00:1:2::2
 
-docker exec -it dtn_node_2 ping6 -c 4 fd00:22::2
-docker exec -it dtn_node_1 ping6 -c 4 fd00:22::2
+##### node 0 -> node 2
+docker exec -it reg_node_0 ping6 -c 1 fd00:1:2::2
 
-docker exec -it dtn_node_1 ping6 -c 4 fd00:01::1
+##### node 0 -> node 3
+docker exec -it reg_node_0 ping6 -c 1 fd00:2:3::2
+
+##### node 1 -> node 0
+docker exec -it dtn_node_3 ping6 -c 1 fd00:0:1::1
+
+##### node 2 -> node 3
+docker exec -it dtn_node_2 ping6 -c 1 fd00:2:3::2
+
+docker exec -it dtn_node_3 ping6 -c 1 fd00:ffff:3::2
+docker exec -it dtn_node_3 ping6 -c 1 fd00:2:3::2
+
 
 docker exec -it dtn_node_1 tcpdump -i enp0s9 -n icmp6
 
-docker exec -it dtn_node_1 ip -6 neigh show     
+docker exec -it dtn_node_3 ip -6 neigh show     
 
 docker exec -it reg_node_0 tcpdump -i enp0s9 -n icmp6
 
@@ -38,6 +49,8 @@ docker exec -it dtn_node_2 tcpdump -i enp0s8 -n icmp6
 
 docker exec -it reg_node_0 ping6 -c 4 fd00:12::1
 
+
+### 
 
 #### Show routes
 docker exec reg_node_0 ip -6 route show
@@ -107,13 +120,15 @@ default via fd00::2 dev tun0 metric 1024 pref medium
 docker exec -it dtn_node_2 ping6 fd00:00::2
 
 
-
+## Docker
 
 # docker build -f Dockerfile.build  -t dtn_node_build .
 
 docker build -f Dockerfile.build .
 
 docker build -t lwip-tun-dtn .
+
+docker-compose -f docker-compose-test.yml down
 
 
 docker run -it -d --rm --cap-add=NET_ADMIN --device /dev/net/tun lwip-tun-dtn /bin/bash

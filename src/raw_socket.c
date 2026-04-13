@@ -93,11 +93,18 @@ bool is_dest_addresse_for_interface(const ip6_addr_t* dest_addr, const char* add
     ip6_addr_t route_addr;
 
     if (ip6addr_aton(addr, &route_addr)) {
-        if (dest_addr->addr[0] == route_addr.addr[0] && dest_addr->addr[1] == route_addr.addr[1]) {
-            return 1;
-        }
+        // DTN_DEBUG("%s == %s", dest_addr->addr[0], route_addr.addr[0]);
+        // DTN_DEBUG("%s == %s", dest_addr->addr[1], route_addr.addr[1]);
+        // DTN_DEBUG("%s == %s", dest_addr->addr[2], route_addr.addr[2]);
+
+        // return (dest_addr->addr[0] == route_addr.addr[0] &&
+        //         dest_addr->addr[1] == route_addr.addr[1] &&
+        //         dest_addr->addr[2] == route_addr.addr[2]);
+
+        return (dest_addr->addr[0] == route_addr.addr[0] &&
+                dest_addr->addr[1] == route_addr.addr[1]);
     }
-    return 0;
+    return false;
 }
 
 int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
