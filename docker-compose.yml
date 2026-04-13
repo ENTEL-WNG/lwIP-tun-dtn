@@ -1,4 +1,19 @@
 services:
+  traffic_monitor:
+    image: nicolaka/netshoot
+    network_mode: host          # sees ALL host interfaces including all br- bridges
+    command: >
+      tcpdump -i any
+      '(net fd00::/16)'
+      -w /captures/all.pcap
+    volumes:
+      - ./captures:/captures
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    logging:
+      driver: "none"
+
   dtn_node_0:
     environment:
       APP_NAME: "plain eagle"
@@ -19,6 +34,8 @@ services:
         mac_address: "02:00:00:00:01:00"
     cap_add:
       - NET_ADMIN
+    depends_on:
+      - traffic_monitor
 
   dtn_node_1:
     environment:

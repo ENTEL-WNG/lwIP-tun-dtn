@@ -216,7 +216,11 @@ bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t*
             ip6_addr_set_zone(&local_dest_nozone, IP6_NO_ZONE);
 #endif
 
-            if (ip6_addr_cmp(&local_dest_nozone, &contact_addr_nozone)) {
+            if (ip6_addr_eq(&local_dest_nozone, &contact_addr_nozone)) {
+                char local_dest_nozone_str[IP6ADDR_STRLEN_MAX];
+                ip6addr_ntoa_r(&local_dest_nozone, local_dest_nozone_str,
+                               sizeof(local_dest_nozone_str));
+                DTN_INFO("Dest: %s is a DTN destination", local_dest_nozone_str);
                 return true;
             }
         }

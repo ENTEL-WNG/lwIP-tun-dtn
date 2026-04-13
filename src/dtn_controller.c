@@ -231,19 +231,19 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
+    // ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
     u32_t temp_v_tc_fl;
     u16_t temp_plen;
     u8_t temp_hoplim;
-    memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
-    memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
+    // memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
+    // memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
     memcpy(&temp_v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
     memcpy(&temp_plen, &ip6hdr->_plen, sizeof(u16_t));
     memcpy(&temp_hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
 
     char src_str[IP6ADDR_STRLEN_MAX];
     char dest_str[IP6ADDR_STRLEN_MAX];
-    ip6_addr_t temp_src_addr, temp_dest_addr;
+    ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
     ip6_addr_copy_from_packed(temp_src_addr, ip6hdr->src);
     ip6_addr_copy_from_packed(temp_dest_addr, ip6hdr->dest);
     ip6addr_ntoa_r(&temp_src_addr, src_str, sizeof(src_str));

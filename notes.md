@@ -124,7 +124,7 @@ docker exec -it dtn_node_2 ping6 fd00:00::2
 
 # docker build -f Dockerfile.build  -t dtn_node_build .
 
-docker build -f Dockerfile.build .
+docker build -f Dockerfile.dev .
 
 docker build -t lwip-tun-dtn .
 
