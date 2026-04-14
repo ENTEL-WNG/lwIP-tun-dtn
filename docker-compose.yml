@@ -1,18 +1,4 @@
 services:
-  traffic_monitor:
-    image: nicolaka/netshoot
-    network_mode: host          # sees ALL host interfaces including all br- bridges
-    command: >
-      tcpdump -i any
-      '(net fd00::/16)'
-      -w /captures/all.pcap
-    volumes:
-      - ./captures:/captures
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    logging:
-      driver: "none"
 
   dtn_node_0:
     environment:
@@ -34,8 +20,6 @@ services:
         mac_address: "02:00:00:00:01:00"
     cap_add:
       - NET_ADMIN
-    depends_on:
-      - traffic_monitor
 
   dtn_node_1:
     environment:
@@ -139,6 +123,35 @@ services:
       - NET_ADMIN
     depends_on:
       - dtn_node_2
+
+  traffic_node_3:
+    image: nicolaka/netshoot
+    container_name: traffic_node_3
+    network_mode: "service:dtn_node_3"   # shares exact same network namespace as node_1
+    command: sleep infinity
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - dtn_node_3
+
+  traffic_monitor:
+    image: nicolaka/netshoot
+    container_name: traffic_monitor
+    network_mode: host                        # sees all Docker bridge interfaces
+    command: sleep infinity  # -U = unbuffered, stdout stream
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    depends_on:
+      - dtn_node_0
+      - dtn_node_1
+      - dtn_node_2
+      - dtn_node_3
+    volumes:
+      - ./captures:/captures
+    logging:
+      driver: "none"
 
 networks:
   net_01:

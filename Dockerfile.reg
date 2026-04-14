@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     procps \
     iputils-ping \
     tcpdump \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
  
 WORKDIR /root/
