@@ -45,6 +45,6 @@ void dtn_icmpv6_send_pck_forwarded(struct netif* netif, struct pbuf* p, u8_t cod
 void dtn_icmpv6_send_pck_delivered(struct netif* netif, struct pbuf* p, u8_t code);
 void dtn_icmpv6_send_pck_deleted(struct netif* netif, struct pbuf* p, u8_t code, u8_t reason);
 
-u8_t dtn_icmpv6_process(struct pbuf* p, struct netif* inp_netif);
+u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr);
 
 #endif

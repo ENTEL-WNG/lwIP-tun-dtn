@@ -124,12 +124,15 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
     err_t err = raw_socket_send_ipv6(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
 
     char dst_str[IP6ADDR_STRLEN_MAX];
+    char src_addr_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&dest_addr, dst_str, sizeof(dst_str));
+    ip6addr_ntoa_r(&src_addr, src_addr_str, sizeof(src_addr_str));
 
     if (err != ERR_OK) {
         DTN_ERROR("DTN ICMPv6: Failed to send message to %s via raw socket, err=%d", dst_str, err);
     } else {
-        DTN_INFO("DTN ICMPv6: Sent type %d code %d to %s via raw socket", type, code, dst_str);
+        DTN_INFO("DTN ICMPv6: Sent type %d code %d from %s to %s via raw socket", type, code,
+                 src_addr_str, dst_str);
     }
 
     pbuf_free(complete_pkt);
@@ -169,7 +172,7 @@ static void packed_ip6_addr_to_ip6_addr_t(const u32_t packed_addr[4], ip6_addr_t
 }
 
 // Process incoming DTN ICMPv6 message
-u8_t dtn_icmpv6_process(struct pbuf* p, struct netif* inp_netif) {
+u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
     extern DTN_Module* global_dtn_module;
 
     if (!p || !p->payload || !global_dtn_module || !global_dtn_module->storage ||
@@ -185,12 +188,12 @@ u8_t dtn_icmpv6_process(struct pbuf* p, struct netif* inp_netif) {
         case ICMP6_TYPE_DTN_PCK_RECEIVED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
 
-            char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
-            ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
+            char src_addr_str[IP6ADDR_STRLEN_MAX];
+            ip6addr_ntoa_r(&src_addr, src_addr_str, sizeof(src_addr_str));
 
-            printf(
+            DTN_INFO(
                 "DTN ICMPv6: Received PCK-RECEIVED type %d code %d from %s, timestamp %u, reason "
-                "%d\n",
+                "%d",
                 icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
                 dtn_payload->reason_code);
 

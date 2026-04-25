@@ -1,5 +1,4 @@
 services:
-
   dtn_node_0:
     environment:
       APP_NAME: "plain eagle"
@@ -20,6 +19,8 @@ services:
         mac_address: "02:00:00:00:01:00"
     cap_add:
       - NET_ADMIN
+    volumes:
+      - ./captures:/captures
 
   dtn_node_1:
     environment:
@@ -58,6 +59,8 @@ services:
       - NET_ADMIN
     depends_on:
       - dtn_node_0
+    volumes:
+      - ./captures:/captures
     
   dtn_node_2:
     environment:
@@ -92,6 +95,8 @@ services:
       - NET_ADMIN
     depends_on:
       - dtn_node_1
+    volumes:
+      - ./captures:/captures
 
   dtn_node_3:
     environment:
@@ -123,17 +128,8 @@ services:
       - NET_ADMIN
     depends_on:
       - dtn_node_2
-
-  traffic_node_3:
-    image: nicolaka/netshoot
-    container_name: traffic_node_3
-    network_mode: "service:dtn_node_3"   # shares exact same network namespace as node_1
-    command: sleep infinity
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    depends_on:
-      - dtn_node_3
+    volumes:
+      - ./captures:/captures
 
   traffic_monitor:
     image: nicolaka/netshoot
@@ -150,8 +146,13 @@ services:
       - dtn_node_3
     volumes:
       - ./captures:/captures
-    logging:
-      driver: "none"
+
+  dozzle:
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 8888:8080
 
 networks:
   net_01:

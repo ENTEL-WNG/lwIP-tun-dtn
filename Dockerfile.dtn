@@ -44,6 +44,7 @@ WORKDIR /root/
 COPY --from=builder /app/lwip_tun .
 COPY init_dtn_node.sh .
 COPY init_routes.sh .
-RUN chmod +x init_dtn_node.sh init_routes.sh
+COPY capture.sh .
+RUN chmod +x init_dtn_node.sh init_routes.sh capture.sh
 
 # ENTRYPOINT ["./init_dtn_node.sh"]

@@ -37,6 +37,66 @@ docker exec -it dtn_node_2 ping6 -c 1 fd00:2:3::2
 docker exec -it dtn_node_3 ping6 -c 1 fd00:ffff:3::2
 docker exec -it dtn_node_3 ping6 -c 1 fd00:2:3::2
 
+docker exec -it dtn_node_3 /bin/sh ./capture.sh
+
+### listen to traffic inside node
+
+docker exec -it dtn_node_3 bash
+
+# Then inside:
+tcpdump -i enp0s8 -n ip6     # traffic from node 0
+tcpdump -i enp0s9 -n ip6     # traffic toward node 2
+tcpdump -i any -n ip6         # all interfaces
+
+
+
+####
+
+
+
+docker exec -it dtn_node_3 bash
+root@cef96fc77107:~# tcpdump -i any -n ip6
+tcpdump: data link type LINUX_SLL2
+tcpdump: verbose output suppressed, use -v[v]... for full protocol decode
+listening on any, link-type LINUX_SLL2 (Linux cooked v2), snapshot length 262144 bytes
+17:19:41.984927 enp0s8 In  IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 1, seq 1, length 64
+17:19:41.984944 tun0  Out IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 1, seq 1, length 64
+17:19:41.985028 enp0s8 Out IP6 fd00:ffff:3::2 > fd00:0:1::1: ICMP6, mtrace response, length 65
+        0x0000:  c800 a973 0000 0000 3704 0100 0000 0040
+        0x0010:  0060 0ade 9f00 403a 3dfd 0000 0000 0100
+        0x0020:  0000 0000 0000 0000 01fd 0000 0200 0300
+        0x0030:  0000 0000 0000 0000 0280 00d0 2600 0100
+        0x0040:  01
+17:19:41.985061 tun0  In  IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 1, seq 1, length 64
+17:19:41.985071 tun0  Out IP6 fd00:2:3::2 > fd00:0:1::1: ICMP6, echo reply, id 1, seq 1, length 64
+17:19:41.985104 enp0s8 Out IP6 fd00:2:3::2 > fd00:0:1::1: ICMP6, echo reply, id 1, seq 1, length 64
+
+
+17:31:08.868610 enp0s8 In  IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 3, seq 1, length 64
+17:31:08.868619 tun0  Out IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 3, seq 1, length 64
+17:31:08.868710 tun0  In  IP6 fd00:0:1::1 > fd00:2:3::2: ICMP6, echo request, id 3, seq 1, length 64
+17:31:08.868730 tun0  Out IP6 fd00:2:3::2 > fd00:0:1::1: ICMP6, echo reply, id 3, seq 1, length 64
+17:31:08.868753 enp0s8 Out IP6 fd00:2:3::2 > fd00:0:1::1: ICMP6, echo reply, id 3, seq 1, length 64
+
+
+docker exec -it dtn_node_1 bash
+
+docker exec -it dtn_node_1 tcpdump -i any -n ip6
+
+
+docker exec -it reg_node_0 ping6 -c 1 fd00:2:3::2
+
+
+
+docker exec -it dtn_node_3 watch -n1 'ip6tables -t mangle -L PREROUTING -v'
+
+ pkts bytes target     prot opt in     out     source               destination
+    3   168 ACCEPT     ipv6-icmp --  any    any     anywhere             anywhere             ipv6-icmp router-solicitation
+    0     0 ACCEPT     ipv6-icmp --  any    any     anywhere             anywhere             ipv6-icmp router-advertisement
+    6   432 ACCEPT     ipv6-icmp --  any    any     anywhere             anywhere             ipv6-icmp neighbour-solicitation
+    0     0 ACCEPT     ipv6-icmp --  any    any     anywhere             anywhere             ipv6-icmp neighbour-advertisement
+   24  2740 MARK       all  --  enp0s8 any     anywhere             anywhere             MARK set 0x1
+
 
 docker exec -it dtn_node_1 tcpdump -i enp0s9 -n icmp6
 

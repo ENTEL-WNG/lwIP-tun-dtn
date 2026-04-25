@@ -15,6 +15,8 @@ echo "$(date +"[%Y-%m-%d %H:%M:%S.%3N]") --- Initializing Docker Network Environ
 sysctl -w net.ipv6.conf.all.accept_dad=0 || true
 sysctl -w net.ipv6.conf.all.forwarding=1 || true
 
+# sysctl -w net.ipv6.icmp.echo_ignore_all=1
+
 # --- 3. Interface Renaming (Docker Workaround) ---
 # We grab the first two 'eth' interfaces provided by Docker
 # OLD_INT1=$(ip -o link show | awk -F': ' '{print $2}' | grep '^eth' | sed 's/@.*//' | sed -n '1p')
@@ -56,14 +58,30 @@ ip link set tun0 up
 echo "Applying Policy Based Routing (Force all traffic -> LwIP)..."
 
 # Clear tables to ensure idempotency
+
+modprobe nf_log_ipv6 || true
+sysctl -w net.netfilter.nf_log.10=nf_log_ipv6 || true
+
+ip6tables -t raw -F PREROUTING
+ip6tables -t raw -F OUTPUT
 ip6tables -t mangle -F PREROUTING
 ip6tables -t mangle -F OUTPUT
+ip6tables -t filter -F OUTPUT
+
+ip6tables -t raw -A PREROUTING -i enp0s8 -j TRACE
+ip6tables -t raw -A OUTPUT -j TRACE
 
 # A. EXEMPTIONS: Keep Neighbor Discovery (Layer 2) inside the Linux Kernel
-# If you don't do this, Linux won't be able to resolve MAC addresses.
 for TARGET in 133 134 135 136; do
     ip6tables -t mangle -A PREROUTING -p icmpv6 --icmpv6-type $TARGET -j ACCEPT
 done
+
+# B. EXEMPTIONS: Allow kernel ND on OUTPUT too
+# for TARGET in 133 134 135 136; do
+#     ip6tables -t filter -A OUTPUT -p icmpv6 --icmpv6-type $TARGET -j ACCEPT  # ← add
+# done
+
+# ip6tables -t mangle -A PREROUTING -d [local_ip] -j TEE  -gateway [lwip_ip]
 
 for interface in "${ALL_INTERFACES[@]}"; do
     echo "ip6tables -t mangle -A PREROUTING -i "$interface" -j MARK --set-mark 1"
@@ -75,12 +93,18 @@ done
 
 ip6tables -t mangle -A OUTPUT -j MARK --set-mark 1
 
-# B. MARKING: Mark all traffic entering from physical interfaces
-# ip6tables -t mangle -A PREROUTING -i "$INT_1" -j MARK --set-mark 1
-# ip6tables -t mangle -A PREROUTING -i "$INT_2" -j MARK --set-mark 1
-# Replace the blanket MARK rules with destination-aware ones
-# Mark traffic from physical interfaces ONLY if dst is not local
-# ip6tables -t mangle -A PREROUTING -i "$INT_1" -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+
+# ip6tables -t mangle -A OUTPUT -o tun0 -j MARK --set-mark 1
+# for interface in "${ALL_INTERFACES[@]}"; do
+#     echo "ip6tables -t raw -A OUTPUT -o "$interface" -p icmpv6 --icmpv6-type echo-reply -j DROP"
+#     ip6tables -t raw -A OUTPUT -o "$interface" -p icmpv6 --icmpv6-type echo-reply -j DROP
+# done
+
+# ip6tables -t mangle -A OUTPUT -o tun0 -j MARK --set-mark 1
+# for interface in "${ALL_INTERFACES[@]}"; do
+#     echo "ip6tables -t filter -A OUTPUT -o "$interface" -m mark ! --mark 1 -j DROP"
+#     ip6tables -t filter -A OUTPUT -o "$interface" -m mark ! --mark 1 -j DROP
+# done
 
 
 # C. THE RULE: Packets with Mark 1 follow Table 100

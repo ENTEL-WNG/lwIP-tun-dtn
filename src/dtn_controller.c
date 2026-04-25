@@ -158,12 +158,12 @@ void dtn_controller_remove_tracking(DTN_Controller* controller, const ip6_addr_t
 }
 
 int dtn_controller_process_icmpv6(DTN_Controller* controller, struct pbuf* p,
-                                  struct netif* inp_netif) {
+                                  ip6_addr_t* dest_addr) {
     if (!p || !controller || !controller->parent_module) {
         return 0;
     }
 
-    return dtn_icmpv6_process(p, inp_netif);
+    return dtn_icmpv6_process(p, dest_addr);
 }
 
 static bool is_next_hop_active_contact(Routing_Function* routing, ip6_addr_t* next_hop_ip) {
@@ -285,7 +285,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         }
 
         // Process the ICMPv6 message
-        if (dtn_controller_process_icmpv6(controller, q, inp_netif)) {
+        if (dtn_controller_process_icmpv6(controller, q, &temp_src_addr)) {
             pbuf_free(q);
             pbuf_free(p);
             return;
@@ -320,7 +320,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         if (p_copy != NULL) {
             if (pbuf_copy(p_copy, p) == ERR_OK) {
                 // Send DTN-PCK-RECEIVED message to acknowledge receipt
-                dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_INFO);
+                // dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_INFO);
 
                 // Also send DTN-PCK-DELIVERED
                 // dtn_icmpv6_send_pck_delivered(inp_netif, p_copy,
