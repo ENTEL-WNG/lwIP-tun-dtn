@@ -54,5 +54,5 @@ void dtn_log_write(dtn_level_t level, const char* file, int line, const char* fm
     fprintf(stderr, "[%s.%06ld] [%s] [%s:%03d] %s\n", time_buffer, (long)tv.tv_usec,
             level_strings[level], file, line, user_buffer);
 
-    fflush(stderr);
+    // fflush(stderr);
 }

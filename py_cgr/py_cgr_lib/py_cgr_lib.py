@@ -596,6 +596,11 @@ def fwd_candidate(curr_time, curr_node, contact_plan, ipv6_packet, routes, exclu
             effective_duration = effective_stop_time - effective_start_time
             contact.effective_volume_limit = min(effective_duration * contact.rate,
                                                  contact.mav[ipv6_packet.priority])
+            # print(f'contact.end {contact.end} | min_succ_stop_time {min_succ_stop_time}')
+            # print(f'effective_stop_time {effective_stop_time} - effective_start_time {effective_start_time}')
+            # print(f'effective_duration {effective_duration}')
+            # print(f'contact.rate {contact.rate}')
+            # print(f'contact {contact}')
             if contact.effective_volume_limit < min_effective_volume_limit:
                 min_effective_volume_limit = contact.effective_volume_limit
         route_volume_limit = min_effective_volume_limit

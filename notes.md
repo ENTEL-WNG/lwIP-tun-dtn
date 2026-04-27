@@ -1,5 +1,13 @@
 #
 
+
+#### CGR ping
+
+docker exec -it reg_node_0 ping6 -c 1 fd00:ffff:3::2
+docker exec -it reg_node_0 ping6 -c 1 fd00:2:3::2
+
+./monitor.sh
+
 ### Testing
 
 Ping lwIP directly `docker exec -it dtn_node_2 ping6 fd00::2`

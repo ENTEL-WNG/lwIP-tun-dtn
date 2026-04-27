@@ -346,6 +346,11 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
             dtn_routing_get_dtn_next_hop(routing, &temp_v_tc_fl, &temp_plen, &temp_hoplim,
                                          &temp_dest_addr, &temp_dest_sender, &next_hop_ip);
         bool active = is_next_hop_active_contact(routing, &next_hop_ip);
+
+        DTN_INFO("Routing Status: [Available: %s | Active: %s] -> Next Hop: %s",
+                 contact_available ? "YES" : "NO", active ? "ACTIVE" : "INACTIVE",
+                 ipaddr_ntoa(&next_hop_ip));
+
         if (contact_available && active) {
             // Create a copy of the packet for DTN-PCK-FORWARDED message
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
@@ -375,7 +380,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
             if (p_copy != NULL) {
                 if (pbuf_copy(p_copy, p) == ERR_OK) {
                     // Send DTN-PCK-RECEIVED message
-                    dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_CONTACT);
+                    // dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_CONTACT);
                 }
                 pbuf_free(p_copy);
             }

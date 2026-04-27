@@ -1,1 +1,1 @@
-docker compose logs --no-color | sort -t '|' -k 2 > captures/log_$(date +%Y%m%d_%H%M%S).txt
+docker compose logs --no-color | sort -t '|' -k 2 > captures/log_$(date +%Y-%m-%d_%H-%M-%S).txt

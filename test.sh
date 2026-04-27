@@ -22,6 +22,6 @@ docker exec -it reg_node_0 sh echo "hello" | nc -u fd00:2:3::2 8080
 
 nc -u -6 -l -k -p 8080
 
-nc -u -6 fd00:2:3::2 8080
+docker exec -it reg_node_0  nc -u -6 fd00:2:3::2 8080
 
 echo "hi" | nc -u -6 fd00:2:3::2 8080

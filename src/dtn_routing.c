@@ -25,10 +25,10 @@
 #include <ctype.h>
 #include <stdint.h>
 
+#include "dtn_config.h"
 #include "dtn_logger.h"
 #include "dtn_routing.h"
 
-#define CURR_NODE_ADDR "fd00:01::2"
 #define MAX_LENGTH 5000
 
 Routing_Function* dtn_routing_create(DTN_Module* parent) {
@@ -39,13 +39,15 @@ Routing_Function* dtn_routing_create(DTN_Module* parent) {
         routing->contact_list_head = NULL;
         routing->base_time = sys_now();
 
-        printf("DTN Routing Function created. Mode: %s\n", routing->routing_algorithm_name);
+        DTN_INFO("DTN Routing Function created. Mode: %s", routing->routing_algorithm_name);
 
         // We save the contacts from the contact plan in the contact_list_head
-        const char* contacts_file = "py_cgr/contact_plans/cgr_tutorial_1.txt";
+        // const char* contacts_file = "py_cgr/contact_plans/cgr_tutorial_1.txt";
+        const char* contacts_file = "/root/py_cgr/contact_plans/graph_01.txt";
+
         int nloaded = dtn_routing_load_contacts(routing, contacts_file);
         if (nloaded < 0) {
-            fprintf(stderr, "DTN Routing: error loading contact plan %s\n", contacts_file);
+            DTN_ERROR("DTN Routing: error loading contact plan %s", contacts_file);
         }
 
     } else {
@@ -175,8 +177,8 @@ bool dtn_routing_update_contacts(Routing_Function* routing) {
             ip6addr_ntoa_r(&contact->next_hop, next_hop_str, sizeof(next_hop_str));
 
             if (is_active) {
-                printf("DTN Routing: Contact from %s to %s became AVAILABLE at time %u ms\n",
-                       next_hop_str, node_addr_str, current_time);
+                DTN_INFO("DTN Routing: Contact from %s to %s became AVAILABLE at time %u ms",
+                         next_hop_str, node_addr_str, current_time);
                 ret = true;
 
             } else {
@@ -248,7 +250,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     ip6_addr_t local;
     unsigned char tmpbuf[16];
-    if (inet_pton(AF_INET6, CURR_NODE_ADDR, tmpbuf) != 1) {
+    if (inet_pton(AF_INET6, dtn_config.interfaces[0]->addr, tmpbuf) != 1) {
         fprintf(stderr, "inet_pton local address failed\n");
         return 0;
     }
@@ -276,6 +278,9 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
         return 0;
     }
 
+    // PyRun_SimpleString("import sys; sys.stdout = open('/captures/cgr_debug.log', 'w'); sys.stderr
+    // = sys.stdout");
+
     PyObject* sys_path = PySys_GetObject("path");
     PyObject* py_pth = PyUnicode_FromString("py_cgr");
     PyList_Append(sys_path, py_pth);
@@ -283,7 +288,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     PyObject* pModule = PyImport_ImportModule("py_cgr_lib.py_cgr_lib");
     if (!pModule) {
-        fprintf(stderr, "[ERR] ERROR: cannot import py_cgr_lib.py_cgr_lib\n");
+        DTN_ERROR("Cannot import py_cgr_lib.py_cgr_lib");
         PyErr_Print();
         Py_Finalize();
         return 0;
@@ -298,8 +303,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     // cp_load
     PyObject* args_load = PyTuple_New(3);
-    PyTuple_SetItem(args_load, 0,
-                    PyUnicode_FromString("py_cgr/contact_plans/cgr_tutorial_Simulation.txt"));
+    PyTuple_SetItem(args_load, 0, PyUnicode_FromString("/root/py_cgr/contact_plans/graph_01.txt"));
     PyTuple_SetItem(args_load, 1, PyFloat_FromDouble(curr_time_load));
     PyTuple_SetItem(args_load, 2, PyLong_FromLong(MAX_LENGTH));
     PyObject* contact_plan = PyObject_CallObject(py_cp_load, args_load);
@@ -312,10 +316,15 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
     }
     Py_DECREF(args_load);
 
+    // PyObject_Print(contact_plan, stdout, 0);
+    // printf("\n");
+
     // cgr_yen
-    long curr_node_id = ipv6_to_nodeid(CURR_NODE_ADDR);
+    long curr_node_id = ipv6_to_nodeid(dtn_config.interfaces[0]->addr);
     long dest_node_id = ipv6_to_nodeid(dst_s);
     double curr_time = ((double)sys_now()) / 1000;
+
+    // curr_time = curr_time_load;
 
     PyObject* args_yen = PyTuple_New(6);
     PyTuple_SetItem(args_yen, 0, PyFloat_FromDouble(curr_time));
@@ -335,6 +344,9 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
     }
     Py_DECREF(args_yen);
 
+    // PyObject_Print(routes, stdout, 0);
+    // printf("\n");
+
     // ipv6_packet
     uint8_t hoplim_val = 0;
     uint32_t v_tc_fl_val = 0;
@@ -353,6 +365,11 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     long sender_node_id = ipv6_to_nodeid(sender_s);
 
+    DTN_INFO("deadline: %ld - tc: %d - dscp: %d", deadline, tc, dscp);
+    DTN_INFO("base_time: %f - current_time: %f", curr_time_load, curr_time);
+    DTN_INFO("CGR [Sender: %ld - %s] [Current Node: %ld - %s] [Target: %ld - %s]", sender_node_id,
+             sender_s, curr_node_id, dtn_config.interfaces[0]->addr, dest_node_id, dst_s);
+
     PyObject* args_pkt = PyTuple_New(6);
     PyTuple_SetItem(args_pkt, 0, PyFloat_FromDouble(curr_time));
     PyTuple_SetItem(args_pkt, 1, PyLong_FromLong(dest_node_id));
@@ -362,7 +379,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
     PyTuple_SetItem(args_pkt, 5, PyLong_FromLong(sender_node_id));
     PyObject* ipv6pkt = PyObject_CallObject(py_ipv6_packet, args_pkt);
     if (!ipv6pkt) {
-        fprintf(stderr, "[ERR] ipv6_packet constructor returned NULL\n");
+        DTN_ERROR("[ERR] ipv6_packet constructor returned NULL");
         PyErr_Print();
         Py_DECREF(routes);
         Py_DECREF(contact_plan);
@@ -371,6 +388,15 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
         return 0;
     }
     Py_DECREF(args_pkt);
+
+    // PyObject* repr_pkt = PyObject_Repr(ipv6pkt);
+    // if (repr_pkt) {
+    //     const char* sp = PyUnicode_AsUTF8(repr_pkt);
+    //     DTN_INFO("ipv6pkt repr: %s\n", sp ? sp : "<NULL>");
+    //     Py_DECREF(repr_pkt);
+    // } else {
+    //     DTN_INFO("ipv6pkt repr failed");
+    // }
 
     // fwd_candidate
     PyObject* excluded_nodes = PyList_New(0);
@@ -383,6 +409,9 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
     PyTuple_SetItem(args_fwd, 5, excluded_nodes);
     PyObject* candidates = PyObject_CallObject(py_fwd_candidate, args_fwd);
     Py_DECREF(args_fwd);
+
+    // PyObject_Print(candidates, stdout, 0);
+    // printf("\n");
 
     // we check the next hop for the best route
     if (PyList_Check(candidates) && PyList_Size(candidates) > 0) {
@@ -398,16 +427,16 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
                     memcpy(next_hop_ip, &next_ip, sizeof(ip6_addr_t));
                     char next_ip_s[INET6_ADDRSTRLEN];
                     if (ip6_addr_to_str(&next_ip, next_ip_s, sizeof(next_ip_s)) == 0) {
-                        printf("Next hop ipv6: %s\n", next_ip_s);
+                        DTN_INFO("Next hop ipv6: %s", next_ip_s);
                     } else {
-                        fprintf(stderr, "Failed to stringify next_ip for node %ld\n", next_node);
+                        DTN_ERROR("Failed to stringify next_ip for node %ld", next_node);
                         Py_DECREF(candidates);
                         Py_DECREF(pModule);
                         Py_Finalize();
                         return 0;
                     }
                 } else {
-                    fprintf(stderr, "No mapping nodeid->ipv6 for node %ld\n", next_node);
+                    DTN_ERROR("No mapping nodeid->ipv6 for node %ld", next_node);
                     Py_DECREF(candidates);
                     Py_DECREF(pModule);
                     Py_Finalize();
@@ -415,19 +444,19 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
                 }
 
             } else {
-                printf("Next hop: (non-int)\n");
+                DTN_INFO("Next hop: (non-int)");
             }
             Py_DECREF(pNextNode);
         } else {
             PyErr_Clear();
-            printf("Candidate object has no attribute next_node\n");
+            DTN_INFO("Candidate object has no attribute next_node");
             Py_DECREF(candidates);
             Py_DECREF(pModule);
             Py_Finalize();
             return 0;
         }
     } else {
-        printf("No candidate routes returned (list empty or not a list)\n");
+        DTN_INFO("No candidate routes returned (list empty or not a list)");
         Py_DECREF(candidates);
         Py_DECREF(pModule);
         Py_Finalize();
@@ -457,29 +486,29 @@ int ip6_addr_to_str(const ip6_addr_t* a, char* buf, size_t buflen) {
 }
 
 long ipv6_to_nodeid(const char* ip6) {
-    // Node 0 (id = 1)
-    if (strcmp(ip6, "fd00:01::1") == 0)
-        return 01;
-    if (strcmp(ip6, "fd00:1::1") == 0)
+    if (strcmp(ip6, "fd00:0:1::1") == 0)
         return 01;
 
-    // Node 1 (id = 2)
-    if (strcmp(ip6, "fd00:01::2") == 0)
-        return 10;
-    if (strcmp(ip6, "fd00:1::1") == 0)
-        return 10;
-    if (strcmp(ip6, "fd00:12::1") == 0)
-        return 12;
+    if (strcmp(ip6, "fd00:0:1::2") == 0)
+        return 02;
+    if (strcmp(ip6, "fd00:1:2::1") == 0)
+        return 02;
+    if (strcmp(ip6, "fd00:ffff:1::2") == 0)
+        return 02;
 
-    // Node 2 (id = 3)
-    if (strcmp(ip6, "fd00:12::2") == 0)
-        return 21;
-    if (strcmp(ip6, "fd00:23::2") == 0)
-        return 23;
+    if (strcmp(ip6, "fd00:1:2::2") == 0)
+        return 03;
+    if (strcmp(ip6, "fd00:2:3::1") == 0)
+        return 03;
+    if (strcmp(ip6, "fd00:ffff:2::2") == 0)
+        return 03;
+    // if (strcmp(ip6, "fd00:12::1") == 0)
+    //     return 12;
 
-    // Node 3 (id = 4)
-    if (strcmp(ip6, "fd00:23::3") == 0)
-        return 32;
+    if (strcmp(ip6, "fd00:2:3::2") == 0)
+        return 04;
+    if (strcmp(ip6, "fd00:ffff:3::2") == 0)
+        return 41;
 
     return -1;
 }
@@ -488,23 +517,27 @@ int nodeid_to_ipv6(long node_id, ip6_addr_t* out) {
     const char* addr_txt = NULL;
     switch (node_id) {
         case 01:
-            addr_txt = "fd00:01::1";
+            addr_txt = "fd00:0:1::1";
             break;
-        case 10:
-            addr_txt = "fd00:01::2";
+        case 02:
+            addr_txt = "fd00:0:1::2";
             break;
-        case 12:
-            addr_txt = "fd00:12::1";
+        case 03:
+            addr_txt = "fd00:2:3::1";
             break;
-        case 21:
-            addr_txt = "fd00:12::2";
+        case 04:
+            addr_txt = "fd00:2:3::2";
             break;
-        case 23:
-            addr_txt = "fd00:23::2";
+        case 41:
+            addr_txt = "fd00:ffff:3::2";
             break;
-        case 32:
-            addr_txt = "fd00:23::3";
-            break;
+
+        // case 23:
+        //     addr_txt = "fd00:1:2::2";
+        //     break;
+        // case 32:
+        //     addr_txt = "fd00:2:3::1";
+        //     break;
         default:
             return -1;
     }
@@ -528,8 +561,7 @@ int dtn_routing_load_contacts(Routing_Function* routing, const char* filename) {
 
     FILE* f = fopen(filename, "r");
     if (!f) {
-        fprintf(stderr, "DTN Routing: failed to open contact file '%s': %s\n", filename,
-                strerror(errno));
+        DTN_INFO("DTN Routing: failed to open contact file '%s': %s", filename, strerror(errno));
         return -1;
     }
 
@@ -610,22 +642,19 @@ int dtn_routing_load_contacts(Routing_Function* routing, const char* filename) {
         long to_node = (long)atoi(to_tok);
 
         if (from_node < 0 || to_node < 0) {
-            fprintf(stderr, "DTN Routing: bad node token from='%s' to='%s' (skipping)\n", from_tok,
-                    to_tok);
+            DTN_WARN("DTN Routing: bad node token from='%s' to='%s' (skipping)", from_tok, to_tok);
             continue;
         }
 
         ip6_addr_t from_ip6, to_ip6;
         if (nodeid_to_ipv6(from_node, &from_ip6) != 0) {
-            fprintf(stderr,
-                    "DTN Routing: nodeid_to_ipv6 failed for node %ld (from token '%s'), skipping\n",
-                    from_node, from_tok);
+            DTN_WARN("DTN Routing: nodeid_to_ipv6 failed for node %ld (from token '%s'), skipping",
+                     from_node, from_tok);
             continue;
         }
         if (nodeid_to_ipv6(to_node, &to_ip6) != 0) {
-            fprintf(stderr,
-                    "DTN Routing: nodeid_to_ipv6 failed for node %ld (to token '%s'), skipping\n",
-                    to_node, to_tok);
+            DTN_WARN("DTN Routing: nodeid_to_ipv6 failed for node %ld (to token '%s'), skipping",
+                     to_node, to_tok);
             continue;
         }
 
@@ -642,6 +671,6 @@ int dtn_routing_load_contacts(Routing_Function* routing, const char* filename) {
     }
 
     fclose(f);
-    printf("DTN Routing: Loaded %d contacts from %s\n", loaded, filename);
+    DTN_INFO("DTN Routing: Loaded %d contacts from %s", loaded, filename);
     return loaded;
 }

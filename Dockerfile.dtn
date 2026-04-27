@@ -41,7 +41,10 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /root/
 
+
 COPY --from=builder /app/lwip_tun .
+COPY ./py_cgr ./py_cgr
+
 COPY init_dtn_node.sh .
 COPY init_routes.sh .
 COPY capture.sh .

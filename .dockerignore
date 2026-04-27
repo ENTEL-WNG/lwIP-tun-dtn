@@ -1,3 +1,6 @@
 .git
 *.o
 bin/
+
+py_cgr/contact_plans/__pycache__
+*.pyc

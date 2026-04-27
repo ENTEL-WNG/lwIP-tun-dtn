@@ -5,7 +5,7 @@ services:
       DEBUG: true
       PS1: "reg_node_0# "
       NODE: 0
-      INT_1: "enp0s9, fd00:0:1::1, fd00:0:1::2, fd00:ffff::, fd00:1:2::, fd00:2:3::"
+      INT_1: "enp0s9, fd00:0:1::1, fd00:0:1::2, fd00:ffff:1::, fd00:1:2::, fd00:ffff:2::, fd00:2:3::, fd00:ffff:3::"
 
       NEIGH_1: "enp0s9, fd00:0:1::2, 02:00:00:00:01:01"
     build:
@@ -38,7 +38,7 @@ services:
       # ip -6 route add fd00:23::/64 via fd00:12::2 dev enp0s9 || true
       # ip -6 route add fd00:33::/64 via fd00:12::2 dev enp0s9 || true
       # interface, addr, via, routes...
-      INT_2: "enp0s9, fd00:1:2::1, fd00:1:2::2, fd00:ffff::, fd00:2:3::"
+      INT_2: "enp0s9, fd00:1:2::1, fd00:1:2::2, fd00:ffff:2::, fd00:2:3::, fd00:ffff:3::"
       NEIGH_2: "enp0s9, fd00:1:2::2, 02:00:01:00:02:02"
     build:
       context: .
@@ -70,8 +70,8 @@ services:
       NODE: 2
       HOST_TUN_IPV6_ADDR:  "fd00:ffff:2::1"
       HOST_LWIP_IPV6_ADDR: "fd00:ffff:2::2"
-      INT_1: "enp0s8, fd00:1:2::2, fd00:1:2::1, fd00:ffff::, fd00:0:1::"
-      INT_2: "enp0s9, fd00:2:3::1, fd00:2:3::2, fd00:ffff::"
+      INT_1: "enp0s8, fd00:1:2::2, fd00:1:2::1, fd00:ffff:1::, fd00:0:1::"
+      INT_2: "enp0s9, fd00:2:3::1, fd00:2:3::2, fd00:ffff:3::"
       # INT_2: "enp0s9, fd00:2:3::1, fd00:2:3::2, fd00:ffff::, fd00:3:4::"
 
       NEIGH_1: "enp0s8, fd00:1:2::1, 02:00:01:00:02:01"
@@ -106,7 +106,7 @@ services:
       NODE: 3
       HOST_TUN_IPV6_ADDR:  "fd00:ffff:3::1"
       HOST_LWIP_IPV6_ADDR: "fd00:ffff:3::2"
-      INT_1: "enp0s8, fd00:2:3::2, fd00:2:3::1, fd00:ffff::, fd00:1:2::, fd00:0:1::"
+      INT_1: "enp0s8, fd00:2:3::2, fd00:2:3::1, fd00:ffff:2::, fd00:1:2::, fd00:ffff:1::, fd00:0:1::"
 
       NEIGH_1: "enp0s8, fd00:2:3::1, 02:00:02:00:03:02"
     build:
