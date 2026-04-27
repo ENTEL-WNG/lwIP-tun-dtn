@@ -157,7 +157,7 @@ bool dtn_routing_update_contacts(Routing_Function* routing) {
     static bool last_active_states[100] = {false};
     static int contact_index = 0;
 
-    u32_t current_time = sys_now();  // time when the computer has started
+    uint32_t current_time = sys_now();  // time when the computer has started
 
     if (last_check_time == 0) {
         last_check_time = current_time;
@@ -175,15 +175,17 @@ bool dtn_routing_update_contacts(Routing_Function* routing) {
             char node_addr_str[IP6ADDR_STRLEN_MAX], next_hop_str[IP6ADDR_STRLEN_MAX];
             ip6addr_ntoa_r(&contact->node_addr, node_addr_str, sizeof(node_addr_str));
             ip6addr_ntoa_r(&contact->next_hop, next_hop_str, sizeof(next_hop_str));
+            uint32_t secs = now / 1000;
+            uint32_t msecs = now % 1000;
 
             if (is_active) {
-                DTN_INFO("DTN Routing: Contact from %s to %s became AVAILABLE at time %u ms",
-                         next_hop_str, node_addr_str, current_time);
+                DTN_INFO("DTN Routing: Contact from %s to %s became ACTIVE at time %5u.%03u ms",
+                         next_hop_str, node_addr_str, secs, msecs);
                 ret = true;
 
             } else {
-                DTN_INFO("DTN Routing: Contact for %s became UNAVAILABLE at time %u ms",
-                         node_addr_str, current_time);
+                DTN_INFO("DTN Routing: Contact for %s became IN-ACTIVE at time %5u.%03u ",
+                         node_addr_str, secs, msecs);
             }
 
             last_active_states[contact_index] = is_active;
@@ -365,6 +367,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     long sender_node_id = ipv6_to_nodeid(sender_s);
 
+    DTN_INFO("hoplim: %d - v_tc_fl: %d - plen: %d", hoplim_val, v_tc_fl_val, plen_val);
     DTN_INFO("deadline: %ld - tc: %d - dscp: %d", deadline, tc, dscp);
     DTN_INFO("base_time: %f - current_time: %f", curr_time_load, curr_time);
     DTN_INFO("CGR [Sender: %ld - %s] [Current Node: %ld - %s] [Target: %ld - %s]", sender_node_id,

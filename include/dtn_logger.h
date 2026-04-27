@@ -12,6 +12,8 @@ typedef enum {
     DTN_LEVEL_DEBUG = 4
 } dtn_level_t;
 
+typedef enum { DATE = 0, SYS_TIME = 1 } dtn_time_t;
+
 void dtn_log_init(void);
 void dtn_log_write(dtn_level_t level, const char* file, int line, const char* fmt, ...);
 
