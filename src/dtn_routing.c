@@ -25,6 +25,7 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 #include <ctype.h>
+#include "dtn_config.h"
 
 #define CURR_NODE_ADDR "fd00:01::2"
 #define MAX_LENGTH 5000
@@ -40,7 +41,7 @@ Routing_Function* dtn_routing_create(DTN_Module* parent) {
         printf("DTN Routing Function created. Mode: %s\n", routing->routing_algorithm_name);
         
         //We save the contacts from the contact plan in the contact_list_head
-        const char *contacts_file = "py_cgr/contact_plans/cgr_tutorial_1.txt";
+        const char *contacts_file = dtn_config.contact_plan_path;
         int nloaded = dtn_routing_load_contacts(routing, contacts_file);
         if (nloaded < 0) {
             fprintf(stderr, "DTN Routing: error loading contact plan %s\n", contacts_file);
@@ -238,7 +239,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     ip6_addr_t local;
     unsigned char tmpbuf[16];
-    if (inet_pton(AF_INET6, CURR_NODE_ADDR , tmpbuf) != 1) {
+    if (inet_pton(AF_INET6, dtn_config.curr_node_addr , tmpbuf) != 1) {
         fprintf(stderr, "inet_pton local address failed\n");
         return 0;
     }
@@ -285,7 +286,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
 
     // cp_load
     PyObject *args_load = PyTuple_New(3);
-    PyTuple_SetItem(args_load, 0, PyUnicode_FromString("py_cgr/contact_plans/cgr_tutorial_Simulation.txt"));
+    PyTuple_SetItem(args_load, 0, PyUnicode_FromString(dtn_config.contact_plan_path));
     PyTuple_SetItem(args_load, 1, PyFloat_FromDouble(curr_time_load));
     PyTuple_SetItem(args_load, 2, PyLong_FromLong(MAX_LENGTH));
     PyObject *contact_plan = PyObject_CallObject(py_cp_load, args_load);
@@ -299,7 +300,7 @@ int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_
     Py_DECREF(args_load);
 
     // cgr_yen
-    long curr_node_id = ipv6_to_nodeid(CURR_NODE_ADDR);
+    long curr_node_id = ipv6_to_nodeid(dtn_config.curr_node_addr);
     long dest_node_id = ipv6_to_nodeid(dst_s);
     double curr_time = ((double)sys_now())/1000;
 

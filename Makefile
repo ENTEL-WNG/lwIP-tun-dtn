@@ -2,8 +2,8 @@ CC = gcc
 
 PY_INCLUDES := $(shell python3-config --includes)
 PY_LDFLAGS  := $(shell python3-config --ldflags)
-
-PY_LIBS := -lpython3.12 -lpthread -lutil
+# Use --embed because you are calling Python from C
+PY_LIBS     := $(shell python3-config --libs --embed)
 
 CFLAGS = -Wall \
 	-DNO_SYS=1 \
@@ -45,7 +45,8 @@ APP_SRC = \
 	src/dtn_icmpv6.c \
 	src/raw_socket.c \
     src/dtn_storage.c \
-	src/dtn_custody.c
+	src/dtn_custody.c \
+	src/dtn_config.c
 
 SOURCES = $(APP_SRC) port/sys_arch.c $(LWIP_SRC)
 OBJECTS = $(SOURCES:.c=.o)

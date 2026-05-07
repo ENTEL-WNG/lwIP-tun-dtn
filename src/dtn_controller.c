@@ -30,6 +30,7 @@
 #include "raw_socket.h"
 #include "lwip/sys.h"
 #include "dtn_custody.h"
+#include "dtn_config.h"
 
 DTN_Controller *dtn_controller_create(DTN_Module *parent)
 {
@@ -231,6 +232,8 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
         return;
     }
 
+    
+
     ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
     u32_t temp_v_tc_fl;
     u16_t temp_plen;
@@ -240,6 +243,12 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
     memcpy(&temp_v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
     memcpy(&temp_plen, &ip6hdr->_plen, sizeof(u16_t));
     memcpy(&temp_hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
+
+    char str1[40], str2[40];
+    strncpy(str1, ip6addr_ntoa(&temp_src_addr), sizeof(str1));
+    strncpy(str2, ip6addr_ntoa(&temp_dest_addr), sizeof(str2));
+
+    printf("Routing Bundle: From %s to %s\n", str1, str2);
 
     if (!dtn_extract_custodian_option(p, &temp_dest_sender)) {
         memcpy(&temp_dest_sender, &temp_src_addr, sizeof(ip6_addr_t));
@@ -290,7 +299,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
 
     bool is_for_this_lwip_stack = false;
         ip6_addr_t local_lwip_addr_1, local_lwip_addr_2;
-        if (ip6addr_aton("fd00:01::2", &local_lwip_addr_1)) {
+        if (ip6addr_aton(dtn_config.enp0s9_ipv6_addr, &local_lwip_addr_1)) {
             ip6_addr_t dest_nozone = temp_dest_addr;
 #if LWIP_IPV6_SCOPES
             ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
@@ -300,7 +309,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
                 is_for_this_lwip_stack = true;
             }
         }
-        if (ip6addr_aton("fd00:12::1", &local_lwip_addr_2)) {
+        if (ip6addr_aton(dtn_config.enp0s8_ipv6_addr, &local_lwip_addr_2)) {
             ip6_addr_t dest_nozone = temp_dest_addr;
 #if LWIP_IPV6_SCOPES
             ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
@@ -470,7 +479,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller *controller, struct ne
                 {
                     bool is_for_this_lwip_stack = false;
                     ip6_addr_t local_lwip_addr_1, local_lwip_addr_2;
-                    if (ip6addr_aton("fd00:01::2", &local_lwip_addr_1)) {
+                    if (ip6addr_aton(dtn_config.enp0s9_ipv6_addr, &local_lwip_addr_1)) {
                         ip6_addr_t dest_nozone = retrieved_dest_nozone;
             #if LWIP_IPV6_SCOPES
                         ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
@@ -480,7 +489,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller *controller, struct ne
                             is_for_this_lwip_stack = true;
                         }
                     }
-                    if (ip6addr_aton("fd00:12::1", &local_lwip_addr_2)) {
+                    if (ip6addr_aton(dtn_config.enp0s8_ipv6_addr, &local_lwip_addr_2)) {
                         ip6_addr_t dest_nozone = retrieved_dest_nozone;
             #if LWIP_IPV6_SCOPES
                         ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);

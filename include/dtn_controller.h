@@ -20,6 +20,7 @@
 #include "lwip/netif.h"
 #include "dtn_module.h"
 #include <stdbool.h> 
+#include "dtn_routing.h"
 
 #define MAX_DESTINATIONS 10
 #define FORWARDING_RETRY_DELAY_MS 30000  // 30 seconds delay between retransmissions

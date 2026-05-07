@@ -27,6 +27,7 @@
 #include <errno.h>
 #include "lwip/pbuf.h"
 #include "lwip/ip6_addr.h"
+#include "dtn_config.h"
 
 // Interface indices
 static int if_index_1 = 0;  // enp0s8
@@ -42,21 +43,11 @@ int raw_socket_init(const char* if_name_1, const char* if_name_2) {
     struct ifreq ifr;
     
     strncpy(if_name_1_global, if_name_1, IFNAMSIZ-1);
-    strncpy(if_name_2_global, if_name_2, IFNAMSIZ-1);
-    
     raw_socket_enp0s8 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
     if (raw_socket_enp0s8 < 0) {
         perror("Failed to create raw socket for first interface");
         return -1;
     }
-    
-    raw_socket_enp0s9 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
-    if (raw_socket_enp0s9 < 0) {
-        perror("Failed to create raw socket for second interface");
-        close(raw_socket_enp0s8);
-        return -1;
-    }
-    
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, if_name_1, IFNAMSIZ-1);
     if (ioctl(raw_socket_enp0s8, SIOCGIFINDEX, &ifr) < 0) {
@@ -66,7 +57,27 @@ int raw_socket_init(const char* if_name_1, const char* if_name_2) {
         return -1;
     }
     if_index_1 = ifr.ifr_ifindex;
-    
+    int on = 1;
+    if (setsockopt(raw_socket_enp0s8, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
+        perror("Failed to set IPV6_HDRINCL option on first socket");
+        close(raw_socket_enp0s8);
+        close(raw_socket_enp0s9);
+        return -1;
+    }
+    printf("Raw sockets initialized:\n");
+    printf("  %s: socket %d, index %d\n", if_name_1, raw_socket_enp0s8, if_index_1);
+
+    if (dtn_config.node_id == 3) {
+        return 0;
+    }
+
+    strncpy(if_name_2_global, if_name_2, IFNAMSIZ-1);
+    raw_socket_enp0s9 = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
+    if (raw_socket_enp0s9 < 0) {
+        perror("Failed to create raw socket for second interface");
+        close(raw_socket_enp0s8);
+        return -1;
+    }
     memset(&ifr, 0, sizeof(ifr));
     strncpy(ifr.ifr_name, if_name_2, IFNAMSIZ-1);
     if (ioctl(raw_socket_enp0s9, SIOCGIFINDEX, &ifr) < 0) {
@@ -76,15 +87,6 @@ int raw_socket_init(const char* if_name_1, const char* if_name_2) {
         return -1;
     }
     if_index_2 = ifr.ifr_ifindex;
-    
-    int on = 1;
-    if (setsockopt(raw_socket_enp0s8, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
-        perror("Failed to set IPV6_HDRINCL option on first socket");
-        close(raw_socket_enp0s8);
-        close(raw_socket_enp0s9);
-        return -1;
-    }
-    
     if (setsockopt(raw_socket_enp0s9, IPPROTO_IPV6, IPV6_HDRINCL, &on, sizeof(on)) < 0) {
         perror("Failed to set IPV6_HDRINCL option on second socket");
         close(raw_socket_enp0s8);
@@ -92,8 +94,7 @@ int raw_socket_init(const char* if_name_1, const char* if_name_2) {
         return -1;
     }
     
-    printf("Raw sockets initialized:\n");
-    printf("  %s: socket %d, index %d\n", if_name_1, raw_socket_enp0s8, if_index_1);
+    
     printf("  %s: socket %d, index %d\n", if_name_2, raw_socket_enp0s9, if_index_2);
     
     return 0;
@@ -120,11 +121,23 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
     // Node1 --> If destination is in fd00:1::/64, use enp0s9, otherwise use enp0s8
     // Node2 --> If destination is in fd00:23::/64, use enp0s9, otherwise use enp0s8
     int use_second_interface = 0;
-    if ((dest_addr->addr[0] == PP_HTONL(0xfd000023) || dest_addr->addr[0] == PP_HTONL(0xfd000033)) &&
-        dest_addr->addr[1] == 0 &&
-        dest_addr->addr[2] == 0) {
-        use_second_interface = 1;
+
+    if (dtn_config.node_id == 1) {
+        if ((dest_addr->addr[0] == PP_HTONL(0xfd000001)) &&
+            dest_addr->addr[1] == 0 &&
+            dest_addr->addr[2] == 0) {
+            use_second_interface = 1;
+        }
     }
+    if (dtn_config.node_id == 2) {
+        if ((dest_addr->addr[0] == PP_HTONL(0xfd000023) || dest_addr->addr[0] == PP_HTONL(0xfd000033)) &&
+            dest_addr->addr[1] == 0 &&
+            dest_addr->addr[2] == 0) {
+            use_second_interface = 1;
+        }
+    }
+
+   
     
     if (use_second_interface) {
         socket_to_use = raw_socket_enp0s9;

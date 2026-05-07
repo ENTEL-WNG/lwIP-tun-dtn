@@ -1,0 +1,11 @@
+# https://github.com/celiatorras/CGR_lwip_tun_dtn_Original/blob/main/py_cgr/contact_plans/cgr_tutorial_2.txt
+# a contact +<start> +<end> <from> <to> <rate> <range>
+# 0-1
+a contact +00 +1000 1 2 1 1
+a contact +00 +1000 2 1 1 1
+# 1-2
+a contact +00 +25 2 3 1 1
+a contact +00 +1000 3 2 1 1
+# 2-3
+a contact +15 +100 3 4 1 1
+a contact +00 +1000 4 3 1 1

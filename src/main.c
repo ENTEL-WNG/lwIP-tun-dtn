@@ -44,6 +44,7 @@
 #include "dtn_icmpv6.h" 
 #include "raw_socket.h"
 #include "dtn_storage.h"
+#include "dtn_config.h"
 
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
@@ -95,6 +96,8 @@ err_t tunif_output(struct netif *netif, struct pbuf *p) {
 }
 
 err_t tunif_input(struct netif *netif) {
+    // printf("tunif_input");
+
      if (!netif || !netif->state) { return ERR_ARG; }
      if (!global_dtn_module || !global_dtn_module->controller) {
          fprintf(stderr, "tunif_input: DTN Module or Controller not initialized!\n");
@@ -138,6 +141,8 @@ err_t tunif_init(struct netif *netif) {
 
 int main() {
     lwip_init();
+    dtn_config_load();
+    dtn_config_print(&dtn_config);
 
     struct stat st = {0};
     if (stat(STORAGE_DIR, &st) == -1) {
