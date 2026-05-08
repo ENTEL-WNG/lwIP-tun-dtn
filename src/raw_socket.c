@@ -137,7 +137,8 @@ int raw_socket_send_ipv6(struct pbuf *p, const ip6_addr_t *dest_addr) {
         }
     }
 
-   
+    printf("DEBUG dest addr[0]=0x%08x addr[1]=0x%08x addr[2]=0x%08x addr[3]=0x%08x\n", dest_addr->addr[0], dest_addr->addr[1], dest_addr->addr[2], dest_addr->addr[3]);
+    printf("DEBUG use_second_interface=%d\n", use_second_interface);
     
     if (use_second_interface) {
         socket_to_use = raw_socket_enp0s9;

@@ -48,10 +48,10 @@
 
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
-#define HOST_TUN_IPV6_ADDR "fd00::1"
-#define HOST_LWIP_IPV6_ADDR "fd00::2"
-#define HOST_enp0s9_IPV6_ADDR "fd00:01::2"
-#define HOST_enp0s8_IPV6_ADDR "fd00:12::1"
+// #define HOST_TUN_IPV6_ADDR "fd00::1"
+// #define dtn_config.lwip_ipv6_addr "fd00::2"
+// #define dtn_config.enp0s9_ipv6_addr "fd00:01::2"
+// #define dtn_config.enp0s8_ipv6_addr "fd00:12::1"
 #define CONTACT_CHECK_INTERVAL_MS 1000
 
 DTN_Module* global_dtn_module = NULL;
@@ -96,31 +96,30 @@ err_t tunif_output(struct netif *netif, struct pbuf *p) {
 }
 
 err_t tunif_input(struct netif *netif) {
-    // printf("tunif_input");
 
-     if (!netif || !netif->state) { return ERR_ARG; }
-     if (!global_dtn_module || !global_dtn_module->controller) {
-         fprintf(stderr, "tunif_input: DTN Module or Controller not initialized!\n");
-         char discard_buf[100];
-         read(*(int *)netif->state, discard_buf, sizeof(discard_buf));
-         return ERR_IF;
-     }
+    if (!netif || !netif->state) { return ERR_ARG; }
+    if (!global_dtn_module || !global_dtn_module->controller) {
+        fprintf(stderr, "tunif_input: DTN Module or Controller not initialized!\n");
+        char discard_buf[100];
+        read(*(int *)netif->state, discard_buf, sizeof(discard_buf));
+        return ERR_IF;
+    }
 
-     int tun_fd = *(int *)netif->state;
-     char buf[PACKET_BUF_SIZE]; 
-     ssize_t len = read(tun_fd, buf, sizeof(buf));
+    int tun_fd = *(int *)netif->state;
+    char buf[PACKET_BUF_SIZE]; 
+    ssize_t len = read(tun_fd, buf, sizeof(buf));
 
-     if (len < 0) { if (errno == EAGAIN || errno == EWOULDBLOCK) { return ERR_OK; } perror("TUN read error"); return ERR_IF; }
-     if (len == 0) { printf("TUN read 0 bytes, tunnel closed by peer?\n"); return ERR_CONN; }
+    if (len < 0) { if (errno == EAGAIN || errno == EWOULDBLOCK) { return ERR_OK; } perror("TUN read error"); return ERR_IF; }
+    if (len == 0) { printf("TUN read 0 bytes, tunnel closed by peer?\n"); return ERR_CONN; }
 
-     struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
-     if (!p) { fprintf(stderr, "Failed to allocate pbuf for incoming packet of size %zd\n", len); return ERR_MEM; }
+    struct pbuf *p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
+    if (!p) { fprintf(stderr, "Failed to allocate pbuf for incoming packet of size %zd\n", len); return ERR_MEM; }
 
-     err_t copy_err = pbuf_take(p, buf, len);
-     if (copy_err != ERR_OK) { fprintf(stderr, "Failed to copy buffer to pbuf (%d)\n", copy_err); pbuf_free(p); return copy_err; }
+    err_t copy_err = pbuf_take(p, buf, len);
+    if (copy_err != ERR_OK) { fprintf(stderr, "Failed to copy buffer to pbuf (%d)\n", copy_err); pbuf_free(p); return copy_err; }
 
-     dtn_controller_process_incoming(global_dtn_module->controller, p, netif);
-     return ERR_OK;
+    dtn_controller_process_incoming(global_dtn_module->controller, p, netif);
+    return ERR_OK;
 }
 
 err_t tunif_ip6_output(struct netif *netif, struct pbuf *p, const ip6_addr_t *ipaddr) {
@@ -220,8 +219,8 @@ int main() {
     }
 
     ip6_addr_t ip6addr_lwip_stack;
-    if (!ip6addr_aton(HOST_LWIP_IPV6_ADDR, &ip6addr_lwip_stack)) {
-        fprintf(stderr, "FATAL: Failed to parse LwIP stack IPv6 address %s\n", HOST_LWIP_IPV6_ADDR);
+    if (!ip6addr_aton(dtn_config.lwip_ipv6_addr, &ip6addr_lwip_stack)) {
+        fprintf(stderr, "FATAL: Failed to parse LwIP stack IPv6 address %s\n", dtn_config.lwip_ipv6_addr);
         netif_remove(&tun_netif); 
         close(tun_fd);
         dtn_module_cleanup(global_dtn_module);
@@ -230,91 +229,103 @@ int main() {
 
     s8_t assigned_idx_global = -1; 
     err_t add_global_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack, &assigned_idx_global);
+    // if (assigned_idx_global >= 0) {
+    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_global, IP6_ADDR_PREFERRED);
+    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
+    // }
 
     if (add_global_err == ERR_OK) {
-        printf("LwIP stack address %s added successfully at index %d.\n", HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+        printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
         if (assigned_idx_global >= 0 && netif_ip6_addr_state(&tun_netif, assigned_idx_global) != IP6_ADDR_INVALID) {
             netif_ip6_addr_set_state(&tun_netif, assigned_idx_global, IP6_ADDR_PREFERRED);
-            printf("  State for address %s (Index %d) set to PREFERRED.\n", HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+            printf("  State for address %s (Index %d) set to PREFERRED.\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
         } else {
-            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid or index is negative.\n", HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid or index is negative.\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
         }
     } else {
-        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", HOST_LWIP_IPV6_ADDR, (int)add_global_err);
+        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", dtn_config.lwip_ipv6_addr, (int)add_global_err);
         s8_t found_idx_after_fail = netif_get_ip6_addr_match(&tun_netif, &ip6addr_lwip_stack);
         if (found_idx_after_fail >= 0) {
-            printf("  However, %s was found at Index %d after the reported failure.\n", HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+            printf("  However, %s was found at Index %d after the reported failure.\n", dtn_config.lwip_ipv6_addr, found_idx_after_fail);
             if (netif_ip6_addr_state(&tun_netif, found_idx_after_fail) != IP6_ADDR_INVALID &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, found_idx_after_fail))) {
                 netif_ip6_addr_set_state(&tun_netif, found_idx_after_fail, IP6_ADDR_PREFERRED);
-                printf("  State for %s (Index %d) set to PREFERRED.\n", HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+                printf("  State for %s (Index %d) set to PREFERRED.\n", dtn_config.lwip_ipv6_addr, found_idx_after_fail);
             } else if (ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, found_idx_after_fail))) {
-                printf("  Address %s (Index %d) was already preferred.\n", HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+                printf("  Address %s (Index %d) was already preferred.\n", dtn_config.lwip_ipv6_addr, found_idx_after_fail);
             }
         } else {
-            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", HOST_LWIP_IPV6_ADDR);
+            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", dtn_config.lwip_ipv6_addr);
         }
     }
 
     ip6_addr_t ip6addr_lwip_stack_enp0s9;
-    if (!ip6addr_aton(HOST_enp0s9_IPV6_ADDR, &ip6addr_lwip_stack_enp0s9)) {
-        fprintf(stderr, "FATAL: Failed to parse Node 1 IPv6 address %s\n", HOST_enp0s9_IPV6_ADDR);
+    if (!ip6addr_aton(dtn_config.enp0s9_ipv6_addr, &ip6addr_lwip_stack_enp0s9)) {
+        fprintf(stderr, "FATAL: Failed to parse Node 1 IPv6 address %s\n", dtn_config.enp0s9_ipv6_addr);
     }
 
     s8_t assigned_idx_node_enp0s9 = -1; 
     err_t add_node_enp0s9_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack_enp0s9, &assigned_idx_node_enp0s9);
+    // if (assigned_idx_node_enp0s9 >= 0) {
+    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s9, IP6_ADDR_PREFERRED);
+    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
+    // }
 
     if (add_node_enp0s9_err == ERR_OK) {
-        printf("LwIP stack address %s added successfully at index %d.\n", HOST_enp0s9_IPV6_ADDR, assigned_idx_node_enp0s9);
+        printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
         if (assigned_idx_node_enp0s9 >= 0 && netif_ip6_addr_state(&tun_netif, assigned_idx_node_enp0s9) != IP6_ADDR_INVALID) {
             netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s9, IP6_ADDR_PREFERRED);
-            printf("  State for address %s (Index %d) set to PREFERRED.\n", HOST_enp0s9_IPV6_ADDR, assigned_idx_node_enp0s9);
+            printf("  State for address %s (Index %d) set to PREFERRED.\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
         } else {
-            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid.\n", HOST_enp0s9_IPV6_ADDR, assigned_idx_node_enp0s9);
+            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid.\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
         }
     } else {
-        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", HOST_enp0s9_IPV6_ADDR, (int)add_node_enp0s9_err);
+        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", dtn_config.enp0s9_ipv6_addr, (int)add_node_enp0s9_err);
         s8_t found_idx_enp0s9_after_fail = netif_get_ip6_addr_match(&tun_netif, &ip6addr_lwip_stack_enp0s9);
         if (found_idx_enp0s9_after_fail >= 0) {
-            printf("  However, %s was found at Index %d after the reported failure.\n", HOST_enp0s9_IPV6_ADDR, found_idx_enp0s9_after_fail);
+            printf("  However, %s was found at Index %d after the reported failure.\n", dtn_config.enp0s9_ipv6_addr, found_idx_enp0s9_after_fail);
             if (netif_ip6_addr_state(&tun_netif, found_idx_enp0s9_after_fail) != IP6_ADDR_INVALID &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, found_idx_enp0s9_after_fail))) {
                 netif_ip6_addr_set_state(&tun_netif, found_idx_enp0s9_after_fail, IP6_ADDR_PREFERRED);
-                printf("  State for %s (Index %d) set to PREFERRED.\n", HOST_enp0s9_IPV6_ADDR, found_idx_enp0s9_after_fail);
+                printf("  State for %s (Index %d) set to PREFERRED.\n", dtn_config.enp0s9_ipv6_addr, found_idx_enp0s9_after_fail);
             }
         } else {
-            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", HOST_enp0s9_IPV6_ADDR);
+            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", dtn_config.enp0s9_ipv6_addr);
         }
     }
 
     ip6_addr_t ip6addr_lwip_stack_enp0s8;
-    if (!ip6addr_aton(HOST_enp0s8_IPV6_ADDR, &ip6addr_lwip_stack_enp0s8)) {
-        fprintf(stderr, "FATAL: Failed to parse Node IPv6 address %s (enp0s8)\n", HOST_enp0s8_IPV6_ADDR);
+    if (!ip6addr_aton(dtn_config.enp0s8_ipv6_addr, &ip6addr_lwip_stack_enp0s8)) {
+        fprintf(stderr, "FATAL: Failed to parse Node IPv6 address %s (enp0s8)\n", dtn_config.enp0s8_ipv6_addr);
     }
 
     s8_t assigned_idx_node_enp0s8 = -1; 
     err_t add_node_enp0s8_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack_enp0s8, &assigned_idx_node_enp0s8);
+    // if (assigned_idx_node_enp0s8 >= 0) {
+    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s8, IP6_ADDR_PREFERRED);
+    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
+    // }
 
     if (add_node_enp0s8_err == ERR_OK) {
-        printf("LwIP stack address %s added successfully at index %d.\n", HOST_enp0s8_IPV6_ADDR, assigned_idx_node_enp0s8);
+        printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
         if (assigned_idx_node_enp0s8 >= 0 && netif_ip6_addr_state(&tun_netif, assigned_idx_node_enp0s8) != IP6_ADDR_INVALID) {
             netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s8, IP6_ADDR_PREFERRED);
-            printf("  State for address %s (Index %d) set to PREFERRED.\n", HOST_enp0s8_IPV6_ADDR, assigned_idx_node_enp0s8);
+            printf("  State for address %s (Index %d) set to PREFERRED.\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
         } else {
-            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid.\n", HOST_enp0s8_IPV6_ADDR, assigned_idx_node_enp0s8);
+            fprintf(stderr, "  WARNING: Address %s (Index %d) reported as added but state is invalid.\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
         }
     } else {
-        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", HOST_enp0s8_IPV6_ADDR, (int)add_node_enp0s8_err);
+        fprintf(stderr, "WARNING: netif_add_ip6_address for %s failed with error code %d.\n", dtn_config.enp0s8_ipv6_addr, (int)add_node_enp0s8_err);
         s8_t found_idx_enp0s8_after_fail = netif_get_ip6_addr_match(&tun_netif, &ip6addr_lwip_stack_enp0s8);
         if (found_idx_enp0s8_after_fail >= 0) {
-            printf("  However, %s was found at Index %d after the reported failure.\n", HOST_enp0s8_IPV6_ADDR, found_idx_enp0s8_after_fail);
+            printf("  However, %s was found at Index %d after the reported failure.\n", dtn_config.enp0s8_ipv6_addr, found_idx_enp0s8_after_fail);
             if (netif_ip6_addr_state(&tun_netif, found_idx_enp0s8_after_fail) != IP6_ADDR_INVALID &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, found_idx_enp0s8_after_fail))) {
                 netif_ip6_addr_set_state(&tun_netif, found_idx_enp0s8_after_fail, IP6_ADDR_PREFERRED);
-                printf("  State for %s (Index %d) set to PREFERRED.\n", HOST_enp0s8_IPV6_ADDR, found_idx_enp0s8_after_fail);
+                printf("  State for %s (Index %d) set to PREFERRED.\n", dtn_config.enp0s8_ipv6_addr, found_idx_enp0s8_after_fail);
             }
         } else {
-            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", HOST_enp0s8_IPV6_ADDR);
+            fprintf(stderr, "  And %s was NOT found by netif_get_ip6_addr_match after the reported failure.\n", dtn_config.enp0s8_ipv6_addr);
         }
     }
 
@@ -325,14 +336,14 @@ int main() {
     ip6_addr_set_any(&default_prefix.addr);
     default_prefix.prefix_len = 0;      
 
-    if (ip6addr_aton(HOST_TUN_IPV6_ADDR, &gw_addr)) { 
+    if (ip6addr_aton(dtn_config.tun_ipv6_addr, &gw_addr)) { 
         if (ip6_add_route_entry(&default_prefix, &tun_netif, &gw_addr, &route_idx) == ERR_OK) {
-            printf("LwIP: Static default IPv6 route added via %s (index %d).\n", HOST_TUN_IPV6_ADDR, route_idx);
+            printf("LwIP: Static default IPv6 route added via %s (index %d).\n", dtn_config.tun_ipv6_addr, route_idx);
         } else {
             fprintf(stderr, "LwIP: Failed to add static default IPv6 route.\n");
         }
     } else {
-        fprintf(stderr, "LwIP: Failed to parse gateway address %s for static route.\n", HOST_TUN_IPV6_ADDR);
+        fprintf(stderr, "LwIP: Failed to parse gateway address %s for static route.\n", dtn_config.tun_ipv6_addr);
     }
 
     printf("Waiting for addresses to settle...\n");

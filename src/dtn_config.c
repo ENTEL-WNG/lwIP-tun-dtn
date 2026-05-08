@@ -21,11 +21,11 @@ static int env_int(const char *key, int fallback) {
 void dtn_config_load(void) {
     dtn_config.tun_ipv6_addr    = env_str("HOST_TUN_IPV6_ADDR",   "fd00::1");
     dtn_config.lwip_ipv6_addr   = env_str("HOST_LWIP_IPV6_ADDR",  "fd00::2");
-    dtn_config.enp0s9_ipv6_addr = env_str("HOST_enp0s9_IPV6_ADDR", "ffd00:01::2");
+    dtn_config.enp0s9_ipv6_addr = env_str("HOST_enp0s9_IPV6_ADDR", "fd00:01::2");
     dtn_config.enp0s8_ipv6_addr = env_str("HOST_enp0s8_IPV6_ADDR", "fd00:12::1");
     dtn_config.curr_node_addr   = env_str("CURR_NODE_ADDR",        "fd00:12::1");
-    dtn_config.node_id          = env_int("NODE_ID", 0);
-    dtn_config.contact_plan_path = env_str("CONTACT_PLAN_PATH_DEFAULT", "py_cgr/contact_plans/cgr_tutorial_1.txt");
+    dtn_config.node_id          = env_int("NODE_ID", 1);
+    dtn_config.contact_plan_path = env_str("CONTACT_PLAN_PATH", "py_cgr/contact_plans/cgr_tutorial_1.txt");
 }
 
 void dtn_config_print(const DtnConfig *dtn_config) {

@@ -9,6 +9,8 @@
 #   net12: fd00:12::/64  (Node1 <-> Node2)
 #   net23: fd00:23::/64  (Node2 <-> Node3)
 
+CONTACT_PLAN_PATH = "py_cgr/contact_plans/cgr_tutorial_1.txt"
+
 Vagrant.configure("2") do |config|
 
   # Use a base box with Ubuntu (adjust to your preferred box)
@@ -16,7 +18,7 @@ Vagrant.configure("2") do |config|
 #   config.vm.box = "ubuntu/jammy64"
 
   # Disable default synced folder to keep things clean
-  config.vm.synced_folder ".", "/vagrant", colons: true
+  config.vm.synced_folder ".", "/home/vagrant/app", colons: true
 
   # ─────────────────────────────────────────────
   # NODE 0 — Regular IPv6 node
@@ -124,14 +126,26 @@ EOF
       set -e
 
       # --- ADDED: PERSISTENT ENV VARIABLES FOR C CODE ---
-      cat > /etc/profile.d/dtn_env.sh <<'EOF'
+# For interactive login shells (bash scripts, manual use)
+cat > /etc/profile.d/dtn_env.sh <<EOF
 export HOST_TUN_IPV6_ADDR="fd00::1"
 export HOST_LWIP_IPV6_ADDR="fd00::2"
-export HOST_enp0s9_IPV6_ADDR="ffd00:01::2"
+export HOST_enp0s9_IPV6_ADDR="fd00:01::2"
 export HOST_enp0s8_IPV6_ADDR="fd00:12::1"
 export CURR_NODE_ADDR="fd00:12::1"
 export NODE_ID="1"
-export CONTACT_PLAN_PATH="py_cgr/contact_plans/cgr_tutorial_Simulation.txt"
+export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
+EOF
+
+# For sudo / systemd / non-login processes — no 'export', no quotes around values
+cat >> /etc/environment <<EOF
+HOST_TUN_IPV6_ADDR=fd00::1
+HOST_LWIP_IPV6_ADDR=fd00::2
+HOST_enp0s9_IPV6_ADDR=fd00:01::2
+HOST_enp0s8_IPV6_ADDR=fd00:12::1
+CURR_NODE_ADDR=fd00:12::1
+NODE_ID=1
+CONTACT_PLAN_PATH_DEFAULT=#{CONTACT_PLAN_PATH}
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
@@ -179,7 +193,7 @@ EOF
 
       # /usr/local/sbin/setup-tun0.sh (Node 1)
       cat > /usr/local/sbin/setup-tun0.sh <<'EOF'
-#!/bin/bash​
+#!/bin/bash
 
 set -e
 ip tuntap add dev tun0 mode tun || true
@@ -195,6 +209,10 @@ ip -6 rule del prio 10000 2>/dev/null || true
 
 ip6tables -t mangle -A PREROUTING -d fd00:01::2 -j TEE --gateway fd00::2
 ip6tables -t mangle -A PREROUTING -d fd00:12::1 -j TEE --gateway fd00::2
+ip6tables -t filter -A INPUT -d fd00:01::2 -p ipv6-icmp --icmpv6-type neighbour-solicitation -j ACCEPT
+ip6tables -t filter -A INPUT -d fd00:01::2 -p ipv6-icmp --icmpv6-type neighbour-advertisement -j ACCEPT
+ip6tables -t filter -A INPUT -d fd00:12::1 -p ipv6-icmp --icmpv6-type neighbour-solicitation -j ACCEPT
+ip6tables -t filter -A INPUT -d fd00:12::1 -p ipv6-icmp --icmpv6-type neighbour-advertisement -j ACCEPT
 ip6tables -t filter -A INPUT -d fd00:01::2 -j DROP
 ip6tables -t filter -A INPUT -d fd00:12::1 -j DROP
 ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
@@ -260,11 +278,11 @@ EOF
       cat > /etc/profile.d/dtn_env.sh <<'EOF'
 export HOST_TUN_IPV6_ADDR="fd00:22::1"
 export HOST_LWIP_IPV6_ADDR="fd00:22::2"
-export HOST_enp0s9_IPV6_ADDR="ffd00:12::2"
-export HOST_enp0s8_IPV6_ADDR="fd00:23::2"
+export HOST_enp0s9_IPV6_ADDR="fd00:23::2"
+export HOST_enp0s8_IPV6_ADDR="fd00:12::2"
 export CURR_NODE_ADDR="fd00:12::2"
 export NODE_ID="2"
-export CONTACT_PLAN_PATH="py_cgr/contact_plans/cgr_tutorial_Simulation.txt"
+export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
@@ -381,10 +399,10 @@ EOF
       cat > /etc/profile.d/dtn_env.sh <<'EOF'
 export HOST_TUN_IPV6_ADDR="fd00:33::1"
 export HOST_LWIP_IPV6_ADDR="fd00:33::2"
-export HOST_enp0s9_IPV6_ADDR="ffd00:23::3"
+export HOST_enp0s9_IPV6_ADDR="fd00:23::3"
 export CURR_NODE_ADDR="fd00:23::3"
 export NODE_ID="3"
-export CONTACT_PLAN_PATH="py_cgr/contact_plans/cgr_tutorial_Simulation.txt"
+export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
