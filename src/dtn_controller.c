@@ -328,7 +328,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
             if (pbuf_copy(p_copy, p) == ERR_OK)
             {
                 // Send DTN-PCK-RECEIVED message to acknowledge receipt
-                dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_INFO);
+                // dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_INFO);
 
                 // Also send DTN-PCK-DELIVERED
                 //dtn_icmpv6_send_pck_delivered(inp_netif, p_copy, ICMP6_CODE_DTN_NO_INFO);
@@ -348,6 +348,7 @@ void dtn_controller_process_incoming(DTN_Controller *controller, struct pbuf *p,
     
     // Not for the local stack
     bool is_dtn_dest = dtn_routing_is_dtn_destination(routing, &temp_dest_addr);
+    is_dtn_dest = false;
 
     if (is_dtn_dest)
     {
