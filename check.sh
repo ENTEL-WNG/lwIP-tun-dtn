@@ -6,6 +6,8 @@ ip -6 addr show
 # 2. Check routes were installed
 ip -6 route show
 
+ip neighbour
+
 # 3. Check forwarding is enabled
 sysctl net.ipv6.conf.all.forwarding
 
