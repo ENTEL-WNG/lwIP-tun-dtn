@@ -441,20 +441,32 @@ int ip6_addr_to_str(const ip6_addr_t *a, char *buf, size_t buflen) {
 long ipv6_to_nodeid(const char *ip6) {
 
     // Node 0 (id = 1)
-    if (strcmp(ip6, "fd00:01::1") == 0) return 01;
-    if (strcmp(ip6, "fd00:1::1") == 0) return 01;
+    // if (strcmp(ip6, "fd00:01::1") == 0) return 01;
+    // if (strcmp(ip6, "fd00:1::1") == 0) return 01;
+
+    // // Node 1 (id = 2)
+    // if (strcmp(ip6, "fd00:01::2") == 0) return 10;
+    // if (strcmp(ip6, "fd00:1::1") == 0) return 10;
+    // if (strcmp(ip6, "fd00:12::1") == 0) return 12;
+
+    // // Node 2 (id = 3)
+    // if (strcmp(ip6, "fd00:12::2") == 0) return 21;
+    // if (strcmp(ip6, "fd00:23::2") == 0) return 23;
+
+    // // Node 3 (id = 4)
+    // if (strcmp(ip6, "fd00:23::3") == 0) return 32;
+    
+    if (strcmp(ip6, "fd00:01::1") == 0) return 1;
+    if (strcmp(ip6, "fd00:1::1") == 0) return 1;
 
     // Node 1 (id = 2)
-    if (strcmp(ip6, "fd00:01::2") == 0) return 10;
-    if (strcmp(ip6, "fd00:1::1") == 0) return 10;
-    if (strcmp(ip6, "fd00:12::1") == 0) return 12;
+    if (strcmp(ip6, "fd00::2") == 0) return 2;
 
     // Node 2 (id = 3)
-    if (strcmp(ip6, "fd00:12::2") == 0) return 21;
-    if (strcmp(ip6, "fd00:23::2") == 0) return 23;
+    if (strcmp(ip6, "fd00:22::2") == 0) return 3;
 
     // Node 3 (id = 4)
-    if (strcmp(ip6, "fd00:23::3") == 0) return 32;
+    if (strcmp(ip6, "fd00:33::2") == 0) return 4;
     
     return -1;
 }
@@ -463,12 +475,10 @@ int nodeid_to_ipv6(long node_id, ip6_addr_t *out) {
 
     const char *addr_txt = NULL;
     switch (node_id) {
-        case 01: addr_txt = "fd00:01::1"; break;
-        case 10: addr_txt = "fd00:01::2"; break;
-        case 12: addr_txt = "fd00:12::1"; break;
-        case 21: addr_txt = "fd00:12::2"; break;
-        case 23: addr_txt = "fd00:23::2"; break;
-        case 32: addr_txt = "fd00:23::3"; break;
+        case 1: addr_txt = "fd00:01::1"; break;
+        case 2: addr_txt = "fd00::2"; break;
+        case 3: addr_txt = "fd00:22::2"; break;
+        case 4: addr_txt = "fd00:33::2"; break;
         default: return -1;
     }
 
