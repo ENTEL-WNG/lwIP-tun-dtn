@@ -9,7 +9,7 @@
 #   net12: fd00:12::/64  (Node1 <-> Node2)
 #   net23: fd00:23::/64  (Node2 <-> Node3)
 
-CONTACT_PLAN_PATH = "py_cgr/contact_plans/cgr_tutorial_1.txt"
+CONTACT_PLAN_PATH = "py_cgr/contact_plans/plan_01.txt"
 
 Vagrant.configure("2") do |config|
 
@@ -54,14 +54,6 @@ Vagrant.configure("2") do |config|
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
       apt-get update -qq
       apt-get install -y ifupdown make build-essential python3-dev
-    #   systemctl stop systemd-networkd networking 2>/dev/null || true
-#       mkdir -p /etc/netplan
-#       find /etc/netplan -name '*.yaml' -delete
-#       cat > /etc/netplan/00-disable.yaml <<'NETPLAN'
-# network:
-#   version: 2
-#   renderer: networkd
-# NETPLAN
 
       # /etc/network/interfaces — enp0s8 (net01)
       cat >> /etc/network/interfaces <<'EOF'
@@ -73,7 +65,7 @@ iface enp0s8 inet6 static
     gateway fd00:01::2
     post-up sysctl -w net.ipv6.conf.all.forwarding=1
     post-up ip -6 route add fd00:12::/64 via fd00:01::2
-    post-up ip -6 route add fd00::/64   via fd00:01::2
+    post-up ip -6 route add fd00::/64 via fd00:01::2
     post-up ip -6 route add fd00:22::/64 via fd00:01::2
     post-up ip -6 route add fd00:33::/64 via fd00:01::2
 EOF
@@ -89,7 +81,7 @@ EOF
   #   Adapter 2 (net12)  — enp0s8  fd00:12::1/64
   #   Adapter 3 (net01)  — enp0s9  fd00:01::2/64
   #   TUN: fd00::1/64    (tun0, managed by systemd service)
-  #   lwIP: fd00::2
+  #   lwIP: fd00:2
   # ─────────────────────────────────────────────
   config.vm.define "node1" do |node|
     node.vm.hostname = "node1"
@@ -125,27 +117,27 @@ EOF
     node.vm.provision "shell", inline: <<~SHELL
       set -e
 
-      # --- ADDED: PERSISTENT ENV VARIABLES FOR C CODE ---
-# For interactive login shells (bash scripts, manual use)
-cat > /etc/profile.d/dtn_env.sh <<EOF
+      # --- PERSISTENT ENV VARIABLES FOR C CODE ---
+      # For interactive login shells (bash scripts, manual use)
+      cat > /etc/profile.d/dtn_env.sh <<EOF
 export HOST_TUN_IPV6_ADDR="fd00::1"
 export HOST_LWIP_IPV6_ADDR="fd00::2"
 export HOST_enp0s9_IPV6_ADDR="fd00:01::2"
 export HOST_enp0s8_IPV6_ADDR="fd00:12::1"
 export CURR_NODE_ADDR="fd00:12::1"
 export NODE_ID="1"
-export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
+export CONTACT_PLAN_PATH="#{CONTACT_PLAN_PATH}"
 EOF
 
-# For sudo / systemd / non-login processes — no 'export', no quotes around values
-cat >> /etc/environment <<EOF
+      # For sudo / systemd / non-login processes — no 'export', no quotes around values
+      cat >> /etc/environment <<EOF
 HOST_TUN_IPV6_ADDR=fd00::1
 HOST_LWIP_IPV6_ADDR=fd00::2
 HOST_enp0s9_IPV6_ADDR=fd00:01::2
 HOST_enp0s8_IPV6_ADDR=fd00:12::1
 CURR_NODE_ADDR=fd00:12::1
 NODE_ID=1
-CONTACT_PLAN_PATH_DEFAULT=#{CONTACT_PLAN_PATH}
+CONTACT_PLAN_PATH=#{CONTACT_PLAN_PATH}
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
@@ -173,7 +165,6 @@ EOF
 
       ifup enp0s8 || true
       ifup enp0s9 || true
-      # sysctl -w net.ipv6.conf.all.forwarding=1
 
       # /etc/systemd/system/tun0.service
       cat > /etc/systemd/system/tun0.service <<'EOF'
@@ -209,10 +200,6 @@ ip -6 rule del prio 10000 2>/dev/null || true
 
 ip6tables -t mangle -A PREROUTING -d fd00:01::2 -j TEE --gateway fd00::2
 ip6tables -t mangle -A PREROUTING -d fd00:12::1 -j TEE --gateway fd00::2
-ip6tables -t filter -A INPUT -d fd00:01::2 -p ipv6-icmp --icmpv6-type neighbour-solicitation -j ACCEPT
-ip6tables -t filter -A INPUT -d fd00:01::2 -p ipv6-icmp --icmpv6-type neighbour-advertisement -j ACCEPT
-ip6tables -t filter -A INPUT -d fd00:12::1 -p ipv6-icmp --icmpv6-type neighbour-solicitation -j ACCEPT
-ip6tables -t filter -A INPUT -d fd00:12::1 -p ipv6-icmp --icmpv6-type neighbour-advertisement -j ACCEPT
 ip6tables -t filter -A INPUT -d fd00:01::2 -j DROP
 ip6tables -t filter -A INPUT -d fd00:12::1 -j DROP
 ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
@@ -274,15 +261,27 @@ EOF
     node.vm.provision "shell", inline: <<~SHELL
       set -e
 
-      # --- ADDED: PERSISTENT ENV VARIABLES FOR C CODE ---
-      cat > /etc/profile.d/dtn_env.sh <<'EOF'
+      # --- PERSISTENT ENV VARIABLES FOR C CODE ---
+      # For interactive login shells (bash scripts, manual use)
+      cat > /etc/profile.d/dtn_env.sh <<EOF
 export HOST_TUN_IPV6_ADDR="fd00:22::1"
 export HOST_LWIP_IPV6_ADDR="fd00:22::2"
 export HOST_enp0s9_IPV6_ADDR="fd00:23::2"
 export HOST_enp0s8_IPV6_ADDR="fd00:12::2"
 export CURR_NODE_ADDR="fd00:12::2"
 export NODE_ID="2"
-export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
+export CONTACT_PLAN_PATH="#{CONTACT_PLAN_PATH}"
+EOF
+
+      # For sudo / systemd / non-login processes
+      cat >> /etc/environment <<EOF
+HOST_TUN_IPV6_ADDR=fd00:22::1
+HOST_LWIP_IPV6_ADDR=fd00:22::2
+HOST_enp0s9_IPV6_ADDR=fd00:23::2
+HOST_enp0s8_IPV6_ADDR=fd00:12::2
+CURR_NODE_ADDR=fd00:12::2
+NODE_ID=2
+CONTACT_PLAN_PATH=#{CONTACT_PLAN_PATH}
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
@@ -296,7 +295,7 @@ auto enp0s8
 iface enp0s8 inet6 static
   address fd00:12::2
   netmask 64
-  post-up ip -6 route add fd00::/64    via fd00:12::1
+  post-up ip -6 route add fd00::/64 via fd00:12::1
   post-up ip -6 route add fd00:01::/64 via fd00:12::1
 
 auto enp0s9
@@ -336,25 +335,25 @@ ip addr add 10.0.2.1/24 dev tun0 || true
 ip -6 addr add fd00:22::1/64 dev tun0 || true
 ip link set tun0 up
 
-# ip6tables -t mangle -F PREROUTING
-# ip6tables -t mangle -F OUTPUT
-# ip6tables -t filter -F INPUT
-# ip -6 rule del prio 10000 fwmark 1 table 100 2>/dev/null || true
-# ip -6 rule del prio 10000 2>/dev/null || true
+ip6tables -t mangle -F PREROUTING
+ip6tables -t mangle -F OUTPUT
+ip6tables -t filter -F INPUT
+ip -6 rule del prio 10000 fwmark 1 table 100 2>/dev/null || true
+ip -6 rule del prio 10000 2>/dev/null || true
 
-# ip6tables -t mangle -A PREROUTING -d fd00:23::2 -j TEE --gateway fd00::2
-# ip6tables -t mangle -A PREROUTING -d fd00:12::2 -j TEE --gateway fd00::2
-# ip6tables -t filter -A INPUT -d fd00:23::2 -j DROP
-# ip6tables -t filter -A INPUT -d fd00:12::2 -j DROP
+ip6tables -t mangle -A PREROUTING -d fd00:23::2 -j TEE --gateway fd00::2
+ip6tables -t mangle -A PREROUTING -d fd00:12::2 -j TEE --gateway fd00::2
+ip6tables -t filter -A INPUT -d fd00:23::2 -j DROP
+ip6tables -t filter -A INPUT -d fd00:12::2 -j DROP
 
-# ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
-# ip6tables -t mangle -A PREROUTING -i enp0s9 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
-# ip6tables -t mangle -A OUTPUT -j MARK --set-mark 1
+ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+ip6tables -t mangle -A PREROUTING -i enp0s9 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+ip6tables -t mangle -A OUTPUT -j MARK --set-mark 1
 
-# if ! ip -6 rule list | grep -q "fwmark 1.*lookup 100"; then
-#   ip -6 rule add fwmark 1 table 100 priority 10000
-# fi
-# ip -6 route replace default via fd00:22::2 dev tun0 table 100
+if ! ip -6 rule list | grep -q "fwmark 1.*lookup 100"; then
+  ip -6 rule add fwmark 1 table 100 priority 10000
+fi
+ip -6 route replace default via fd00:22::2 dev tun0 table 100
 EOF
 
       chmod +x /usr/local/sbin/setup-tun0.sh
@@ -395,14 +394,25 @@ EOF
     node.vm.provision "shell", inline: <<~SHELL
       set -e
 
-      # --- ADDED: PERSISTENT ENV VARIABLES FOR C CODE ---
-      cat > /etc/profile.d/dtn_env.sh <<'EOF'
+      # --- PERSISTENT ENV VARIABLES FOR C CODE ---
+      # For interactive login shells (bash scripts, manual use)
+      cat > /etc/profile.d/dtn_env.sh <<EOF
 export HOST_TUN_IPV6_ADDR="fd00:33::1"
 export HOST_LWIP_IPV6_ADDR="fd00:33::2"
 export HOST_enp0s9_IPV6_ADDR="fd00:23::3"
 export CURR_NODE_ADDR="fd00:23::3"
 export NODE_ID="3"
-export CONTACT_PLAN_PATH_DEFAULT="#{CONTACT_PLAN_PATH}"
+export CONTACT_PLAN_PATH="#{CONTACT_PLAN_PATH}"
+EOF
+
+      # For sudo / systemd / non-login processes
+      cat >> /etc/environment <<EOF
+HOST_TUN_IPV6_ADDR=fd00:33::1
+HOST_LWIP_IPV6_ADDR=fd00:33::2
+HOST_enp0s9_IPV6_ADDR=fd00:23::3
+CURR_NODE_ADDR=fd00:23::3
+NODE_ID=3
+CONTACT_PLAN_PATH=#{CONTACT_PLAN_PATH}
 EOF
 
       # Install ifupdown and disable netplan so /etc/network/interfaces is used
@@ -417,7 +427,7 @@ iface enp0s8 inet6 static
   address fd00:23::3
   netmask 64
   gateway fd00:23::2
-  post-up ip -6 route add fd00::/64    via fd00:23::2
+  post-up ip -6 route add fd00::/64 via fd00:23::2
   post-up ip -6 route add fd00:01::/64 via fd00:23::2
   post-up ip -6 route add fd00:12::/64 via fd00:23::2
   post-up ip -6 route add fd00:22::/64 via fd00:23::2
@@ -452,22 +462,22 @@ ip addr add 10.0.0.2/24 dev tun0 || true
 ip -6 addr add fd00:33::1/64 dev tun0 || true
 ip link set tun0 up
 
-# ip6tables -t mangle -F PREROUTING
-# ip6tables -t mangle -F OUTPUT
-# ip6tables -t filter -F INPUT
-# ip -6 rule del prio 10000 fwmark 1 table 100 2>/dev/null || true
-# ip -6 rule del prio 10000 2>/dev/null || true
+ip6tables -t mangle -F PREROUTING
+ip6tables -t mangle -F OUTPUT
+ip6tables -t filter -F INPUT
+ip -6 rule del prio 10000 fwmark 1 table 100 2>/dev/null || true
+ip -6 rule del prio 10000 2>/dev/null || true
 
-# ip6tables -t mangle -A PREROUTING -d fd00:23::3 -j TEE --gateway fd00::2
-# ip6tables -t filter -A INPUT -d fd00:23::3 -j DROP
+ip6tables -t mangle -A PREROUTING -d fd00:23::3 -j TEE --gateway fd00::2
+ip6tables -t filter -A INPUT -d fd00:23::3 -j DROP
 
-# ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
-# ip6tables -t mangle -A OUTPUT -j MARK --set-mark 1
+ip6tables -t mangle -A PREROUTING -i enp0s8 -m addrtype ! --dst-type LOCAL -j MARK --set-mark 1
+ip6tables -t mangle -A OUTPUT -j MARK --set-mark 1
 
-# if ! ip -6 rule list | grep -q "fwmark 1.*lookup 100"; then
-#   ip -6 rule add fwmark 1 table 100 priority 10000
-# fi
-# ip -6 route replace default via fd00:33::2 dev tun0 table 100
+if ! ip -6 rule list | grep -q "fwmark 1.*lookup 100"; then
+  ip -6 rule add fwmark 1 table 100 priority 10000
+fi
+ip -6 route replace default via fd00:33::2 dev tun0 table 100
 EOF
 
       chmod +x /usr/local/sbin/setup-tun0.sh
