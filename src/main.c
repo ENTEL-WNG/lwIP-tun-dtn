@@ -96,8 +96,10 @@ err_t tunif_output(struct netif *netif, struct pbuf *p) {
 }
 
 err_t tunif_input(struct netif *netif) {
-
-    if (!netif || !netif->state) { return ERR_ARG; }
+    if (!netif || !netif->state) {
+        printf("netif->state: %s", netif->state);
+        return ERR_ARG; 
+    }
     if (!global_dtn_module || !global_dtn_module->controller) {
         fprintf(stderr, "tunif_input: DTN Module or Controller not initialized!\n");
         char discard_buf[100];
@@ -128,8 +130,12 @@ err_t tunif_ip6_output(struct netif *netif, struct pbuf *p, const ip6_addr_t *ip
 }
 
 err_t tunif_init(struct netif *netif) {
-    if (!netif) { return ERR_ARG; }
-    netif->name[0] = 't'; netif->name[1] = 'n';
+    if (!netif) { 
+        printf("tunif_init failed");
+        return ERR_ARG; 
+    }
+    netif->name[0] = 't'; 
+    netif->name[1] = 'n';
     netif->output_ip6 = tunif_ip6_output;
     netif->linkoutput = tunif_output;
     netif->input = ip6_input;
@@ -229,10 +235,10 @@ int main() {
 
     s8_t assigned_idx_global = -1; 
     err_t add_global_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack, &assigned_idx_global);
-    // if (assigned_idx_global >= 0) {
-    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_global, IP6_ADDR_PREFERRED);
-    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
-    // }
+    if (assigned_idx_global >= 0) {
+        netif_ip6_addr_set_state(&tun_netif, assigned_idx_global, IP6_ADDR_PREFERRED);
+        printf("Forced %s to PREFERRED at index %d\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
+    }
 
     if (add_global_err == ERR_OK) {
         printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.lwip_ipv6_addr, assigned_idx_global);
@@ -266,10 +272,10 @@ int main() {
 
     s8_t assigned_idx_node_enp0s9 = -1; 
     err_t add_node_enp0s9_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack_enp0s9, &assigned_idx_node_enp0s9);
-    // if (assigned_idx_node_enp0s9 >= 0) {
-    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s9, IP6_ADDR_PREFERRED);
-    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
-    // }
+    if (assigned_idx_node_enp0s9 >= 0) {
+        netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s9, IP6_ADDR_PREFERRED);
+        printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
+    }
 
     if (add_node_enp0s9_err == ERR_OK) {
         printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.enp0s9_ipv6_addr, assigned_idx_node_enp0s9);
@@ -301,10 +307,10 @@ int main() {
 
     s8_t assigned_idx_node_enp0s8 = -1; 
     err_t add_node_enp0s8_err = netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack_enp0s8, &assigned_idx_node_enp0s8);
-    // if (assigned_idx_node_enp0s8 >= 0) {
-    //     netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s8, IP6_ADDR_PREFERRED);
-    //     printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
-    // }
+    if (assigned_idx_node_enp0s8 >= 0) {
+        netif_ip6_addr_set_state(&tun_netif, assigned_idx_node_enp0s8, IP6_ADDR_PREFERRED);
+        printf("Forced %s to PREFERRED at index %d\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
+    }
 
     if (add_node_enp0s8_err == ERR_OK) {
         printf("LwIP stack address %s added successfully at index %d.\n", dtn_config.enp0s8_ipv6_addr, assigned_idx_node_enp0s8);
