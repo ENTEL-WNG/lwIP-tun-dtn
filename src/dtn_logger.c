@@ -8,17 +8,18 @@
 #include <time.h>
 
 #include "dtn_config.h"
+#include "lwip/sys.h"
 
 // Internal state
-static dtn_level_t global_log_level = DTN_LEVEL_INFO;
+static dtn_level_t global_log_level = DTN_LEVEL_DEBUG;
 static dtn_time_t global_time_format = SYS_TIME;
 
 // Map enum values to strings for printing
 static const char* level_strings[] = {"FATAL", "ERROR", "WARN ", "INFO ", "DEBUG"};
 
 void dtn_log_init() {
-    if (dtn_config.DEBUG) {
-        global_log_level = DTN_LEVEL_DEBUG;
+    if (dtn_config.env == DTN_ENV_PRODUCTION) {
+        global_log_level = DTN_LEVEL_INFO;
     }
 
     DTN_INFO("Logger initialized (Level: %s)", level_strings[global_log_level]);
@@ -34,11 +35,11 @@ void dtn_log_write(dtn_level_t level, const char* file, int line, const char* fm
 
     if (global_time_format == SYS_TIME) {
         // Get time since boot in milliseconds
-        uint32_t now = sys_now();
+        u32_t now = sys_now();
 
         // Split into seconds and remaining milliseconds for readability
-        uint32_t secs = now / 1000;
-        uint32_t msecs = now % 1000;
+        u32_t secs = now / 1000;
+        u32_t msecs = now % 1000;
 
         // Format User Message
         va_start(args, fmt);

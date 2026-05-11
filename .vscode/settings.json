@@ -3,5 +3,24 @@
         "select.h": "c",
         "if_packet.h": "c"
     },
-    "editor.formatOnSave": true
+    // 1. Disable it globally so it doesn't leak into TOML
+    "editor.formatOnSave": false,
+    // 2. Enable it explicitly for C
+    "[c]": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "ms-vscode.cpptools"
+    },
+    "[json]": {
+        "editor.formatOnSave": true,
+    },
+    "[py]": {
+        "editor.formatOnSave": true,
+    },
+    // 3. Keep TOML strictly disabled
+    "[toml]": {
+        "editor.formatOnSave": false,
+        "editor.defaultFormatter": "tamasfe.even-better-toml"
+    },
+    // 4. Force the Even Better TOML extension to stop its own internal formatting
+    "evenBetterToml.formatter.enabled": false
 }

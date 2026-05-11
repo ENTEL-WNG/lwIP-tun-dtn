@@ -40,8 +40,8 @@ while true; do
             echo "Warning: Could not find eth interfaces to rename. Using existing names."
         fi
 
-        echo "ip -6 addr add $ADDR/48 dev $INT || true"
-        ip -6 addr add $ADDR/48 dev $INT || true
+        echo "ip -6 addr add $ADDR/64 dev $INT || true"
+        ip -6 addr add $ADDR/64 dev $INT || true
 
         if [ "${#ARRAY[@]}" -gt 2 ]; then
             VIA_ADDR="${ARRAY[2]}"
@@ -50,8 +50,10 @@ while true; do
             do
                 ROUTE="${ARRAY[$j]}"
 
-                echo "ip -6 route add $ROUTE/48 via $VIA_ADDR dev $INT || true"
-                ip -6 route add $ROUTE/48 via $VIA_ADDR dev $INT || true
+                echo "ip -6 route add $ROUTE via $VIA_ADDR dev $INT || true"
+                ip -6 route add $ROUTE via $VIA_ADDR dev $INT || true
+                # echo "ip -6 route add $ROUTE/64 via $VIA_ADDR dev $INT || true"
+                # ip -6 route add $ROUTE/64 via $VIA_ADDR dev $INT || true
             done
         fi
 

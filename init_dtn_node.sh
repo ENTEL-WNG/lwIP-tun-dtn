@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+# set -e
 
 # --- 1. Environment Variables ---
 # HOST_TUN_IPV6_ADDR=${HOST_TUN_IPV6_ADDR:-"fd00::1"}
@@ -7,7 +7,20 @@ set -e
 # INT_1=${INT_1:-"enp0s8"}
 # INT_2=${INT_2:-"enp0s9"}
 
-# Print it or write it to a log file
+# if [ -z "$LWIP_TIME_SET" ]; then
+#     # Grab the current host uptime seconds
+#     # Using 'read' to ensure we get a clean integer/float
+#     UPTIME=$(awk '{print $1}' /proc/uptime)
+    
+#     # We must use 'unshare' to create the namespace.
+#     # The 'echo' must happen inside the new namespace immediately.
+#     export LWIP_TIME_SET=1
+#     exec unshare --time --map-root-user /bin/bash -c "
+#         echo \"monotonic -$UPTIME 0\" > /proc/self/timens_offsets
+#         exec $0 \"$@\"
+#     "
+# fi
+
 echo "$(date +"[%Y-%m-%d %H:%M:%S.%3N]") --- Initializing Docker Network Environment ---"
 
 # --- 2. Kernel Settings ---

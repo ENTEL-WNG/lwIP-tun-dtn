@@ -1,7 +1,7 @@
 import sys
+import tomllib
 import copy
 from random import randint
-import time
 
 # This library contains prototype clases and methods to evaluate
 # Contact Graph Routing (CGR) routines as follows.
@@ -9,6 +9,10 @@ import time
 # - contact graph routing (cgr): compute routes using cgr techniques
 # - forward (fwd): process resulting routes for a specific ipv6_packet
 # - plot (plt): plot graph in gdf format for gephi visualization
+
+def log(message):
+    print(message, flush=True)
+
 
 
 class Contact:
@@ -225,26 +229,32 @@ class ipv6_packet:
 
 # load contact plan file with the format:
 # a contact +<start> +<end> <from> <to> <rate> <range>
-def cp_load(file_name, time_now, max_contacts=None):
+def cp_load(contact_plan_path, time_now, max_contacts=None):
     __contact_plan = []
-    nodes = set()
-    with open(file_name, 'r') as cf:
-        for contact in cf.readlines():
+    # nodes = set()
 
-            if contact[0] == '#':
-                continue
-            if not contact.startswith('a contact'):
-                continue
+    print(contact_plan_path, flush=True, file=sys.stderr)
 
-            fields = contact.split(' ')[2:]  # ignore "a contact"
-            start, end, frm, to, rate, owlt = map(int, fields)
-            nodes.add(frm)
-            nodes.add(to)
-            __contact_plan.append(
-                Contact(time_now, start=start, end=end, frm=frm, to=to, rate=rate, owlt=owlt))
-            if len(__contact_plan) == max_contacts:
-                break
+    with open(contact_plan_path, "rb") as f:
+        data = tomllib.load(f)
 
+    defaults = data.get("contact_plan.defaults", {})
+    default_rate = defaults.get("rate", 1)
+    default_range = defaults.get("range", 1)
+
+    edges = data.get("edges", [])
+    for edge in edges:
+        start   = edge.get("start_in_sec")
+        end     = edge.get("end_in_sec")
+        frm     = edge["from"]
+        to      = edge["to"]
+        rate   = edge.get("rate", default_rate)
+        range  = edge.get("range", default_range)
+        contact = Contact(time_now, frm, to, start, end, rate, range)
+        __contact_plan.append(contact)
+        if len(__contact_plan) == max_contacts:
+            break
+    
     print('Load contact plan: %s contacts were read.' % len(__contact_plan))
     # print(__contact_plan)
     return __contact_plan

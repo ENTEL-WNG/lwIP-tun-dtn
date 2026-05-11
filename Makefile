@@ -1,17 +1,14 @@
 CC = gcc
 
-# PY_INCLUDES := $(shell python3-config --includes)
-# PY_LDFLAGS  := $(shell python3-config --ldflags)
 PY_INCLUDES := $(shell python3-config --includes)
 PY_LDFLAGS  := $(shell python3-config --ldflags --embed)
-
-# PY_LIBS := -lpython3.12 -lpthread -lutil
 
 CFLAGS = -Wall \
 	-DNO_SYS=1 \
 	-I./ \
 	-I./port/include \
 	-I./include \
+	-I./third_party/tomlc99 \
 	-Ilwip/include \
 	-Ilwip/src/include \
 	-Ilwip/contrib/addons/ipv6_static_routing \
@@ -49,19 +46,32 @@ APP_SRC = \
 	src/raw_socket.c \
     src/dtn_storage.c \
 	src/dtn_custody.c \
-	src/dtn_logger.c \
+	src/dtn_logger.c
 
-SOURCES = $(APP_SRC) port/sys_arch.c $(LWIP_SRC)
-OBJECTS = $(SOURCES:.c=.o)
-TARGET = lwip_tun
+THIRD_PARTY_SRC = \
+    third_party/tomlc99/toml.c
 
-all: $(TARGET)
+APP_SRC_NO_MAIN = $(filter-out src/main.c, $(APP_SRC))
+
+SOURCES      = $(APP_SRC) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC)
+SOURCES_TEST = $(APP_SRC_NO_MAIN) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC) tests/main.c
+
+OBJECTS      = $(SOURCES:.c=.o)
+OBJECTS_TEST = $(SOURCES_TEST:.c=.o)
+
+TARGET      = lwip_tun
+TARGET_TEST = lwip_tun_test
+
+all: $(TARGET) $(TARGET_TEST)
 
 $(TARGET): $(OBJECTS)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+$(TARGET_TEST): $(OBJECTS_TEST)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(OBJECTS) $(TARGET)
+	rm -f $(OBJECTS) $(OBJECTS_TEST) $(TARGET) $(TARGET_TEST)

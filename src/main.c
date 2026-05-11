@@ -52,10 +52,10 @@
 // Constants
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
-// #define HOST_TUN_IPV6_ADDR "fd00::1"
-// #define HOST_LWIP_IPV6_ADDR "fd00::2"
-#define HOST_enp0s9_IPV6_ADDR "fd00:01::2"
-#define HOST_enp0s8_IPV6_ADDR "fd00:12::1"
+// #define tun_ipv6_addr "fd00::1"
+// #define lwip_ipv6_addr "fd00::2"
+// #define HOST_enp0s9_IPV6_ADDR "fd00:01::2"
+// #define HOST_enp0s8_IPV6_ADDR "fd00:12::1"
 #define CONTACT_CHECK_INTERVAL_MS 1000
 
 DTN_Module* global_dtn_module = NULL;
@@ -186,7 +186,7 @@ err_t tunif_init(struct netif* netif) {
 
 int main() {
     lwip_init();
-    init_config();
+    dtn_config_init(&dtn_config);
     dtn_log_init();
 
     struct stat st = {0};
@@ -281,8 +281,8 @@ int main() {
     }
 
     ip6_addr_t ip6addr_lwip_stack;
-    if (!ip6addr_aton(dtn_config.HOST_LWIP_IPV6_ADDR, &ip6addr_lwip_stack)) {
-        DTN_FATAL("Failed to parse LwIP stack IPv6 address %s", dtn_config.HOST_LWIP_IPV6_ADDR);
+    if (!ip6addr_aton(dtn_config.lwip_ipv6_addr, &ip6addr_lwip_stack)) {
+        DTN_FATAL("Failed to parse LwIP stack IPv6 address %s", dtn_config.lwip_ipv6_addr);
         netif_remove(&tun_netif);
         close(tun_fd);
         dtn_module_cleanup(global_dtn_module);
@@ -294,39 +294,39 @@ int main() {
         netif_add_ip6_address(&tun_netif, &ip6addr_lwip_stack, &assigned_idx_global);
 
     if (add_global_err == ERR_OK) {
-        DTN_INFO("LwIP stack address %s added successfully at index %d.",
-                 dtn_config.HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+        DTN_INFO("LwIP stack address %s added successfully at index %d.", dtn_config.lwip_ipv6_addr,
+                 assigned_idx_global);
         if (assigned_idx_global >= 0 &&
             netif_ip6_addr_state(&tun_netif, assigned_idx_global) != IP6_ADDR_INVALID) {
             netif_ip6_addr_set_state(&tun_netif, assigned_idx_global, IP6_ADDR_PREFERRED);
-            DTN_INFO("State for address %s (Index %d) set to PREFERRED.",
-                     dtn_config.HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+            DTN_INFO("State for address %s (Index %d) set to PREFERRED.", dtn_config.lwip_ipv6_addr,
+                     assigned_idx_global);
         } else {
             DTN_WARN(
                 "Address %s (Index %d) reported as added but state is invalid or index is "
                 "negative.",
-                dtn_config.HOST_LWIP_IPV6_ADDR, assigned_idx_global);
+                dtn_config.lwip_ipv6_addr, assigned_idx_global);
         }
     } else {
         DTN_WARN("netif_add_ip6_address for %s failed with error code %d.",
-                 dtn_config.HOST_LWIP_IPV6_ADDR, (int)add_global_err);
+                 dtn_config.lwip_ipv6_addr, (int)add_global_err);
         s8_t found_idx_after_fail = netif_get_ip6_addr_match(&tun_netif, &ip6addr_lwip_stack);
         if (found_idx_after_fail >= 0) {
             DTN_WARN("However, %s was found at Index %d after the reported failure.",
-                     dtn_config.HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+                     dtn_config.lwip_ipv6_addr, found_idx_after_fail);
             if (netif_ip6_addr_state(&tun_netif, found_idx_after_fail) != IP6_ADDR_INVALID &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, found_idx_after_fail))) {
                 netif_ip6_addr_set_state(&tun_netif, found_idx_after_fail, IP6_ADDR_PREFERRED);
-                DTN_INFO("State for %s (Index %d) set to PREFERRED.",
-                         dtn_config.HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+                DTN_INFO("State for %s (Index %d) set to PREFERRED.", dtn_config.lwip_ipv6_addr,
+                         found_idx_after_fail);
             } else if (ip6_addr_ispreferred(
                            netif_ip6_addr_state(&tun_netif, found_idx_after_fail))) {
-                DTN_INFO("Address %s (Index %d) was already preferred.",
-                         dtn_config.HOST_LWIP_IPV6_ADDR, found_idx_after_fail);
+                DTN_INFO("Address %s (Index %d) was already preferred.", dtn_config.lwip_ipv6_addr,
+                         found_idx_after_fail);
             }
         } else {
             DTN_WARN("And %s was NOT found by netif_get_ip6_addr_match after the reported failure.",
-                     dtn_config.HOST_LWIP_IPV6_ADDR);
+                     dtn_config.lwip_ipv6_addr);
         }
     }
 
@@ -337,16 +337,16 @@ int main() {
     ip6_addr_set_any(&default_prefix.addr);
     default_prefix.prefix_len = 0;
 
-    if (ip6addr_aton(dtn_config.HOST_TUN_IPV6_ADDR, &gw_addr)) {
+    if (ip6addr_aton(dtn_config.tun_ipv6_addr, &gw_addr)) {
         if (ip6_add_route_entry(&default_prefix, &tun_netif, &gw_addr, &route_idx) == ERR_OK) {
             DTN_INFO("LwIP: Static default IPv6 route added via %s (index %d).",
-                     dtn_config.HOST_TUN_IPV6_ADDR, route_idx);
+                     dtn_config.tun_ipv6_addr, route_idx);
         } else {
             fprintf(stderr, "LwIP: Failed to add static default IPv6 route.\n");
         }
     } else {
         fprintf(stderr, "LwIP: Failed to parse gateway address %s for static route.\n",
-                dtn_config.HOST_TUN_IPV6_ADDR);
+                dtn_config.tun_ipv6_addr);
     }
 
     DTN_INFO("Waiting for addresses to settle...");
@@ -395,7 +395,7 @@ int main() {
 
         bool cont = false;
         if (global_dtn_module && global_dtn_module->routing) {
-            cont = dtn_routing_update_contacts(global_dtn_module->routing);
+            // cont = dtn_routing_update_contacts(global_dtn_module->routing);
         }
 
         if (global_dtn_module && global_dtn_module->controller && cont) {

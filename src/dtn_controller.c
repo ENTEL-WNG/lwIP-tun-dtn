@@ -233,13 +233,20 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
     // ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
     u32_t temp_v_tc_fl;
-    u16_t temp_plen;
-    u8_t temp_hoplim;
-    // memcpy(&temp_src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
-    // memcpy(&temp_dest_addr, &ip6hdr->dest, sizeof(ip6_addr_t));
+    // u16_t temp_plen;
+    // u8_t temp_hoplim;
     memcpy(&temp_v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
-    memcpy(&temp_plen, &ip6hdr->_plen, sizeof(u16_t));
-    memcpy(&temp_hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
+    // memcpy(&temp_plen, &ip6hdr->_plen, sizeof(u16_t));
+    // memcpy(&temp_hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
+
+    u16_t temp_plen = IP6_HLEN + lwip_ntohs(ip6hdr->_plen);
+
+    u8_t temp_hoplim = ip6hdr->_hoplim;
+
+    // u8_t version = IP6H_V(ip6hdr);
+    // u8_t traffic_class = IP6H_TC(ip6hdr);
+
+    // u16_t temp_plen = lwip_ntohs(ip6hdr->_plen);
 
     char src_str[IP6ADDR_STRLEN_MAX];
     char dest_str[IP6ADDR_STRLEN_MAX];
@@ -248,8 +255,12 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     ip6_addr_copy_from_packed(temp_dest_addr, ip6hdr->dest);
     ip6addr_ntoa_r(&temp_src_addr, src_str, sizeof(src_str));
     ip6addr_ntoa_r(&temp_dest_addr, dest_str, sizeof(dest_str));
-    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %d", src_str, dest_str,
-             IP6H_NEXTH(ip6hdr));
+    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %u | plen: %u | hoplim: %u",
+             src_str, dest_str, (unsigned int)IP6H_NEXTH(ip6hdr), (unsigned int)temp_plen,
+             (unsigned int)temp_hoplim);
+
+    // temp_plen = _temp_plen;
+    temp_plen = 10;
 
     if (!dtn_extract_custodian_option(p, &temp_dest_sender)) {
         memcpy(&temp_dest_sender, &temp_src_addr, sizeof(ip6_addr_t));
@@ -297,20 +308,20 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
     bool is_local = false;
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        if (is_local_address(&temp_dest_addr, dtn_config.interfaces[i]->addr)) {
-            DTN_DEBUG("Destination is local via %s", dtn_config.interfaces[i]->addr);
+        if (is_local_address(&temp_dest_addr, dtn_config.interfaces[i].local_addr)) {
+            DTN_DEBUG("Destination is local via %s", dtn_config.interfaces[i].local_addr);
             is_local = true;
             break;
         }
     }
 
-    if (is_local_address(&temp_dest_addr, dtn_config.HOST_LWIP_IPV6_ADDR)) {
-        DTN_DEBUG("Destination is local lwIP addresse %s", dtn_config.HOST_LWIP_IPV6_ADDR);
+    if (is_local_address(&temp_dest_addr, dtn_config.lwip_ipv6_addr)) {
+        DTN_DEBUG("Destination is local lwIP addresse %s", dtn_config.lwip_ipv6_addr);
         is_local = true;
     }
 
-    if (is_local_address(&temp_dest_addr, dtn_config.HOST_TUN_IPV6_ADDR)) {
-        DTN_DEBUG("Destination is local TUN addresse %s", dtn_config.HOST_TUN_IPV6_ADDR);
+    if (is_local_address(&temp_dest_addr, dtn_config.tun_ipv6_addr)) {
+        DTN_DEBUG("Destination is local TUN addresse %s", dtn_config.tun_ipv6_addr);
         is_local = true;
     }
 
@@ -337,22 +348,20 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    // Not for the local stack
-    bool is_dtn_dest = dtn_routing_is_dtn_destination(routing, &temp_dest_addr);
+    // DTN ROUTING
+    // From here we think about node ids and not ipv6 addresses
+    // raw_socket knows which id <-> which ip
 
-    if (is_dtn_dest) {
-        ip6_addr_t next_hop_ip;
-        int contact_available =
-            dtn_routing_get_dtn_next_hop(routing, &temp_v_tc_fl, &temp_plen, &temp_hoplim,
-                                         &temp_dest_addr, &temp_dest_sender, &next_hop_ip);
-        bool active = is_next_hop_active_contact(routing, &next_hop_ip);
+    int next_hop_node_id;
+    int get_next_hop_node_id_result =
+        dtn_routing_get_next_hop_node_id(routing->base_time, sys_now(), ip6hdr, &next_hop_node_id);
 
-        DTN_INFO("Routing Status: [Available: %s | Active: %s] -> Next Hop: %s",
-                 contact_available ? "YES" : "NO", active ? "ACTIVE" : "INACTIVE",
-                 ipaddr_ntoa(&next_hop_ip));
+    if (get_next_hop_node_id_result == 1) {
+        bool is_next_hop_active;
+        int is_next_hop_active_contact_result =
+            dtn_routing_is_next_hop_active(sys_now(), next_hop_node_id, &is_next_hop_active);
 
-        if (contact_available && active) {
-            // Create a copy of the packet for DTN-PCK-FORWARDED message
+        if (is_next_hop_active_contact_result == 1 && is_next_hop_active) {
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
             if (p_copy != NULL) {
                 if (pbuf_copy(p_copy, p) == ERR_OK) {
@@ -365,11 +374,13 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
             ip6_addr_t my_addr = inp_netif->ip6_addr[1];
             dtn_update_or_add_custodian_option(&p, &my_addr);
-            err_t err = raw_socket_send_ipv6(p, &next_hop_ip) == 0 ? ERR_OK : ERR_IF;
-            if (err != ERR_OK) {
-                DTN_ERROR("DTS destination sending packet src: %s -> dest: %s  via raw socket: %d.",
-                          src_str, dest_str, err);
-            }
+            // TODO:: via node_id
+            // err_t err = raw_socket_send_ipv6(p, &next_hop_ip) == 0 ? ERR_OK : ERR_IF;
+            // if (err != ERR_OK) {
+            //     DTN_ERROR("DTS destination sending packet src: %s -> dest: %s  via raw socket:
+            //     %d.",
+            //               src_str, dest_str, err);
+            // }
             pbuf_free(p);
             return;
         }
@@ -425,124 +436,128 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
     Routing_Function* routing = controller->parent_module->routing;
 
     // Update routing contacts based on current time
-    dtn_routing_update_contacts(routing);
+    // dtn_routing_update_contacts(routing);
 
     Stored_Packet_Entry* entry = storage->packet_list_head;
 
-    while (entry != NULL) {
-        Stored_Packet_Entry* next_entry = entry->next;
+    //     while (entry != NULL) {
+    //         Stored_Packet_Entry* next_entry = entry->next;
 
-        // Check if enough time has passed since last attempt
-        if (should_attempt_forward(controller, &entry->original_dest)) {
-            struct ip6_hdr* ip6hdr = (struct ip6_hdr*)entry->p->payload;
-            u32_t v_tc_fl;
-            u16_t plen;
-            u8_t hoplim;
-            ip6_addr_t src_addr, sender_ip, retrieved_dest_nozone;
+    //         // Check if enough time has passed since last attempt
+    //         if (should_attempt_forward(controller, &entry->original_dest)) {
+    //             struct ip6_hdr* ip6hdr = (struct ip6_hdr*)entry->p->payload;
+    //             u32_t v_tc_fl;
+    //             u16_t plen;
+    //             u8_t hoplim;
+    //             ip6_addr_t src_addr, sender_ip, retrieved_dest_nozone;
 
-            memcpy(&v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
-            memcpy(&plen, &ip6hdr->_plen, sizeof(u16_t));
-            memcpy(&hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
-            memcpy(&src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
-            memcpy(&retrieved_dest_nozone, &ip6hdr->dest, sizeof(ip6_addr_t));
+    //             memcpy(&v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
+    //             memcpy(&plen, &ip6hdr->_plen, sizeof(u16_t));
+    //             memcpy(&hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
+    //             memcpy(&src_addr, &ip6hdr->src, sizeof(ip6_addr_t));
+    //             memcpy(&retrieved_dest_nozone, &ip6hdr->dest, sizeof(ip6_addr_t));
 
-            if (!dtn_extract_custodian_option(entry->p, &sender_ip)) {
-                memcpy(&sender_ip, &src_addr, sizeof(ip6_addr_t));
-            }
-            ip6_addr_t next_hop_ip;
-            int contact_available =
-                dtn_routing_get_dtn_next_hop(routing, &v_tc_fl, &plen, &hoplim,
-                                             &retrieved_dest_nozone, &sender_ip, &next_hop_ip);
-            if (contact_available && is_next_hop_active_contact(routing, &next_hop_ip)) {
-                char node_addr_str[IP6ADDR_STRLEN_MAX];
-                ip6addr_ntoa_r(&next_hop_ip, node_addr_str, sizeof(node_addr_str));
-                printf("DTN Controller: Forwarding to %s (via CGR)\n", node_addr_str);
+    //             if (!dtn_extract_custodian_option(entry->p, &sender_ip)) {
+    //                 memcpy(&sender_ip, &src_addr, sizeof(ip6_addr_t));
+    //             }
+    //             ip6_addr_t next_hop_ip;
+    //             int contact_available =
+    //                 dtn_routing_get_dtn_next_hop(routing, &v_tc_fl, &plen, &hoplim,
+    //                                              &retrieved_dest_nozone, &sender_ip,
+    //                                              &next_hop_ip);
+    //             if (contact_available && is_next_hop_active_contact(routing, &next_hop_ip)) {
+    //                 char node_addr_str[IP6ADDR_STRLEN_MAX];
+    //                 ip6addr_ntoa_r(&next_hop_ip, node_addr_str, sizeof(node_addr_str));
+    //                 printf("DTN Controller: Forwarding to %s (via CGR)\n", node_addr_str);
 
-                struct pbuf* p_to_fwd = pbuf_alloc(PBUF_RAW, entry->p->tot_len, PBUF_RAM);
+    //                 struct pbuf* p_to_fwd = pbuf_alloc(PBUF_RAW, entry->p->tot_len, PBUF_RAM);
 
-                if (p_to_fwd && pbuf_copy(p_to_fwd, entry->p) == ERR_OK) {
-                    bool is_for_this_lwip_stack = false;
-                    //                     ip6_addr_t local_lwip_addr;
-                    //                     if (ip6addr_aton(dtn_config.HOST_LWIP_IPV6_ADDR,
-                    //                     &local_lwip_addr)) // <- CHANGE
-                    //                     {
-                    //                         ip6_addr_t retrieved_dest_nozone;
-                    //                         memcpy(&retrieved_dest_nozone,
-                    //                         &packet_copy->original_dest, sizeof(ip6_addr_t));
-                    // #if LWIP_IPV6_SCOPES
-                    //                         ip6_addr_set_zone(&retrieved_dest_nozone,
-                    //                         IP6_NO_ZONE); ip6_addr_set_zone(&local_lwip_addr,
-                    //                         IP6_NO_ZONE);
-                    // #endif
-                    //                         if (ip6_addr_cmp(&retrieved_dest_nozone,
-                    //                         &local_lwip_addr))
-                    //                         {
-                    ip6_addr_t local_lwip_addr_1, local_lwip_addr_2;
-                    if (ip6addr_aton("fd00:01::2", &local_lwip_addr_1)) {
-                        ip6_addr_t dest_nozone = retrieved_dest_nozone;
-#if LWIP_IPV6_SCOPES
-                        ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
-                        ip6_addr_set_zone(&local_lwip_addr_1, IP6_NO_ZONE);
-#endif
-                        if (ip6_addr_cmp(&dest_nozone, &local_lwip_addr_1)) {
-                            is_for_this_lwip_stack = true;
-                        }
-                    }
-                    if (ip6addr_aton("fd00:12::1", &local_lwip_addr_2)) {
-                        ip6_addr_t dest_nozone = retrieved_dest_nozone;
-#if LWIP_IPV6_SCOPES
-                        ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
-                        ip6_addr_set_zone(&local_lwip_addr_2, IP6_NO_ZONE);
-#endif
-                        if (ip6_addr_cmp(&dest_nozone, &local_lwip_addr_2)) {
-                            is_for_this_lwip_stack = true;
-                        }
-                    }
+    //                 if (p_to_fwd && pbuf_copy(p_to_fwd, entry->p) == ERR_OK) {
+    //                     bool is_for_this_lwip_stack = false;
+    //                     //                     ip6_addr_t local_lwip_addr;
+    //                     //                     if (ip6addr_aton(dtn_config.HOST_LWIP_IPV6_ADDR,
+    //                     //                     &local_lwip_addr)) // <- CHANGE
+    //                     //                     {
+    //                     //                         ip6_addr_t retrieved_dest_nozone;
+    //                     //                         memcpy(&retrieved_dest_nozone,
+    //                     //                         &packet_copy->original_dest,
+    //                     sizeof(ip6_addr_t));
+    //                     // #if LWIP_IPV6_SCOPES
+    //                     //                         ip6_addr_set_zone(&retrieved_dest_nozone,
+    //                     //                         IP6_NO_ZONE);
+    //                     ip6_addr_set_zone(&local_lwip_addr,
+    //                     //                         IP6_NO_ZONE);
+    //                     // #endif
+    //                     //                         if (ip6_addr_cmp(&retrieved_dest_nozone,
+    //                     //                         &local_lwip_addr))
+    //                     //                         {
+    //                     ip6_addr_t local_lwip_addr_1, local_lwip_addr_2;
+    //                     if (ip6addr_aton("fd00:01::2", &local_lwip_addr_1)) {
+    //                         ip6_addr_t dest_nozone = retrieved_dest_nozone;
+    // #if LWIP_IPV6_SCOPES
+    //                         ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
+    //                         ip6_addr_set_zone(&local_lwip_addr_1, IP6_NO_ZONE);
+    // #endif
+    //                         if (ip6_addr_cmp(&dest_nozone, &local_lwip_addr_1)) {
+    //                             is_for_this_lwip_stack = true;
+    //                         }
+    //                     }
+    //                     if (ip6addr_aton("fd00:12::1", &local_lwip_addr_2)) {
+    //                         ip6_addr_t dest_nozone = retrieved_dest_nozone;
+    // #if LWIP_IPV6_SCOPES
+    //                         ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
+    //                         ip6_addr_set_zone(&local_lwip_addr_2, IP6_NO_ZONE);
+    // #endif
+    //                         if (ip6_addr_cmp(&dest_nozone, &local_lwip_addr_2)) {
+    //                             is_for_this_lwip_stack = true;
+    //                         }
+    //                     }
 
-                    if (is_for_this_lwip_stack) {
-                        // Create a copy of the packet for DTN-PCK-RECEIVED message
-                        struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p_to_fwd->tot_len, PBUF_RAM);
-                        if (p_copy != NULL) {
-                            if (pbuf_copy(p_copy, p_to_fwd) == ERR_OK) {
-                                dtn_icmpv6_send_pck_received(netif_out, p_copy,
-                                                             ICMP6_CODE_DTN_NO_INFO);
-                            }
-                            pbuf_free(p_copy);
-                        }
+    //                     if (is_for_this_lwip_stack) {
+    //                         // Create a copy of the packet for DTN-PCK-RECEIVED message
+    //                         struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p_to_fwd->tot_len,
+    //                         PBUF_RAM); if (p_copy != NULL) {
+    //                             if (pbuf_copy(p_copy, p_to_fwd) == ERR_OK) {
+    //                                 dtn_icmpv6_send_pck_received(netif_out, p_copy,
+    //                                                              ICMP6_CODE_DTN_NO_INFO);
+    //                             }
+    //                             pbuf_free(p_copy);
+    //                         }
 
-                        err_t err = ip6_input(p_to_fwd, netif_out);
-                        if (err != ERR_OK) {
-                            pbuf_free(p_to_fwd);
-                        }
-                    } else {
-                        struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p_to_fwd->tot_len, PBUF_RAM);
-                        if (p_copy != NULL) {
-                            if (pbuf_copy(p_copy, p_to_fwd) == ERR_OK) {
-                                // Send DTN-PCK-FORWARDED message (comentat originalment)
-                                // dtn_icmpv6_send_pck_forwarded(netif_out, p_copy,
-                                // ICMP6_CODE_DTN_NO_INFO);
-                            }
-                            pbuf_free(p_copy);
-                        }
+    //                         err_t err = ip6_input(p_to_fwd, netif_out);
+    //                         if (err != ERR_OK) {
+    //                             pbuf_free(p_to_fwd);
+    //                         }
+    //                     } else {
+    //                         struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p_to_fwd->tot_len,
+    //                         PBUF_RAM); if (p_copy != NULL) {
+    //                             if (pbuf_copy(p_copy, p_to_fwd) == ERR_OK) {
+    //                                 // Send DTN-PCK-FORWARDED message (comentat originalment)
+    //                                 // dtn_icmpv6_send_pck_forwarded(netif_out, p_copy,
+    //                                 // ICMP6_CODE_DTN_NO_INFO);
+    //                             }
+    //                             pbuf_free(p_copy);
+    //                         }
 
-                        ip6_addr_t my_addr = netif_out->ip6_addr[1];
-                        dtn_add_custodian_option(&p_to_fwd, &my_addr);
+    //                         ip6_addr_t my_addr = netif_out->ip6_addr[1];
+    //                         dtn_add_custodian_option(&p_to_fwd, &my_addr);
 
-                        err_t err =
-                            raw_socket_send_ipv6(p_to_fwd, &next_hop_ip) == 0 ? ERR_OK : ERR_IF;
-                        if (err != ERR_OK) {
-                            fprintf(
-                                stderr,
-                                "DTN Controller: Error sending stored packet via raw socket: %d.\n",
-                                err);
-                        }
-                        pbuf_free(p_to_fwd);
-                    }
-                } else if (p_to_fwd) {
-                    pbuf_free(p_to_fwd);
-                }
-            }
-        }
-        entry = next_entry;
-    }
+    //                         err_t err =
+    //                             raw_socket_send_ipv6(p_to_fwd, &next_hop_ip) == 0 ? ERR_OK :
+    //                             ERR_IF;
+    //                         if (err != ERR_OK) {
+    //                             fprintf(
+    //                                 stderr,
+    //                                 "DTN Controller: Error sending stored packet via raw socket:
+    //                                 %d.\n", err);
+    //                         }
+    //                         pbuf_free(p_to_fwd);
+    //                     }
+    //                 } else if (p_to_fwd) {
+    //                     pbuf_free(p_to_fwd);
+    //                 }
+    //             }
+    //         }
+    //         entry = next_entry;
+    //     }
 }

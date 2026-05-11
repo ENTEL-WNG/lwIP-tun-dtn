@@ -1,0 +1,75 @@
+# Auto-generated config for node 4
+
+[node]
+id     = 4
+name   = "GoldenPuma"
+is_dtn        = true
+dtn_addresses = []
+addresses     = []
+tun_ipv6_addr  = "fd00:ffff:04::1/64"
+lwip_ipv6_addr = "fd00:ffff:04::04/64"
+
+[contact_plan]
+name = "contact plan 1"
+
+[contact_plan.defaults]
+rate = 1
+range = 1
+
+# Node Definitions
+[[nodes]]
+id = 1
+isDtnNode = false
+
+[[nodes]]
+id = 2
+name = "SpecialName"
+isDtnNode = true
+
+[[nodes]]
+id = 3
+isDtnNode = true
+
+[[nodes]]
+id = 4
+isDtnNode = true
+
+[[nodes]]
+id = 5
+isDtnNode = true
+
+# Edge Definitions
+[[edges]]
+from = 1
+to = 2
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
+
+[[edges]]
+from = 2
+to = 3
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
+
+# [[edges]]
+# from = 3
+# to = 4
+# start_in_sec = 0
+# end_in_sec = 100
+# bidirected = true
+
+# [[edges]]
+# from = 2
+# to = 5
+# start_in_sec = 100
+# end_in_sec = 200
+# bidirected = true
+
+# [[edges]]
+# from = 5
+# to = 4
+# start_in_sec = 0
+# end_in_sec = 200
+# bidirected = true

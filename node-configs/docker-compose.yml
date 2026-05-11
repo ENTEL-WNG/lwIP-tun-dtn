@@ -1,0 +1,55 @@
+services:
+  node1:
+    build:
+      context: .
+      dockerfile: Dockerfile.reg
+    container_name: node1
+    hostname: ScarletRaven
+    environment:
+      CONFIG_PATH: /configs/node1.toml
+    volumes:
+    - /node-configs/node1.toml:/configs/node1.toml:ro
+    cap_add:
+    - NET_ADMIN
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:01
+  node2:
+    build:
+      context: .
+      dockerfile: Dockerfile.dtn
+    container_name: node2
+    hostname: SpecialName
+    environment:
+      CONFIG_PATH: /configs/node2.toml
+    volumes:
+    - /node-configs/node2.toml:/configs/node2.toml:ro
+    cap_add:
+    - NET_ADMIN
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:02
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:02
+  node3:
+    build:
+      context: .
+      dockerfile: Dockerfile.dtn
+    container_name: node3
+    hostname: GoldenMoose
+    environment:
+      CONFIG_PATH: /configs/node3.toml
+    volumes:
+    - /node-configs/node3.toml:/configs/node3.toml:ro
+    cap_add:
+    - NET_ADMIN
+    networks:
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:03
+networks:
+  net-node1-node2:
+    driver: bridge
+    enable_ipv6: true
+  net-node2-node3:
+    driver: bridge
+    enable_ipv6: true
