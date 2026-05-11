@@ -35,4 +35,5 @@ void dtn_config_print(const DtnConfig *dtn_config) {
     printf("enp0s8_ipv6_addr : %s\n", dtn_config->enp0s8_ipv6_addr);
     printf("curr_node_addr   : %s\n", dtn_config->curr_node_addr);
     printf("node_id          : %d\n", dtn_config->node_id);
+    printf("contact_plan_path: %s\n", dtn_config->contact_plan_path);
 }
