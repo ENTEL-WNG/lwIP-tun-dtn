@@ -21,6 +21,7 @@ import time
 import subprocess
 import tomllib          # stdlib >= 3.11; install 'tomli' for 3.9/3.10
 import logging
+import ipaddress
 from pathlib import Path
 from datetime import datetime
 
@@ -44,7 +45,13 @@ log = logging.getLogger(__name__)
 def run(cmd: list[str], *, check: bool = True, ignore_errors: bool = False) -> subprocess.CompletedProcess:
     """Run a shell command, logging it first."""
     log.info("$ %s", " ".join(str(c) for c in cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    except FileNotFoundError:
+        if ignore_errors:
+            log.debug("Command not found, skipping: %s", cmd[0])
+            return subprocess.CompletedProcess(cmd, 127, "", "")
+        raise
     if result.stdout.strip():
         log.debug("stdout: %s", result.stdout.strip())
     if result.stderr.strip():
@@ -102,7 +109,7 @@ def setup_interfaces(cfg: dict) -> list[str]:
         local_addr:  str = iface["local_addr"].split("/")[0]   # strip prefix len
         local_mac:   str = iface["local_mac"]
         remote_addr: str = iface["remote_addr"].split("/")[0]
-        neigh_mac:   str = iface["neighbour_mac"]
+        neigh_mac:   str = iface["remote_mac"]
 
         log.info("=== Configuring %s ===", int_name)
 
@@ -130,20 +137,32 @@ def setup_interfaces(cfg: dict) -> list[str]:
         elif not old_name:
             log.warning("Could not find interface with MAC %s; skipping rename.", local_mac)
 
+        # ---- Disable DAD before assigning address (avoid tentative state) --
+        sysctl(f"net.ipv6.conf.{int_name}.accept_dad", "0")
+
         # ---- Assign local IPv6 address -----------------------------------
         ip("-6", "addr", "add", iface["local_addr"], "dev", int_name, ignore_errors=True)
 
         # ---- Extra routes declared in the interface block ----------------
         #
-        # The TOML interface has dtn_addresses / addresses lists that tell
-        # us which prefixes are reachable via the remote neighbour.
+        # For each address in dtn_addresses / addresses that is NOT on the
+        # directly-connected /64, add a /64 prefix route via the remote
+        # neighbour.  Host routes (/128) can be silently rejected by the
+        # kernel when the gateway hasn't been resolved yet; prefix routes
+        # are accepted as soon as the local address is assigned.
         #
+        local_net = ipaddress.ip_interface(iface["local_addr"]).network  # e.g. fd00:1:2::/64
         via = remote_addr
-        for prefix in iface.get("dtn_addresses", []) + iface.get("addresses", []):
-            # Only add routes for prefixes that are NOT the local address.
-            if prefix.split("/")[0] != local_addr:
-                ip("-6", "route", "add", prefix, "via", via, "dev", int_name,
+        added_nets: set[str] = set()
+        for addr_str in iface.get("dtn_addresses", []) + iface.get("addresses", []):
+            addr = ipaddress.ip_address(addr_str.split("/")[0])
+            if addr in local_net:
+                continue  # directly connected, kernel adds this automatically
+            net = str(ipaddress.ip_interface(f"{addr}/64").network)
+            if net not in added_nets:
+                ip("-6", "route", "add", net, "via", via, "dev", int_name,
                    ignore_errors=True)
+                added_nets.add(net)
 
         # ---- Permanent neighbour (ARP/NDP) entry -------------------------
         ip("-6", "neigh", "replace", remote_addr,
@@ -219,15 +238,16 @@ def init_dtn_node(cfg: dict) -> None:
     sysctl("net.netfilter.nf_log.10", "nf_log_ipv6")
 
     # ---- 6. ip6tables — TRACE (debug) ------------------------------------
-    ip6tables("-t", "raw", "-A", "PREROUTING", "-i", "enp0s8", "-j", "TRACE",
-              table="raw", ignore_errors=True)
+    for iface in all_interfaces:
+        ip6tables("-A", "PREROUTING", "-i", iface, "-j", "TRACE",
+                  table="raw", ignore_errors=True)
     ip6tables("-A", "OUTPUT", "-j", "TRACE", table="raw", ignore_errors=True)
 
     # ---- 7. Neighbour Discovery exemptions --------------------------------
-    for nd_type in (133, 134, 135, 136):
-        ip6tables("-A", "PREROUTING",
-                  "-p", "icmpv6", "--icmpv6-type", str(nd_type), "-j", "ACCEPT",
-                  table="mangle")
+    # for nd_type in (133, 134, 135, 136):
+    #     ip6tables("-A", "PREROUTING",
+    #               "-p", "icmpv6", "--icmpv6-type", str(nd_type), "-j", "ACCEPT",
+    #               table="mangle")
 
     # ---- 8. Mark all ingress traffic on data interfaces ------------------
     for iface in all_interfaces:
@@ -237,18 +257,20 @@ def init_dtn_node(cfg: dict) -> None:
 
     ip6tables("-A", "OUTPUT", "-j", "MARK", "--set-mark", "1", table="mangle")
 
-    # ---- 9. Policy routing: fwmark 1 -> table 100 -> via LwIP -----------
-    ip("-6", "rule", "del", "fwmark", "1", "table", "100", ignore_errors=True)
-    ip("-6", "rule", "add", "fwmark", "1", "table", "100", "priority", "0")
-    ip("-6", "route", "replace", "default",
-       "via", lwip_addr, "dev", "tun0", "table", "100")
-
-    # ---- 10. Docker fix: demote 'local' table to prio 1000 --------------
+    # ---- 9. Docker fix: demote 'local' table to prio 1000 ---------------
+    # Must happen before we add our fwmark rule at prio 0, otherwise
+    # `ip rule del pref 0` would remove the fwmark rule instead of local.
     result = run(["ip", "-6", "rule", "show"], check=False)
     if re.search(r"^0:.*lookup local", result.stdout, re.MULTILINE):
         ip("-6", "rule", "add", "pref", "1000", "table", "local",
            ignore_errors=True)
         ip("-6", "rule", "del", "pref", "0", ignore_errors=True)
+
+    # ---- 10. Policy routing: fwmark 1 -> table 100 -> via LwIP ----------
+    ip("-6", "rule", "del", "fwmark", "1", "table", "100", ignore_errors=True)
+    ip("-6", "rule", "add", "fwmark", "1", "table", "100", "priority", "0")
+    ip("-6", "route", "replace", "default",
+       "via", lwip_addr, "dev", "tun0", "table", "100")
 
     # ---- 11. Hand off to LwIP binary -------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
@@ -258,8 +280,24 @@ def init_dtn_node(cfg: dict) -> None:
         log.error("lwip_tun binary not found at %s", lwip_bin.resolve())
         sys.exit(1)
 
+    # os.environ["DTN_CONFIG_PATH"] = toml_path
     os.execv(str(lwip_bin), [str(lwip_bin)])   # replaces this process
+    log.info("--- Node %s Setup Complete. Keeping container alive ---", node_id)
+    # Equivalent of `exec sleep infinity`
+    while True:
+        time.sleep(3600)
 
+# ---------------------------------------------------------------------------
+# Build binary
+# ---------------------------------------------------------------------------
+
+def build_binary() -> None:
+         log.info("--- Building lwip_tun ---")
+         result = run(["make", "-C", "/repo"], check=False)
+         if result.returncode != 0:
+             log.error("make failed (rc=%d):\n%s", result.returncode, result.stderr.strip())
+             sys.exit(1)
+         log.info("--- Build complete ---")
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -268,6 +306,7 @@ def init_dtn_node(cfg: dict) -> None:
 def main() -> None:
     toml_path = sys.argv[1] if len(sys.argv) > 1 else "node.toml"
     cfg = load_config(toml_path)
+    build_binary()
 
     node = cfg.get("node", {})
     is_dtn: bool = node.get("is_dtn", False)

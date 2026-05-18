@@ -19,14 +19,15 @@
 #include <stdlib.h>
 
 #include "dtn_controller.h"
+#include "dtn_logger.h"
 #include "dtn_routing.h"
 #include "dtn_storage.h"
 
 DTN_Module* dtn_module_init(void) {
-    printf("Initializing DTN Module...\n");
+    DTN_INFO("Initializing DTN Module...");
     DTN_Module* module = (DTN_Module*)malloc(sizeof(DTN_Module));
     if (!module) {
-        perror("Failed to allocate memory for DTN_Module");
+        DTN_ERROR("Failed to allocate memory for DTN_Module");
         return NULL;
     }
 
@@ -39,19 +40,19 @@ DTN_Module* dtn_module_init(void) {
     module->storage = dtn_storage_create(module);
 
     if (!module->controller || !module->routing || !module->storage) {
-        fprintf(stderr, "Failed to create one or more DTN components.\n");
+        DTN_ERROR("Failed to create one or more DTN components.");
         dtn_module_cleanup(module);
         return NULL;
     }
 
-    printf("DTN Module initialized successfully.\n");
+    DTN_INFO("DTN Module initialized successfully.");
     return module;
 }
 
 void dtn_module_cleanup(DTN_Module* module) {
     if (!module)
         return;
-    printf("Cleaning up DTN Module...\n");
+    DTN_INFO("Cleaning up DTN Module...");
 
     dtn_controller_destroy(module->controller);
     dtn_routing_destroy(module->routing);

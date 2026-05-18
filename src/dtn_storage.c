@@ -47,7 +47,7 @@ int dtn_storage_init_directory(Storage_Function* storage) {
         DTN_INFO("DTN Storage: Creating directory %s", storage->storage_directory);
         int result = mkdir(storage->storage_directory, 0755);
         if (result == -1) {
-            perror("DTN Storage: Failed to create storage directory");
+            DTN_ERROR("DTN Storage: Failed to create storage directory: %s", strerror(errno));
             return 0;
         }
     }
@@ -68,12 +68,12 @@ int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Ent
 
     if (snprintf(entry->filename, MAX_PATH_LENGTH, "%s/pkt_%s_%u.dat", storage->storage_directory,
                  addr_str, entry->stored_time_ms) >= MAX_PATH_LENGTH) {
-        fprintf(stderr, "DTN Storage: Warning - Filename was truncated\n");
+        DTN_WARN("DTN Storage: Filename was truncated");
     }
 
     FILE* file = fopen(entry->filename, "wb");
     if (!file) {
-        perror("DTN Storage: Failed to open file for writing");
+        DTN_ERROR("DTN Storage: Failed to open file for writing: %s", strerror(errno));
         return 0;
     }
 
@@ -85,27 +85,27 @@ int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Ent
     memcpy(&header.original_dest, &entry->original_dest, sizeof(ip6_addr_t));
 
     if (fwrite(&header, sizeof(header), 1, file) != 1) {
-        perror("DTN Storage: Failed to write packet header");
+        DTN_ERROR("DTN Storage: Failed to write packet header: %s", strerror(errno));
         fclose(file);
         return 0;
     }
 
     char* buffer = malloc(entry->p->tot_len);
     if (!buffer) {
-        perror("DTN Storage: Failed to allocate buffer for packet data");
+        DTN_ERROR("DTN Storage: Failed to allocate buffer for packet data");
         fclose(file);
         return 0;
     }
 
     if (pbuf_copy_partial(entry->p, buffer, entry->p->tot_len, 0) != entry->p->tot_len) {
-        perror("DTN Storage: Failed to copy packet data to buffer");
+        DTN_ERROR("DTN Storage: Failed to copy packet data to buffer");
         free(buffer);
         fclose(file);
         return 0;
     }
 
     if (fwrite(buffer, 1, entry->p->tot_len, file) != entry->p->tot_len) {
-        perror("DTN Storage: Failed to write packet data");
+        DTN_ERROR("DTN Storage: Failed to write packet data: %s", strerror(errno));
         free(buffer);
         fclose(file);
         return 0;
@@ -123,7 +123,7 @@ int dtn_storage_remove_packet_from_disk(Storage_Function* storage, const char* f
         return 0;
 
     if (remove(filename) != 0) {
-        perror("DTN Storage: Failed to remove packet file");
+        DTN_ERROR("DTN Storage: Failed to remove packet file: %s", strerror(errno));
         return 0;
     }
 
@@ -138,32 +138,32 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     FILE* file = fopen(filename, "rb");
     if (!file) {
-        perror("DTN Storage: Failed to open packet file for reading");
+        DTN_ERROR("DTN Storage: Failed to open packet file for reading: %s", strerror(errno));
         return NULL;
     }
 
     PacketFileHeader header;
     if (fread(&header, sizeof(header), 1, file) != 1) {
-        perror("DTN Storage: Failed to read packet header");
+        DTN_ERROR("DTN Storage: Failed to read packet header: %s", strerror(errno));
         fclose(file);
         return NULL;
     }
 
     if (memcmp(header.magic, "DTNP", 4) != 0) {
-        fprintf(stderr, "DTN Storage: Invalid packet file format\n");
+        DTN_ERROR("DTN Storage: Invalid packet file format");
         fclose(file);
         return NULL;
     }
 
     char* buffer = malloc(header.packet_len);
     if (!buffer) {
-        perror("DTN Storage: Failed to allocate buffer for packet data");
+        DTN_ERROR("DTN Storage: Failed to allocate buffer for packet data");
         fclose(file);
         return NULL;
     }
 
     if (fread(buffer, 1, header.packet_len, file) != header.packet_len) {
-        perror("DTN Storage: Failed to read packet data");
+        DTN_ERROR("DTN Storage: Failed to read packet data: %s", strerror(errno));
         free(buffer);
         fclose(file);
         return NULL;
@@ -173,13 +173,13 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     struct pbuf* p = pbuf_alloc(PBUF_RAW, header.packet_len, PBUF_RAM);
     if (!p) {
-        perror("DTN Storage: Failed to allocate pbuf for loaded packet");
+        DTN_ERROR("DTN Storage: Failed to allocate pbuf for loaded packet");
         free(buffer);
         return NULL;
     }
 
     if (pbuf_take(p, buffer, header.packet_len) != ERR_OK) {
-        perror("DTN Storage: Failed to copy data to pbuf");
+        DTN_ERROR("DTN Storage: Failed to copy data to pbuf");
         pbuf_free(p);
         free(buffer);
         return NULL;
@@ -189,7 +189,7 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     Stored_Packet_Entry* entry = malloc(sizeof(Stored_Packet_Entry));
     if (!entry) {
-        perror("DTN Storage: Failed to allocate memory for packet entry");
+        DTN_ERROR("DTN Storage: Failed to allocate memory for packet entry");
         pbuf_free(p);
         return NULL;
     }
@@ -215,7 +215,7 @@ int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
 
     DIR* dir = opendir(storage->storage_directory);
     if (!dir) {
-        perror("DTN Storage: Failed to open storage directory");
+        DTN_ERROR("DTN Storage: Failed to open storage directory: %s", strerror(errno));
         return 0;
     }
 
@@ -235,7 +235,7 @@ int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
         char full_path[PATH_MAX];
 
         if (strlen(storage->storage_directory) + strlen(entry->d_name) + 2 > sizeof(full_path)) {
-            fprintf(stderr, "DTN Storage: Path too long for file %s, skipping\n", entry->d_name);
+            DTN_WARN("DTN Storage: Path too long for file %s, skipping", entry->d_name);
             continue;
         }
 
@@ -285,14 +285,14 @@ Storage_Function* dtn_storage_create(DTN_Module* parent) {
                  storage->max_storage_bytes, MAX_STORED_PACKETS);
 
         if (!dtn_storage_init_directory(storage)) {
-            fprintf(stderr, "DTN Storage: Failed to initialize storage directory\n");
+            DTN_ERROR("DTN Storage: Failed to initialize storage directory");
             free(storage);
             return NULL;
         }
 
         dtn_storage_load_packets_from_disk(storage);
     } else {
-        perror("Failed to allocate memory for Storage_Function");
+        DTN_ERROR("Failed to allocate memory for Storage_Function");
     }
     return storage;
 }
@@ -328,7 +328,7 @@ int dtn_storage_is_full(Storage_Function* storage) {
 int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
                              const ip6_addr_t* original_dest) {
     if (!storage || !p || !original_dest) {
-        fprintf(stderr, "DTN Storage: Invalid arguments to store_packet.\n");
+        DTN_ERROR("DTN Storage: Invalid arguments to store_packet.");
         return 0;
     }
 
@@ -342,12 +342,12 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     // Create a copy of the packet to strip headers if needed
     struct pbuf* p_to_store = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
     if (!p_to_store) {
-        perror("DTN Storage: Failed to allocate pbuf for storage copy");
+        DTN_ERROR("DTN Storage: Failed to allocate pbuf for storage copy");
         return 0;
     }
 
     if (pbuf_copy(p_to_store, p) != ERR_OK) {
-        perror("DTN Storage: Failed to copy packet for storage");
+        DTN_ERROR("DTN Storage: Failed to copy packet for storage");
         pbuf_free(p_to_store);
         return 0;
     }
@@ -357,7 +357,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
 
     Stored_Packet_Entry* new_entry = (Stored_Packet_Entry*)malloc(sizeof(Stored_Packet_Entry));
     if (!new_entry) {
-        perror("DTN Storage: Failed to allocate memory for Stored_Packet_Entry");
+        DTN_ERROR("DTN Storage: Failed to allocate memory for Stored_Packet_Entry");
         pbuf_free(p_to_store);
         return 0;
     }
@@ -369,7 +369,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     new_entry->filename[0] = '\0';
 
     if (!dtn_storage_save_packet_to_disk(storage, new_entry)) {
-        fprintf(stderr, "DTN Storage: Failed to save packet to disk\n");
+        DTN_ERROR("DTN Storage: Failed to save packet to disk");
         pbuf_free(new_entry->p);
         free(new_entry);
         return 0;
@@ -453,9 +453,9 @@ void dtn_storage_free_retrieved_entry_struct(Stored_Packet_Entry* entry) {
     if (entry) {
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
-        printf(
+        DTN_INFO(
             "DTN Storage: Freeing Stored_Packet_Entry structure for %s (pbuf management is "
-            "caller's responsibility).\n",
+            "caller's responsibility).",
             addr_str);
         free(entry);
     }
@@ -565,9 +565,9 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
                     prev->next = current->next;
                 }
 
-                printf(
+                DTN_INFO(
                     "DTN Storage: Deleting stored packet for %s (src=%s) as next hop confirmed "
-                    "reception\n",
+                    "reception",
                     orig_dest_str, orig_src_str);
 
                 dtn_storage_remove_packet_from_disk(storage, current->filename);
@@ -625,9 +625,9 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     ip6addr_ntoa_r(&orig_src, orig_src_str, sizeof(orig_src_str));
     ip6addr_ntoa_r(&orig_dest, orig_dest_str, sizeof(orig_dest_str));
 
-    printf(
+    DTN_INFO(
         "DTN Storage: Looking for stored packet matching src=%s, dest=%s with payload "
-        "verification\n",
+        "verification",
         orig_src_str, orig_dest_str);
 
     // Parse the original packet to skip hop-by-hop headers in the ICMP data
@@ -649,8 +649,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     u8_t actual_payload_bytes = 8 - orig_payload_offset;
 
     if (actual_payload_bytes <= 0) {
-        printf(
-            "DTN Storage: Not enough payload data after headers, falling back to basic matching\n");
+        DTN_WARN("DTN Storage: Not enough payload data after headers, falling back to basic matching");
         dtn_storage_delete_packet_by_ip_header(storage, orig_ip6hdr);
         return;
     }
@@ -708,9 +707,9 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                         prev->next = current->next;
                     }
 
-                    printf(
+                    DTN_INFO(
                         "DTN Storage: Deleting stored packet for %s (src=%s) with payload "
-                        "verification\n",
+                        "verification",
                         orig_dest_str, orig_src_str);
 
                     // Remove from disk

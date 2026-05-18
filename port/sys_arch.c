@@ -652,12 +652,16 @@ void sys_arch_netconn_sem_free(void) {
 }
 #endif /* LWIP_NETCONN_SEM_PER_THREAD */
 
+static uint32_t start_time_ms = 0;
+void sys_now_reset_base(void) {
+    struct timespec ts;
+    get_monotonic_time(&ts);
+    start_time_ms = (u32_t)(ts.tv_sec * 1000L + ts.tv_nsec / 1000000L);
+}
+
 /*-----------------------------------------------------------------------------------*/
 /* Time */
 u32_t sys_now(void) {
-    static uint32_t start_time_ms = 0;
-    static int initialized = 0;
-
     struct timespec ts;
     u32_t now;
 
@@ -666,15 +670,6 @@ u32_t sys_now(void) {
 #ifdef LWIP_FUZZ_SYS_NOW
     now += sys_now_offset;
 #endif
-
-    if (!initialized) {
-        char* env_val = getenv("ENV");
-        if (env_val != NULL && strcmp(env_val, "DOCKER") == 0) {
-            start_time_ms = now;
-        }
-        initialized = 1;
-    }
-
     return now - start_time_ms;
 }
 

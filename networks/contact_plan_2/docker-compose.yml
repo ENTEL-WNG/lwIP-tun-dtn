@@ -1,0 +1,132 @@
+services:
+  node1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node1
+    privileged: true
+    hostname: JadeWolf
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node1.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_2/node1.toml
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:01
+  node2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node2
+    privileged: true
+    hostname: SpecialName
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node2.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_2/node2.toml
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:02
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:02
+      net-node2-node5:
+        mac_address: 00:02:00:05:00:02
+  node3:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node3
+    privileged: true
+    hostname: VioletPanther
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node3.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_2/node3.toml
+    networks:
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:03
+      net-node3-node4:
+        mac_address: 00:03:00:04:00:03
+  node4:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node4
+    privileged: true
+    hostname: CrimsonBison
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node4.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_2/node4.toml
+    networks:
+      net-node3-node4:
+        mac_address: 00:03:00:04:00:04
+      net-node4-node5:
+        mac_address: 00:04:00:05:00:04
+  node5:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node5
+    privileged: true
+    hostname: PurpleShark
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node5.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_2/node5.toml
+    networks:
+      net-node2-node5:
+        mac_address: 00:02:00:05:00:05
+      net-node4-node5:
+        mac_address: 00:04:00:05:00:05
+networks:
+  net-node1-node2:
+    driver: bridge
+    enable_ipv6: true
+  net-node2-node3:
+    driver: bridge
+    enable_ipv6: true
+  net-node2-node5:
+    driver: bridge
+    enable_ipv6: true
+  net-node3-node4:
+    driver: bridge
+    enable_ipv6: true
+  net-node4-node5:
+    driver: bridge
+    enable_ipv6: true

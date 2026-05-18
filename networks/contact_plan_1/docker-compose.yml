@@ -1,0 +1,73 @@
+services:
+  node1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node1
+    privileged: true
+    hostname: GoldenPuma
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node1.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_1/node1.toml
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:01
+  node2:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node2
+    privileged: true
+    hostname: SpecialName
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node2.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_1/node2.toml
+    networks:
+      net-node1-node2:
+        mac_address: 00:01:00:02:00:02
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:02
+  node3:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node3
+    privileged: true
+    hostname: PinkBadger
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node3.toml
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_1/node3.toml
+    networks:
+      net-node2-node3:
+        mac_address: 00:02:00:03:00:03
+networks:
+  net-node1-node2:
+    driver: bridge
+    enable_ipv6: true
+  net-node2-node3:
+    driver: bridge
+    enable_ipv6: true

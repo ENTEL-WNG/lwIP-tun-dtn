@@ -34,7 +34,9 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
-int raw_socket_init(void) {
+int dtn_init_raw_socket(void) {
+    DTN_DEBUG("Initializing raw sockets...");
+
     struct ifreq ifr;
     int error = 0;
     int on = 1;
@@ -42,8 +44,6 @@ int raw_socket_init(void) {
         char interface_name[IFNAMSIZ];
         strncpy(interface_name, dtn_config.interfaces[i].name, IFNAMSIZ - 1);
         interface_name[IFNAMSIZ - 1] = '\0';
-
-        // dtn_config.interfaces[i]->socket = i;
 
         int raw_socket = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
         if (raw_socket < 0) {
@@ -76,12 +76,12 @@ int raw_socket_init(void) {
     }
 
     if (error != 0) {
-        raw_socket_cleanup();
+        dtn_raw_socket_cleanup();
         return error;
     }
 
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        DTN_INFO("Initialized raw socket with name %s: socket %d, index %d",
+        DTN_INFO("Raw Socket: Initialized raw socket with name %s: socket %d, index %d",
                  dtn_config.interfaces[i].name, dtn_config.interfaces[i].socket,
                  dtn_config.interfaces[i].socket_index);
     }
@@ -89,25 +89,7 @@ int raw_socket_init(void) {
     return error;
 }
 
-bool is_dest_addresse_for_interface(const ip6_addr_t* dest_addr, const char* addr) {
-    ip6_addr_t route_addr;
-
-    if (ip6addr_aton(addr, &route_addr)) {
-        // DTN_DEBUG("%s == %s", dest_addr->addr[0], route_addr.addr[0]);
-        // DTN_DEBUG("%s == %s", dest_addr->addr[1], route_addr.addr[1]);
-        // DTN_DEBUG("%s == %s", dest_addr->addr[2], route_addr.addr[2]);
-
-        // return (dest_addr->addr[0] == route_addr.addr[0] &&
-        //         dest_addr->addr[1] == route_addr.addr[1] &&
-        //         dest_addr->addr[2] == route_addr.addr[2]);
-
-        return (dest_addr->addr[0] == route_addr.addr[0] &&
-                dest_addr->addr[1] == route_addr.addr[1]);
-    }
-    return false;
-}
-
-int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
+int dtn_raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
     struct sockaddr_in6 sin6;
     int sent_bytes;
     char buf[2048];
@@ -124,38 +106,45 @@ int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
 
     int interface_to_use = -1;
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        // for (int j = 0; j < dtn_config.) {
+        const DtnInterface* iface = &dtn_config.interfaces[i];
+        ip6_addr_t candidate;
 
-        // // if (dtn_config.interfaces[i]->route_count > 0) {
-        // for (int j = 0; j < dtn_config.interfaces[i]->route_count; j++) {
-        //     if (is_dest_addresse_for_interface(dest_addr, dtn_config.interfaces[i]->routes[j])) {
-        //         interface_to_use = i;
-        //         break;
-        //     }
-        // }
+        for (int j = 0; j < iface->dtn_address_count; j++) {
+            if (ip6addr_aton(iface->dtn_addresses[j], &candidate) &&
+                ip6_addr_zoneless_eq(dest_addr, &candidate)) {
+                interface_to_use = i;
+                break;
+            }
+        }
+        if (interface_to_use != -1) {
+            break;
+        }
 
-        // if (is_dest_addresse_for_interface(dest_addr, dtn_config.interfaces[i]->addr_via)) {
-        //     interface_to_use = i;
-        // }
-
-        // if (interface_to_use != -1) {
-        //     break;
-        // }
+        for (int j = 0; j < iface->address_count; j++) {
+            if (ip6addr_aton(iface->addresses[j], &candidate) &&
+                ip6_addr_zoneless_eq(dest_addr, &candidate)) {
+                interface_to_use = i;
+                break;
+            }
+        }
+        if (interface_to_use != -1) {
+            break;
+        }
     }
 
     char dest_str_log[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(dest_addr, dest_str_log, sizeof(dest_str_log));
     if (interface_to_use == -1) {
-        DTN_WARN("No route/interface defined for destination %s, using default", dest_str_log);
+        DTN_WARN("No route/interface defined for destination %s, using 0", dest_str_log);
         interface_to_use = 0;
     }
 
-    DtnInterface dtn_interface = dtn_config.interfaces[interface_to_use];
+    const DtnInterface dtn_interface = dtn_config.interfaces[interface_to_use];
     // InterfaceConfig* interface_config = &dtn_config.interfaces[interface_to_use];
     char dest_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
-    DTN_INFO("Sending packet to %s using socket_to_use %d socket %d (interface %s)", dest_str_log,
-             dtn_interface.socket, dtn_interface.socket_index, dtn_interface.name);
+    DTN_INFO("Sending packet to dest: %s using interface %s (index %d, socket %d)", dest_str,
+             dtn_interface.name, dtn_interface.socket_index, dtn_interface.socket);
 
     memset(&sin6, 0, sizeof(sin6));
     sin6.sin6_family = AF_INET6;
@@ -178,7 +167,7 @@ int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
         // DTN_ERROR("Failed to send packet via raw socket");
         return -1;
     } else if ((size_t)sent_bytes != p->tot_len) {
-        fprintf(stderr, "Sent only %d bytes out of %d\n", sent_bytes, p->tot_len);
+        DTN_WARN("Sent only %d bytes out of %d", sent_bytes, p->tot_len);
         return -1;
     }
 
@@ -188,7 +177,7 @@ int raw_socket_send_ipv6(struct pbuf* p, const ip6_addr_t* dest_addr) {
     return 0;
 }
 
-void raw_socket_cleanup(void) {
+void dtn_raw_socket_cleanup(void) {
     for (int i = 0; i < dtn_config.interface_count; i++) {
         if (dtn_config.interfaces[i].socket >= 0) {
             close(dtn_config.interfaces[i].socket);

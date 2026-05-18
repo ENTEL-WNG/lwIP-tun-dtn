@@ -59,7 +59,7 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
 
     q = pbuf_alloc(PBUF_IP, sizeof(struct icmp6_hdr) + datalen, PBUF_RAM);
     if (q == NULL) {
-        printf("DTN ICMPv6: Failed to allocate pbuf for message\n");
+        DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for message");
         return ERR_MEM;
     }
 
@@ -95,7 +95,7 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
     // New Header
     struct pbuf* complete_pkt = pbuf_alloc(PBUF_IP, IP6_HLEN + q->tot_len, PBUF_RAM);
     if (complete_pkt == NULL) {
-        printf("DTN ICMPv6: Failed to allocate pbuf for complete packet\n");
+        DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for complete packet");
         pbuf_free(q);
         return ERR_MEM;
     }
@@ -113,7 +113,7 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
     // Copy ICMPv6 message after IPv6 header
     if (pbuf_copy_partial(q, (u8_t*)complete_pkt->payload + IP6_HLEN, q->tot_len, 0) !=
         q->tot_len) {
-        printf("DTN ICMPv6: Failed to copy ICMPv6 message to complete packet\n");
+        DTN_ERROR("DTN ICMPv6: Failed to copy ICMPv6 message to complete packet");
         pbuf_free(q);
         pbuf_free(complete_pkt);
         return ERR_BUF;
@@ -121,7 +121,7 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
 
     pbuf_free(q);
 
-    err_t err = raw_socket_send_ipv6(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
+    err_t err = dtn_raw_socket_send_ipv6(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
 
     char dst_str[IP6ADDR_STRLEN_MAX];
     char src_addr_str[IP6ADDR_STRLEN_MAX];
@@ -246,9 +246,9 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
             char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
             ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
 
-            printf(
+            DTN_INFO(
                 "DTN ICMPv6: Received PCK-FORWARDED type %d code %d from %s, timestamp %u, reason "
-                "%d\n",
+                "%d",
                 icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
                 dtn_payload->reason_code);
 
@@ -261,9 +261,9 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
             char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
             ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
 
-            printf(
+            DTN_INFO(
                 "DTN ICMPv6: Received PCK-DELIVERED type %d code %d from %s, timestamp %u, reason "
-                "%d\n",
+                "%d",
                 icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
                 dtn_payload->reason_code);
 
@@ -276,9 +276,9 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
             char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
             ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
 
-            printf(
+            DTN_INFO(
                 "DTN ICMPv6: Received PCK-DELETED type %d code %d from %s, timestamp %u, reason "
-                "%d\n",
+                "%d",
                 icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
                 dtn_payload->reason_code);
 

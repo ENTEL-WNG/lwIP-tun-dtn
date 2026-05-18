@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -57,7 +58,7 @@ Routing_Function* dtn_routing_create(DTN_Module* parent) {
         // }
 
     } else {
-        perror("Failed to allocate memory for Routing_Function");
+        DTN_ERROR("Failed to allocate memory for Routing_Function");
     }
     return routing;
 }
@@ -66,7 +67,7 @@ void dtn_routing_destroy(Routing_Function* routing) {
     if (!routing)
         return;
 
-    printf("Destroying DTN Routing Function...\n");
+    DTN_INFO("Destroying DTN Routing Function...");
 
     Contact_Info* current = routing->contact_list_head;
     Contact_Info* next;
@@ -159,7 +160,7 @@ int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_tim
         return 0;
     }
     double start_time_in_sec = start_time_in_ms / 1000;
-    double current_time_in_sec = current_time_in_ms / 1000;
+    double current_time_in_sec = fmod(current_time_in_ms / 1000.0, (double)dtn_config.max_time_in_sec);
 
     ip6_addr_t src, dest;
     char src_string[INET6_ADDRSTRLEN], dest_string[INET6_ADDRSTRLEN];
@@ -208,7 +209,7 @@ int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time
     // DTN_DEBUG("DNT Routing: Init python");
     Py_Initialize();
     if (!Py_IsInitialized()) {
-        fprintf(stderr, "Python not initialized\n");
+        DTN_ERROR("Python not initialized");
         return 0;
     }
 
@@ -365,7 +366,7 @@ int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time
 
 //     Py_Initialize();
 //     if (!Py_IsInitialized()) {
-//         fprintf(stderr, "Python not initialized\n");
+//         DTN_ERROR("Python not initialized");
 //         return 0;
 //     }
 

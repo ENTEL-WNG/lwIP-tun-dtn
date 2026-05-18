@@ -49,9 +49,9 @@ DTN_Controller* dtn_controller_create(DTN_Module* parent) {
             controller->forwarding_attempts[i].retry_count = 0;
         }
 
-        printf("DTN Controller created.\n");
+        DTN_INFO("DTN Controller created.");
     } else {
-        perror("Failed to allocate memory for DTN_Controller");
+        DTN_ERROR("Failed to allocate memory for DTN_Controller");
     }
     return controller;
 }
@@ -59,7 +59,7 @@ DTN_Controller* dtn_controller_create(DTN_Module* parent) {
 void dtn_controller_destroy(DTN_Controller* controller) {
     if (!controller)
         return;
-    printf("Destroying DTN Controller...\n");
+    DTN_INFO("Destroying DTN Controller...");
     free(controller);
 }
 
@@ -93,9 +93,9 @@ static bool should_attempt_forward(DTN_Controller* controller, const ip6_addr_t*
                             if (expired_packet) {
                                 char addr_str[IP6ADDR_STRLEN_MAX];
                                 ip6addr_ntoa_r(dest_addr, addr_str, sizeof(addr_str));
-                                printf(
+                                DTN_WARN(
                                     "DTN Controller: Deleting packet for %s after %d failed "
-                                    "transmission attempts\n",
+                                    "transmission attempts",
                                     addr_str, MAX_FORWARDING_RETRIES);
 
                                 // Free the packet and entry
@@ -210,43 +210,26 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
                                      struct netif* inp_netif) {
     if (!p || !controller || !controller->parent_module || !controller->parent_module->routing ||
         !controller->parent_module->storage) {
-        fprintf(stderr,
-                "DTN Controller: Invalid arguments or uninitialized components for "
-                "incoming.\n");
+        DTN_ERROR(
+            "DTN Controller: Invalid arguments or uninitialized components for "
+            "incoming.");
         if (p)
             pbuf_free(p);
         return;
     }
 
     if (p->len < IP6_HLEN) {
-        fprintf(stderr, "DTN Controller: Packet too small for IPv6 header.\n");
+        DTN_WARN("DTN Controller: Packet too small for IPv6 header.");
         pbuf_free(p);
         return;
     }
 
     const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
     if (IP6H_V(ip6hdr) != 6) {
-        fprintf(stderr, "DTN Controller: Packet is not IPv6 (version %d).\n", IP6H_V(ip6hdr));
+        DTN_WARN("DTN Controller: Packet is not IPv6 (version %d).", IP6H_V(ip6hdr));
         pbuf_free(p);
         return;
     }
-
-    // ip6_addr_t temp_src_addr, temp_dest_addr, temp_dest_sender;
-    u32_t temp_v_tc_fl;
-    // u16_t temp_plen;
-    // u8_t temp_hoplim;
-    memcpy(&temp_v_tc_fl, &ip6hdr->_v_tc_fl, sizeof(u32_t));
-    // memcpy(&temp_plen, &ip6hdr->_plen, sizeof(u16_t));
-    // memcpy(&temp_hoplim, &ip6hdr->_hoplim, sizeof(u8_t));
-
-    u16_t temp_plen = IP6_HLEN + lwip_ntohs(ip6hdr->_plen);
-
-    u8_t temp_hoplim = ip6hdr->_hoplim;
-
-    // u8_t version = IP6H_V(ip6hdr);
-    // u8_t traffic_class = IP6H_TC(ip6hdr);
-
-    // u16_t temp_plen = lwip_ntohs(ip6hdr->_plen);
 
     char src_str[IP6ADDR_STRLEN_MAX];
     char dest_str[IP6ADDR_STRLEN_MAX];
@@ -255,12 +238,8 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     ip6_addr_copy_from_packed(temp_dest_addr, ip6hdr->dest);
     ip6addr_ntoa_r(&temp_src_addr, src_str, sizeof(src_str));
     ip6addr_ntoa_r(&temp_dest_addr, dest_str, sizeof(dest_str));
-    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %u | plen: %u | hoplim: %u",
-             src_str, dest_str, (unsigned int)IP6H_NEXTH(ip6hdr), (unsigned int)temp_plen,
-             (unsigned int)temp_hoplim);
-
-    // temp_plen = _temp_plen;
-    temp_plen = 10;
+    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %u", src_str, dest_str,
+             (unsigned int)IP6H_NEXTH(ip6hdr));
 
     if (!dtn_extract_custodian_option(p, &temp_dest_sender)) {
         memcpy(&temp_dest_sender, &temp_src_addr, sizeof(ip6_addr_t));
@@ -309,7 +288,8 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     bool is_local = false;
     for (int i = 0; i < dtn_config.interface_count; i++) {
         if (is_local_address(&temp_dest_addr, dtn_config.interfaces[i].local_addr)) {
-            DTN_DEBUG("Destination is local via %s", dtn_config.interfaces[i].local_addr);
+            DTN_DEBUG("Destination is interface %s with address %s.", dtn_config.interfaces[i].name,
+                      dtn_config.interfaces[i].local_addr);
             is_local = true;
             break;
         }
@@ -356,6 +336,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     int get_next_hop_node_id_result =
         dtn_routing_get_next_hop_node_id(routing->base_time, sys_now(), ip6hdr, &next_hop_node_id);
 
+    get_next_hop_node_id_result = 0;
     if (get_next_hop_node_id_result == 1) {
         bool is_next_hop_active;
         int is_next_hop_active_contact_result =
@@ -417,7 +398,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    err_t err = raw_socket_send_ipv6(p, &temp_dest_addr) == 0 ? ERR_OK : ERR_IF;
+    err_t err = dtn_raw_socket_send_ipv6(p, &temp_dest_addr) == 0 ? ERR_OK : ERR_IF;
     if (err != ERR_OK) {
         DTN_ERROR("Error sending packet src: %s -> dest: %s  via raw socket: %d.", src_str,
                   dest_str, err);

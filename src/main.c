@@ -70,7 +70,7 @@ int tun_alloc(char* dev_name, int max_len) {
     struct ifreq ifr;
     int fd = open("/dev/net/tun", O_RDWR);
     if (fd < 0) {
-        perror("Opening /dev/net/tun");
+        DTN_ERROR("Opening /dev/net/tun: %s", strerror(errno));
         return fd;
     }
     memset(&ifr, 0, sizeof(ifr));
@@ -80,7 +80,7 @@ int tun_alloc(char* dev_name, int max_len) {
         ifr.ifr_name[IFNAMSIZ - 1] = '\0';
     }
     if (ioctl(fd, TUNSETIFF, (void*)&ifr) < 0) {
-        perror("ioctl(TUNSETIFF)");
+        DTN_ERROR("ioctl(TUNSETIFF): %s", strerror(errno));
         close(fd);
         return -1;
     }
@@ -96,13 +96,12 @@ err_t tunif_output(struct netif* netif, struct pbuf* p) {
     int tun_fd = *(int*)netif->state;
     char buffer[PACKET_BUF_SIZE];
     if (p->tot_len > sizeof(buffer)) {
-        fprintf(stderr, "Packet too large for output buffer (%d vs %ld)\n", p->tot_len,
-                sizeof(buffer));
+        DTN_WARN("Packet too large for output buffer (%d vs %ld)", p->tot_len, sizeof(buffer));
         return ERR_MEM;
     }
 
     if (pbuf_copy_partial(p, buffer, p->tot_len, 0) != p->tot_len) {
-        fprintf(stderr, "pbuf_copy_partial failed to copy full packet\n");
+        DTN_ERROR("pbuf_copy_partial failed to copy full packet");
         return ERR_BUF;
     }
 
@@ -111,11 +110,11 @@ err_t tunif_output(struct netif* netif, struct pbuf* p) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return ERR_WOULDBLOCK;
         }
-        perror("TUN write failed");
+        DTN_ERROR("TUN write failed: %s", strerror(errno));
         return ERR_IF;
     }
     if ((size_t)written != p->tot_len) {
-        fprintf(stderr, "TUN write short: wrote %zd vs %d\n", written, p->tot_len);
+        DTN_WARN("TUN write short: wrote %zd vs %d", written, p->tot_len);
         return ERR_IF;
     }
     return ERR_OK;
@@ -126,7 +125,7 @@ err_t tunif_input(struct netif* netif) {
         return ERR_ARG;
     }
     if (!global_dtn_module || !global_dtn_module->controller) {
-        fprintf(stderr, "tunif_input: DTN Module or Controller not initialized!\n");
+        DTN_ERROR("tunif_input: DTN Module or Controller not initialized!");
         char discard_buf[100];
         read(*(int*)netif->state, discard_buf, sizeof(discard_buf));
         return ERR_IF;
@@ -140,23 +139,23 @@ err_t tunif_input(struct netif* netif) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return ERR_OK;
         }
-        perror("TUN read error");
+        DTN_ERROR("TUN read error: %s", strerror(errno));
         return ERR_IF;
     }
     if (len == 0) {
-        printf("TUN read 0 bytes, tunnel closed by peer?\n");
+        DTN_WARN("TUN read 0 bytes, tunnel closed by peer?");
         return ERR_CONN;
     }
 
     struct pbuf* p = pbuf_alloc(PBUF_RAW, len, PBUF_POOL);
     if (!p) {
-        fprintf(stderr, "Failed to allocate pbuf for incoming packet of size %zd\n", len);
+        DTN_ERROR("Failed to allocate pbuf for incoming packet of size %zd", len);
         return ERR_MEM;
     }
 
     err_t copy_err = pbuf_take(p, buf, len);
     if (copy_err != ERR_OK) {
-        fprintf(stderr, "Failed to copy buffer to pbuf (%d)\n", copy_err);
+        DTN_ERROR("Failed to copy buffer to pbuf (%d)", copy_err);
         pbuf_free(p);
         return copy_err;
     }
@@ -186,21 +185,26 @@ err_t tunif_init(struct netif* netif) {
 
 int main() {
     lwip_init();
-    dtn_config_init(&dtn_config);
+    dtn_config_load(&dtn_config);
+    dtn_config_print(&dtn_config);
     dtn_log_init();
+
+    if (dtn_config.env != DTN_ENV_PRODUCTION) {
+        sys_now_reset_base();
+    }
 
     struct stat st = {0};
     if (stat(STORAGE_DIR, &st) == -1) {
-        printf("Creating DTN storage directory: %s\n", STORAGE_DIR);
+        DTN_INFO("Creating DTN storage directory: %s", STORAGE_DIR);
         if (mkdir(STORAGE_DIR, 0755) != 0) {
-            fprintf(stderr, "Failed to create DTN storage directory: %s\n", strerror(errno));
+            DTN_ERROR("Failed to create DTN storage directory: %s", strerror(errno));
             exit(EXIT_FAILURE);
         }
     }
 
     global_dtn_module = dtn_module_init();
     if (!global_dtn_module) {
-        fprintf(stderr, "Failed to initialize DTN Module\n");
+        DTN_ERROR("Failed to initialize DTN Module");
         exit(EXIT_FAILURE);
     }
 
@@ -213,13 +217,13 @@ int main() {
 
     int tun_fd = tun_alloc(tun_name, sizeof(tun_name));
     if (tun_fd < 0) {
-        fprintf(stderr, "TUN device allocation failed\n");
+        DTN_ERROR("TUN device allocation failed");
         dtn_module_cleanup(global_dtn_module);
         exit(EXIT_FAILURE);
     }
-    printf("TUN device '%s' created successfully (fd: %d).\n", tun_name, tun_fd);
+    DTN_INFO("TUN device '%s' created successfully (fd: %d).", tun_name, tun_fd);
 
-    if (raw_socket_init() < 0) {
+    if (dtn_init_raw_socket() != 0) {
         DTN_ERROR("Failed to initialize raw sockets.");
         netif_remove(&tun_netif);
         close(tun_fd);
@@ -229,20 +233,20 @@ int main() {
 
     int flags = fcntl(tun_fd, F_GETFL, 0);
     if (flags == -1) {
-        perror("fcntl F_GETFL");
+        DTN_ERROR("fcntl F_GETFL: %s", strerror(errno));
         close(tun_fd);
         dtn_module_cleanup(global_dtn_module);
         exit(EXIT_FAILURE);
     }
     if (fcntl(tun_fd, F_SETFL, flags | O_NONBLOCK) == -1) {
-        perror("fcntl F_SETFL O_NONBLOCK");
+        DTN_ERROR("fcntl F_SETFL O_NONBLOCK: %s", strerror(errno));
         close(tun_fd);
         dtn_module_cleanup(global_dtn_module);
         exit(EXIT_FAILURE);
     }
 
     if (!netif_add(&tun_netif, (void*)&tun_fd, tunif_init, ip6_input)) {
-        fprintf(stderr, "Failed to add netif to lwIP\n");
+        DTN_ERROR("Failed to add netif to lwIP");
         close(tun_fd);
         dtn_module_cleanup(global_dtn_module);
         exit(EXIT_FAILURE);
@@ -250,32 +254,32 @@ int main() {
 
     netif_set_default(&tun_netif);
     netif_set_up(&tun_netif);
-    printf("Interface '%s' (LwIP: %c%c) set UP and default.\n", tun_name, tun_netif.name[0],
-           tun_netif.name[1]);
+    DTN_INFO("Interface '%s' (LwIP: %c%c) set UP and default.", tun_name, tun_netif.name[0],
+             tun_netif.name[1]);
 
     netif_create_ip6_linklocal_address(&tun_netif, 1);
-    printf("Link-local address creation requested for %c%c.\n", tun_netif.name[0],
-           tun_netif.name[1]);
+    DTN_INFO("Link-local address creation requested for %c%c.", tun_netif.name[0],
+             tun_netif.name[1]);
 
-    printf("Current IPv6 addresses on %c%c after link-local creation attempt:\n", tun_netif.name[0],
-           tun_netif.name[1]);
+    DTN_INFO("Current IPv6 addresses on %c%c after link-local creation attempt:", tun_netif.name[0],
+             tun_netif.name[1]);
     for (int i = 0; i < LWIP_IPV6_NUM_ADDRESSES; ++i) {
         if (netif_ip6_addr_state(&tun_netif, i) != IP6_ADDR_INVALID) {
             char s[IP6ADDR_STRLEN_MAX];
             ip6addr_ntoa_r(netif_ip6_addr(&tun_netif, i), s, sizeof(s));
-            printf("  Index %d: %s (State: %u %s)\n", i, s, netif_ip6_addr_state(&tun_netif, i),
-                   ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, i))
-                       ? "[Preferred]"
-                       : (ip6_addr_isvalid(netif_ip6_addr_state(&tun_netif, i))
-                              ? "[Valid]"
-                              : (ip6_addr_istentative(netif_ip6_addr_state(&tun_netif, i))
-                                     ? "[Tentative]"
-                                     : "[Other]")));
+            DTN_INFO("  Index %d: %s (State: %u %s)", i, s, netif_ip6_addr_state(&tun_netif, i),
+                     ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, i))
+                         ? "[Preferred]"
+                         : (ip6_addr_isvalid(netif_ip6_addr_state(&tun_netif, i))
+                                ? "[Valid]"
+                                : (ip6_addr_istentative(netif_ip6_addr_state(&tun_netif, i))
+                                       ? "[Tentative]"
+                                       : "[Other]")));
 
             if (ip6_addr_islinklocal(netif_ip6_addr(&tun_netif, i)) &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, i))) {
                 netif_ip6_addr_set_state(&tun_netif, i, IP6_ADDR_PREFERRED);
-                printf("    -> Set Link-Local (Index %d) to PREFERRED.\n", i);
+                DTN_INFO("    -> Set Link-Local (Index %d) to PREFERRED.", i);
             }
         }
     }
@@ -342,11 +346,11 @@ int main() {
             DTN_INFO("LwIP: Static default IPv6 route added via %s (index %d).",
                      dtn_config.tun_ipv6_addr, route_idx);
         } else {
-            fprintf(stderr, "LwIP: Failed to add static default IPv6 route.\n");
+            DTN_ERROR("LwIP: Failed to add static default IPv6 route.");
         }
     } else {
-        fprintf(stderr, "LwIP: Failed to parse gateway address %s for static route.\n",
-                dtn_config.tun_ipv6_addr);
+        DTN_ERROR("LwIP: Failed to parse gateway address %s for static route.",
+                  dtn_config.tun_ipv6_addr);
     }
 
     DTN_INFO("Waiting for addresses to settle...");
@@ -380,7 +384,7 @@ int main() {
             if (errno == EINTR) {
                 continue;
             }
-            perror("select error");
+            DTN_ERROR("select error: %s", strerror(errno));
             break;
         }
 
@@ -388,7 +392,7 @@ int main() {
 
         if (FD_ISSET(tun_fd, &readfds)) {
             if (tunif_input(&tun_netif) == ERR_CONN) {
-                fprintf(stderr, "TUN connection closed. Exiting.\n");
+                DTN_WARN("TUN connection closed. Exiting.");
                 break;
             }
         }
@@ -406,13 +410,13 @@ int main() {
     if (global_dtn_module && global_dtn_module->routing) {
     }
 
-    printf("Shutting down...\n");
+    DTN_INFO("Shutting down...");
     netif_set_down(&tun_netif);
     netif_remove(&tun_netif);
     close(tun_fd);
     dtn_module_cleanup(global_dtn_module);
-    raw_socket_cleanup();
+    dtn_raw_socket_cleanup();
 
-    printf("Shutdown complete.\n");
+    DTN_INFO("Shutdown complete.");
     return 0;
 }

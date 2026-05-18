@@ -1,6 +1,11 @@
 .git
 *.o
 
+lwip_tun
+lwip_tun_test
+
 .DS_Store
 
 captures
+
+CLAUDE.md

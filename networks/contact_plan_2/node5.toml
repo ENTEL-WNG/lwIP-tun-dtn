@@ -1,0 +1,104 @@
+# Auto-generated config for node 5
+
+[node]
+id     = 5
+name   = "PurpleShark"
+is_dtn        = true
+dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
+addresses     = ["fd00:01:02::1"]
+tun_ipv6_addr  = "fd00:ffff:05::1/64"
+lwip_ipv6_addr = "fd00:ffff:05::05/64"
+
+[[interface]]
+name           = "node5-node2"
+local_addr     = "fd00:02:05::5/64"
+local_mac      = "00:02:00:05:00:05"
+remote_addr    = "fd00:02:05::2/64"
+remote_mac  = "00:02:00:05:00:02"
+remote_node_id = 2
+start_in_sec   = 100
+end_in_sec     = 200
+rate           = 1
+range          = 1
+dtn_addresses  = ["fd00:02:05::5", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4"]
+addresses      = ["fd00:01:02::1"]
+
+[[interface]]
+name           = "node5-node4"
+local_addr     = "fd00:04:05::5/64"
+local_mac      = "00:04:00:05:00:05"
+remote_addr    = "fd00:04:05::4/64"
+remote_mac  = "00:04:00:05:00:04"
+remote_node_id = 4
+start_in_sec   = 0
+end_in_sec     = 200
+rate           = 1
+range          = 1
+dtn_addresses  = ["fd00:04:05::5", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4"]
+addresses      = ["fd00:01:02::1"]
+
+[contact_plan]
+name = "contact_plan_2"
+max_time_in_sec = 200
+
+[contact_plan.defaults]
+rate = 1
+range = 1
+
+# Node Definitions
+[[nodes]]
+id = 1
+isDtnNode = false
+
+[[nodes]]
+id = 2
+name = "SpecialName"
+isDtnNode = true
+
+[[nodes]]
+id = 3
+isDtnNode = true
+
+[[nodes]]
+id = 4
+isDtnNode = true
+
+[[nodes]]
+id = 5
+isDtnNode = true
+
+# Edge Definitions
+[[edges]]
+from = 1
+to = 2
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
+
+[[edges]]
+from = 2
+to = 3
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
+
+[[edges]]
+from = 3
+to = 4
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 100
+end_in_sec = 200
+bidirected = true
+
+[[edges]]
+from = 5
+to = 4
+start_in_sec = 0
+end_in_sec = 200
+bidirected = true

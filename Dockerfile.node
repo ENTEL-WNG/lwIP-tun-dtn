@@ -1,0 +1,45 @@
+# ── Stage 1: build lwip_tun ───────────────────────────────────────────────────
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpcap-dev \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+RUN make
+
+# ── Stage 2: runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libpcap0.8 \
+    iproute2 \
+    iptables \
+    procps \
+    iputils-ping \
+    tcpdump \
+    netcat-openbsd \
+    # Python runtime (tomllib is stdlib >= 3.11; Debian bookworm ships 3.11)
+    python3 \
+    python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy only the compiled binary from the build stage.
+# The rest of the repo is bind-mounted at runtime via docker-compose volumes,
+# so we intentionally do NOT COPY source/scripts — that would create a stale
+# shadow layer that masks live edits on the host.
+COPY --from=builder /app/lwip_tun /usr/local/bin/lwip_tun
+
+WORKDIR /repo
+
+# CONFIG_PATH is overridden per-service in docker-compose.yml.
+ENV CONFIG_PATH=/repo/node.toml
+
+# init_node.py reads the TOML at CONFIG_PATH, applies sysctl/ip/ip6tables/
+# routing rules, then either execs lwip_tun (DTN nodes) or sleeps (regular).
+# docker-compose overrides this entrypoint with the exact TOML path.
+ENTRYPOINT ["python3", "/repo/init_node.py"]
+CMD ["${CONFIG_PATH}"]

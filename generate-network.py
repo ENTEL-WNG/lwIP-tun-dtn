@@ -36,6 +36,12 @@ import random
 from collections import deque
 from pathlib import Path
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+import networkx as nx
+
 COLORS = [
     "Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Cyan",
     "Magenta", "Amber", "Crimson", "Indigo", "Violet", "Teal", "Scarlet",
@@ -52,11 +58,7 @@ ANIMALS = [
 def random_name() -> str:
     return f"{random.choice(COLORS)}{random.choice(ANIMALS)}"
 
-# import matplotlib
-# matplotlib.use("Agg")
-# import matplotlib.pyplot as plt
-# import matplotlib.patches as mpatches
-# import networkx as nx
+
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +182,7 @@ def build_node_data(data: dict) -> dict:
         node_addrs[a].append(strip_prefix(addr_a))
         node_addrs[b].append(strip_prefix(addr_b))
 
-        for local, remote, local_addr, remote_addr, local_mac, neighbour_mac in [
+        for local, remote, local_addr, remote_addr, local_mac, remote_mac in [
             (a, b, addr_a, addr_b, mac_a, mac_b),
             (b, a, addr_b, addr_a, mac_b, mac_a),
         ]:
@@ -189,7 +191,7 @@ def build_node_data(data: dict) -> dict:
                 "local_addr":     local_addr,
                 "local_mac":      local_mac,
                 "remote_addr":    remote_addr,
-                "neighbour_mac":  neighbour_mac,
+                "remote_mac":  remote_mac,
                 "remote_node_id": remote,
                 "start_in_sec":   start_in_sec,
                 "end_in_sec":     end_in_sec,
@@ -290,7 +292,7 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
         lines.append(f'local_addr     = "{iface["local_addr"]}"')
         lines.append(f'local_mac      = "{iface["local_mac"]}"')
         lines.append(f'remote_addr    = "{iface["remote_addr"]}"')
-        lines.append(f'neighbour_mac  = "{iface["neighbour_mac"]}"')
+        lines.append(f'remote_mac  = "{iface["remote_mac"]}"')
         lines.append(f"remote_node_id = {iface['remote_node_id']}")
         lines.append(f"start_in_sec   = {iface['start_in_sec']}")
         lines.append(f"end_in_sec     = {iface['end_in_sec']}")
@@ -316,16 +318,30 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
     Write a docker-compose.yml that models the contact-plan topology.
 
     Per-service rules:
-      - DTN nodes  → build context uses Dockerfile.dtn
-      - Plain nodes → build context uses Dockerfile.reg
-      - Each service receives a CONFIG_PATH env-var pointing to its TOML
-        config file inside the container (mounted from the host config dir).
+      - All nodes use Dockerfile.node; the TOML's is_dtn flag decides
+        whether init_node.py launches lwip_tun or sleeps.
+      - The **repo root** is bind-mounted read-write at /repo inside every
+        container, so any file edit on the host is immediately visible
+        without rebuilding or restarting (see "hot-reload" note below).
+      - CONFIG_PATH points to the per-node TOML inside /repo.
       - Every pair of nodes that share a link is placed on a dedicated
         Docker network named  net-nodeA-nodeB  (lo < hi).
       - Each service's network entry carries the MAC address derived from
         the contact-plan addressing scheme (local_mac for that interface).
+
+    Hot-reload workflow:
+      Edit any file on the host, then re-run setup inside the container:
+        docker exec -it nodeN python3 /repo/init_node.py /repo/<network>/nodeN.toml
+      For DTN nodes this will re-apply sysctl/ip6tables/routing rules and
+      re-exec lwip_tun.  For regular nodes it just re-applies routes.
     """
     import yaml  # requires PyYAML
+
+    # The compose file sits at  networks/<plan>/docker-compose.yml
+    # We need to express the repo root as a relative path from that location,
+    # which is two levels up: ../../
+    repo_root_host = "../.."
+    repo_root_container = "/repo"
 
     # Collect unique link pairs to build top-level network definitions
     edges_by_pair: dict[tuple, bool] = {}
@@ -340,16 +356,16 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
         net_name = f"net-node{lo}-node{hi}"
         networks[net_name] = {"driver": "bridge", "enable_ipv6": True}
 
+    # The contact-plan sub-directory name (last component of config_dir)
+    plan_subdir = config_dir.name   # e.g. "contact plan 1"
+
     services: dict[str, dict] = {}
     for nid in sorted(node_data):
         node = node_data[nid]
-        svc_name   = f"node{nid}"
-        is_dtn     = node["is_dtn"]
-        dockerfile = "Dockerfile.dtn" if is_dtn else "Dockerfile.reg"
+        svc_name = f"node{nid}"
 
-        # Config file path inside the container
-        repo_config = f"/node-configs/{svc_name}.toml"
-        container_config = f"/configs/{svc_name}.toml"
+        # Path to this node's TOML inside the container (via the repo mount)
+        container_config = f"{repo_root_container}/networks/{plan_subdir}/{svc_name}.toml"
 
         # Build per-network entries, attaching the correct MAC address
         svc_networks: dict[str, dict] = {}
@@ -362,18 +378,35 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
 
         service: dict = {
             "build": {
-                "context": ".",
-                "dockerfile": dockerfile,
+                # Context is the repo root so the full source tree is available
+                # to the Docker build (Makefile, source files, scripts, etc.)
+                "context": repo_root_host,
+                "dockerfile": "Dockerfile.node",
             },
             "container_name": svc_name,
+            "privileged": True,
             "hostname": node["name"],
             "environment": {
-                "CONFIG_PATH": container_config,
+                # "NODE": str(nid),
+                "DTN_CONFIG_PATH": container_config,
             },
+            # Mount the entire repo into the container so:
+            #   1. The compiled lwip_tun binary is always up-to-date (or can be
+            #      rebuilt with `docker exec nodeN make -C /repo`).
+            #   2. Any config / script change on the host is instantly visible
+            #      inside the container without a restart.
             "volumes": [
-                f"{repo_config}:{container_config}:ro"
+                f"{repo_root_host}:{repo_root_container}"
             ],
+            "working_dir": repo_root_container,
             "cap_add": ["NET_ADMIN"],
+            # init_node.py reads CONFIG_PATH and either execs lwip_tun (DTN)
+            # or keeps the container alive (regular node).
+            "entrypoint": [
+                "python3",
+                f"{repo_root_container}/init_node.py",
+                container_config,
+            ],
         }
 
         if svc_networks:
@@ -382,7 +415,6 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
         services[svc_name] = service
 
     compose = {
-        # "version": "3.9",
         "services": services,
         "networks": networks,
     }
@@ -520,8 +552,10 @@ def main():
     contact_plan_raw = Path(plan_path).read_text()
     node_data = build_node_data(data)
 
-    out_dir = Path("node-configs")
-    out_dir.mkdir(exist_ok=True)
+    contact_plan_name = data["contact_plan"].get("name")
+
+    out_dir = Path(f"networks/{contact_plan_name}")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     for nid, node in node_data.items():
         toml = render_toml(node, contact_plan_raw)
@@ -529,7 +563,7 @@ def main():
         out_file.write_text(toml)
         print(f"  wrote {out_file}")
 
-    # generate_graph(data, node_data, out_dir / "topology.png")
+    generate_graph(data, node_data, out_dir / "topology.png")
 
     generate_compose(node_data, out_dir, out_dir / "docker-compose.yml")
 

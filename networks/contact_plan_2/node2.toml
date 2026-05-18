@@ -4,7 +4,7 @@
 id     = 2
 name   = "SpecialName"
 is_dtn        = true
-dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3"]
+dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
 addresses     = ["fd00:01:02::1"]
 tun_ipv6_addr  = "fd00:ffff:02::1/64"
 lwip_ipv6_addr = "fd00:ffff:02::02/64"
@@ -14,7 +14,7 @@ name           = "node2-node1"
 local_addr     = "fd00:01:02::2/64"
 local_mac      = "00:01:00:02:00:02"
 remote_addr    = "fd00:01:02::1/64"
-neighbour_mac  = "00:01:00:02:00:01"
+remote_mac  = "00:01:00:02:00:01"
 remote_node_id = 1
 start_in_sec   = 0
 end_in_sec     = 100
@@ -28,17 +28,32 @@ name           = "node2-node3"
 local_addr     = "fd00:02:03::2/64"
 local_mac      = "00:02:00:03:00:02"
 remote_addr    = "fd00:02:03::3/64"
-neighbour_mac  = "00:02:00:03:00:03"
+remote_mac  = "00:02:00:03:00:03"
 remote_node_id = 3
 start_in_sec   = 0
 end_in_sec     = 100
 rate           = 1
 range          = 1
-dtn_addresses  = ["fd00:02:03::2", "fd00:02:03::3"]
+dtn_addresses  = ["fd00:02:03::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
+addresses      = []
+
+[[interface]]
+name           = "node2-node5"
+local_addr     = "fd00:02:05::2/64"
+local_mac      = "00:02:00:05:00:02"
+remote_addr    = "fd00:02:05::5/64"
+remote_mac  = "00:02:00:05:00:05"
+remote_node_id = 5
+start_in_sec   = 100
+end_in_sec     = 200
+rate           = 1
+range          = 1
+dtn_addresses  = ["fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
 addresses      = []
 
 [contact_plan]
-name = "contact plan 1"
+name = "contact_plan_2"
+max_time_in_sec = 200
 
 [contact_plan.defaults]
 rate = 1
@@ -58,13 +73,13 @@ isDtnNode = true
 id = 3
 isDtnNode = true
 
-# [[nodes]]
-# id = 4
-# isDtnNode = true
+[[nodes]]
+id = 4
+isDtnNode = true
 
-# [[nodes]]
-# id = 5
-# isDtnNode = true
+[[nodes]]
+id = 5
+isDtnNode = true
 
 # Edge Definitions
 [[edges]]
@@ -81,23 +96,23 @@ start_in_sec = 0
 end_in_sec = 100
 bidirected = true
 
-# [[edges]]
-# from = 3
-# to = 4
-# start_in_sec = 0
-# end_in_sec = 100
-# bidirected = true
+[[edges]]
+from = 3
+to = 4
+start_in_sec = 0
+end_in_sec = 100
+bidirected = true
 
-# [[edges]]
-# from = 2
-# to = 5
-# start_in_sec = 100
-# end_in_sec = 200
-# bidirected = true
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 100
+end_in_sec = 200
+bidirected = true
 
-# [[edges]]
-# from = 5
-# to = 4
-# start_in_sec = 0
-# end_in_sec = 200
-# bidirected = true
+[[edges]]
+from = 5
+to = 4
+start_in_sec = 0
+end_in_sec = 200
+bidirected = true

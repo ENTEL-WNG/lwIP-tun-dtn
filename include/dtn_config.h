@@ -29,7 +29,7 @@ typedef struct {
     char local_addr[DTN_MAX_ADDR_LEN];
     char local_mac[DTN_MAX_MAC_LEN];
     char remote_addr[DTN_MAX_ADDR_LEN];
-    char neighbour_mac[DTN_MAX_MAC_LEN];
+    char remote_mac[DTN_MAX_MAC_LEN];
     int remote_node_id;
     int64_t start_in_sec;
     int64_t end_in_sec;
@@ -103,6 +103,7 @@ typedef struct {
 
     /* [contact_plan] */
     char contact_plan_name[DTN_MAX_NAME_LEN];
+    int64_t max_time_in_sec;
 
     /* [defaults] */
     double default_rate;

@@ -14,7 +14,7 @@ CFLAGS = -Wall \
 	-Ilwip/contrib/addons/ipv6_static_routing \
 	$(PY_INCLUDES)
 
-LDFLAGS = $(PY_LDFLAGS) -lpthread -lutil
+LDFLAGS = $(PY_LDFLAGS) -lpthread -lutil -lm
 
 LWIP_SRC = \
 	lwip/src/core/mem.c \

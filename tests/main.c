@@ -49,12 +49,12 @@ void test_payload_length(struct ip6_hdr* ip6h) {
 }
 
 void test_init_config() {
-    setenv(DTN_CONFIG_PATH, "node-configs/node2.toml", 1);
+    setenv(DTN_CONFIG_PATH, "networks/contact_plan_2/node2.toml", 1);
 
     if (dtn_config_load(&dtn_config) != 0)
         return 1;
 
-    // dtn_config_print(&dtn_config);  // optional debug dump
+    dtn_config_print(&dtn_config);
 
     printf("Node ID: %d, DTN: %s\n", dtn_config.id, dtn_config.is_dtn ? "yes" : "no");
     printf("Interfaces: %d\n", dtn_config.interface_count);

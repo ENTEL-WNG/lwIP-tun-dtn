@@ -25,7 +25,9 @@ class Contact:
         self.rate = rate
         self.owlt = owlt
         self.volume = rate * (end - start)
-        self.confidence = confidence        
+        self.confidence = confidence
+
+        print(f"Created contect {frm} -> {to} : {start} - {end}")     
 
         # variable parameters
         self.mav = [self.volume, self.volume, self.volume]
@@ -233,8 +235,6 @@ def cp_load(contact_plan_path, time_now, max_contacts=None):
     __contact_plan = []
     # nodes = set()
 
-    print(contact_plan_path, flush=True, file=sys.stderr)
-
     with open(contact_plan_path, "rb") as f:
         data = tomllib.load(f)
 
@@ -248,14 +248,21 @@ def cp_load(contact_plan_path, time_now, max_contacts=None):
         end     = edge.get("end_in_sec")
         frm     = edge["from"]
         to      = edge["to"]
+        bidirected = edge.get("bidirected", False)
         rate   = edge.get("rate", default_rate)
         range  = edge.get("range", default_range)
         contact = Contact(time_now, frm, to, start, end, rate, range)
         __contact_plan.append(contact)
         if len(__contact_plan) == max_contacts:
             break
+
+        if bidirected:
+            contact = Contact(time_now, to, frm, start, end, rate, range)
+            __contact_plan.append(contact)
+        if len(__contact_plan) == max_contacts:
+            break
     
-    print('Load contact plan: %s contacts were read.' % len(__contact_plan))
+    # print('Load contact plan: %s contacts were read.' % len(__contact_plan))
     # print(__contact_plan)
     return __contact_plan
 
