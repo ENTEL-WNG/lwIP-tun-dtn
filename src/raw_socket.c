@@ -34,6 +34,8 @@
 #include "lwip/pbuf.h"
 #include "lwip/sys.h"
 
+#define ETH_HDR_LEN 14
+
 dtn_socket_result_t dtn_init_raw_socket(void) {
     DTN_DEBUG("Initializing raw sockets...");
 
@@ -44,6 +46,7 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
         interface_name[IFNAMSIZ - 1] = '\0';
 
         /* AF_PACKET bypasses ip6tables/policy routing entirely — operating at L2. */
+        // int raw_socket = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
         int raw_socket = socket(AF_PACKET, SOCK_RAW, htons(0x86DD /* ETH_P_IPV6 */));
         if (raw_socket < 0) {
             DTN_ERROR("Failed to create AF_PACKET socket for interface %s", interface_name);
@@ -138,7 +141,6 @@ static int parse_mac(const char* mac_str, uint8_t mac[6]) {
 
 dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_addr_t* dest_addr,
                                                       const DtnInterface* dtn_interface) {
-#define ETH_HDR_LEN 14
     uint8_t buf[ETH_HDR_LEN + 2048];
 
     if (p->tot_len > 2048) {
@@ -191,7 +193,6 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_
     }
 
     return DTN_SOCKET_OK;
-#undef ETH_HDR_LEN
 }
 
 void dtn_raw_socket_cleanup(void) {

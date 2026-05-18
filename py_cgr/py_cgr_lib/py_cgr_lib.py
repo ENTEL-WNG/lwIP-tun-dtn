@@ -26,8 +26,7 @@ class Contact:
         self.owlt = owlt
         self.volume = rate * (end - start)
         self.confidence = confidence 
-
-        print(f"{frm} -> {to} | {start} - {end} | {rate} | {self.volume}")
+        # print(f"{frm} -> {to} | {start} - {end} | {rate} | {self.volume}")
 
         # variable parameters
         self.mav = [self.volume, self.volume, self.volume]
@@ -241,8 +240,6 @@ def cp_load(contact_plan_path, time_now, max_contacts=None):
     defaults = data.get("contact_plan", {}).get("defaults", {})                                                                                                                       
     default_rate = defaults.get("rate", 1)
     default_range = defaults.get("range", 1)
-
-    print(defaults)
 
     edges = data.get("edges", [])
     for edge in edges:
