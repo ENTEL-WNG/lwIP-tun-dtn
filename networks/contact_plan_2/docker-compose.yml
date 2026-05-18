@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node1
     privileged: true
-    hostname: JadeWolf
+    hostname: node1
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node1.toml
     volumes:
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node2
     privileged: true
-    hostname: SpecialName
+    hostname: node2
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node2.toml
     volumes:
@@ -51,7 +51,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node3
     privileged: true
-    hostname: VioletPanther
+    hostname: node3
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node3.toml
     volumes:
@@ -74,7 +74,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node4
     privileged: true
-    hostname: CrimsonBison
+    hostname: node4
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node4.toml
     volumes:
@@ -97,7 +97,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node5
     privileged: true
-    hostname: PurpleShark
+    hostname: node5
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node5.toml
     volumes:

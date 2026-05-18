@@ -23,7 +23,7 @@ isDtnNode = true
 [[edges]]
 from = 1
 to = 2
-start_in_sec = 0
+start_in_sec = 20
 end_in_sec = 100
 bidirected = true
 

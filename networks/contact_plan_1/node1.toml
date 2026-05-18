@@ -16,7 +16,7 @@ local_mac      = "00:01:00:02:00:01"
 remote_addr    = "fd00:01:02::2/64"
 remote_mac  = "00:01:00:02:00:02"
 remote_node_id = 2
-start_in_sec   = 0
+start_in_sec   = 20
 end_in_sec     = 100
 rate           = 1
 range          = 1
@@ -48,7 +48,7 @@ isDtnNode = true
 [[edges]]
 from = 1
 to = 2
-start_in_sec = 0
+start_in_sec = 20
 end_in_sec = 100
 bidirected = true
 

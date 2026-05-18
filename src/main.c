@@ -223,7 +223,7 @@ int main() {
     }
     DTN_INFO("TUN device '%s' created successfully (fd: %d).", tun_name, tun_fd);
 
-    if (dtn_init_raw_socket() != 0) {
+    if (dtn_init_raw_socket() != DTN_SOCKET_OK) {
         DTN_ERROR("Failed to initialize raw sockets.");
         netif_remove(&tun_netif);
         close(tun_fd);
@@ -397,17 +397,16 @@ int main() {
             }
         }
 
-        bool cont = false;
-        if (global_dtn_module && global_dtn_module->routing) {
-            // cont = dtn_routing_update_contacts(global_dtn_module->routing);
-        }
+        dtn_controller_attempt_forward_stored(global_dtn_module->controller, &tun_netif);
 
-        if (global_dtn_module && global_dtn_module->controller && cont) {
-            dtn_controller_attempt_forward_stored(global_dtn_module->controller, &tun_netif);
-        }
-    }
+        // bool cont = false;
+        // if (global_dtn_module && global_dtn_module->routing) {
+        //     cont = dtn_routing_update_contacts(global_dtn_module->routing);
+        // }
 
-    if (global_dtn_module && global_dtn_module->routing) {
+        // if (global_dtn_module && global_dtn_module->controller && cont) {
+        //     dtn_controller_attempt_forward_stored(global_dtn_module->controller, &tun_netif);
+        // }
     }
 
     DTN_INFO("Shutting down...");

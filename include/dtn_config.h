@@ -68,6 +68,26 @@ typedef struct {
 } DtnEdge;
 
 /* -------------------------------------------------------------------------
+ * Contact plan  ([contact_plan] + [[nodes]] + [[edges]])
+ * ---------------------------------------------------------------------- */
+typedef struct {
+    char name[DTN_MAX_NAME_LEN];
+    int64_t max_time_in_sec;
+
+    /* [contact_plan.defaults] */
+    double default_rate;
+    double default_range;
+
+    /* [[nodes]] */
+    DtnNodeEntry nodes[DTN_MAX_NODES];
+    int node_count;
+
+    /* [[edges]] */
+    DtnEdge edges[DTN_MAX_EDGES];
+    int edge_count;
+} DtnContactPlan;
+
+/* -------------------------------------------------------------------------
  * Top-level config
  * ---------------------------------------------------------------------- */
 typedef enum {
@@ -101,21 +121,8 @@ typedef struct {
     DtnInterface interfaces[DTN_MAX_INTERFACES];
     int interface_count;
 
-    /* [contact_plan] */
-    char contact_plan_name[DTN_MAX_NAME_LEN];
-    int64_t max_time_in_sec;
-
-    /* [defaults] */
-    double default_rate;
-    double default_range;
-
-    /* [[nodes]] */
-    DtnNodeEntry nodes[DTN_MAX_NODES];
-    int node_count;
-
-    /* [[edges]] */
-    DtnEdge edges[DTN_MAX_EDGES];
-    int edge_count;
+    /* [contact_plan] + [[nodes]] + [[edges]] */
+    DtnContactPlan contact_plan;
 } DtnConfig;
 
 /* -------------------------------------------------------------------------

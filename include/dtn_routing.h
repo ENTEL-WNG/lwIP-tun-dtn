@@ -23,22 +23,17 @@
 #include "lwip/ip6.h"
 #include "lwip/ip6_addr.h"
 
-// Contact opportunity
-typedef struct Contact_Info {
-    ip6_addr_t node_addr;       // contact address (destination)
-    ip6_addr_t next_hop;        // address of the node to reach the destination
-    u32_t start_time_ms;        // start of the contact window
-    u32_t end_time_ms;          // end of the contact window
-    bool is_dtn_node;           // whether the node is DTN-capable
-    struct Contact_Info* next;  // pointer to the next contact in the list
-} Contact_Info;
-
 typedef struct Routing_Function {
     DTN_Module* parent_module;
     char* routing_algorithm_name;
-    u32_t base_time;
-    Contact_Info* contact_list_head;
+    u32_t base_time_in_ms;
 } Routing_Function;
+
+typedef enum {
+    DTN_ROUTING_OK = 0,
+    DTN_ROUTING_NO_ROUTE = 1,
+    DTN_ROUTING_ERR = -1,
+} dtn_routing_result_t;
 
 Routing_Function* dtn_routing_create(DTN_Module* parent);
 

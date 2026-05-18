@@ -22,7 +22,7 @@
 
 DTN_Module* global_dtn_module = NULL;
 
-#define PAYLOAD_LEN 32
+#define PAYLOAD_LEN 64
 
 void test_payload_length(struct ip6_hdr* ip6h) {
     printf("ip6h->_plen                 : %u\n", ip6h->_plen);
@@ -45,14 +45,14 @@ void test_payload_length(struct ip6_hdr* ip6h) {
     //         printf("\n");
     // }
 
-    return 0;
+    return;
 }
 
 void test_init_config() {
     setenv(DTN_CONFIG_PATH, "networks/contact_plan_2/node2.toml", 1);
 
     if (dtn_config_load(&dtn_config) != 0)
-        return 1;
+        return;
 
     dtn_config_print(&dtn_config);
 
@@ -81,8 +81,10 @@ int main() {
     IP6H_HOPLIM_SET(ip6h, 64);
 
     ip6_addr_t src, dst;
-    ip6addr_aton("fe80::1", &src);
-    ip6addr_aton("fe80::4", &dst);
+    ip6addr_aton("fd00:1:2::1", &src);
+    ip6addr_aton("fd00:4:5::4", &dst);
+    // ip6addr_aton("fd00:3:4::4", &dst);
+    // ip6addr_aton("fe00:2:5::5", &dst);
     ip6_addr_copy_to_packed(ip6h->src, src);
     ip6_addr_copy_to_packed(ip6h->dest, dst);
 
@@ -102,7 +104,7 @@ int main() {
     int next_hop_node_id;
     dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &next_hop_node_id);
     printf("next_hop_node_id: %d\n", next_hop_node_id);
-    dtn_routing_get_next_hop_node_id(0, 100 * 1000, ip6h, &next_hop_node_id);
+    dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &next_hop_node_id);
     printf("next_hop_node_id: %d\n", next_hop_node_id);
 
     printf("STOP TESTING\n");

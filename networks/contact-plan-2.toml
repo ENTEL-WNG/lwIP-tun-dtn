@@ -1,9 +1,9 @@
 [contact_plan]
 name = "contact_plan_2"
-max_time_in_sec = 200
+max_time_in_sec = 100
 
 [contact_plan.defaults]
-rate = 1
+rate = 200
 range = 1
 
 # Node Definitions
@@ -39,7 +39,7 @@ bidirected = true
 from = 2
 to = 3
 start_in_sec = 0
-end_in_sec = 100
+end_in_sec = 20
 bidirected = true
 
 [[edges]]
@@ -52,13 +52,13 @@ bidirected = true
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 100
-end_in_sec = 200
+start_in_sec = 20
+end_in_sec = 100
 bidirected = true
 
 [[edges]]
-from = 5
-to = 4
+from = 4
+to = 5
 start_in_sec = 0
-end_in_sec = 200
+end_in_sec = 100
 bidirected = true

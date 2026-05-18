@@ -121,7 +121,8 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
 
     pbuf_free(q);
 
-    err_t err = dtn_raw_socket_send_ipv6(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
+    err_t err =
+        dtn_raw_socket_send_to_ipv6_address(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
 
     char dst_str[IP6ADDR_STRLEN_MAX];
     char src_addr_str[IP6ADDR_STRLEN_MAX];

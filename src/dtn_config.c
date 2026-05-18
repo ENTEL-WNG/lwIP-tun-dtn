@@ -135,7 +135,7 @@ static int parse_nodes(toml_table_t* root, DtnConfig* cfg) {
         if (!t)
             continue;
 
-        DtnNodeEntry* node = &cfg->nodes[cfg->node_count];
+        DtnNodeEntry* node = &cfg->contact_plan.nodes[cfg->contact_plan.node_count];
 
         int64_t id = 0;
         if (read_int(t, "id", &id) != 0)
@@ -145,7 +145,7 @@ static int parse_nodes(toml_table_t* root, DtnConfig* cfg) {
         copy_str_opt(t, "name", node->name, DTN_MAX_NAME_LEN);
         read_bool(t, "isDtnNode", &node->is_dtn_node);
 
-        cfg->node_count++;
+        cfg->contact_plan.node_count++;
     }
     return 0;
 }
@@ -164,7 +164,7 @@ static int parse_edges(toml_table_t* root, DtnConfig* cfg) {
         if (!t)
             continue;
 
-        DtnEdge* edge = &cfg->edges[cfg->edge_count];
+        DtnEdge* edge = &cfg->contact_plan.edges[cfg->contact_plan.edge_count];
         int64_t tmp = 0;
 
         if (read_int(t, "from", &tmp) == 0)
@@ -177,7 +177,7 @@ static int parse_edges(toml_table_t* root, DtnConfig* cfg) {
             edge->end = tmp;
         read_bool(t, "bidirected", &edge->bidirected);
 
-        cfg->edge_count++;
+        cfg->contact_plan.edge_count++;
     }
     return 0;
 }
@@ -252,17 +252,17 @@ int dtn_config_load(DtnConfig* cfg) {
     /* ---- [contact_plan] ---- */
     toml_table_t* cp = toml_table_in(root, "contact_plan");
     if (cp) {
-        copy_str_opt(cp, "name", cfg->contact_plan_name, DTN_MAX_NAME_LEN);
+        copy_str_opt(cp, "name", cfg->contact_plan.name, DTN_MAX_NAME_LEN);
         int64_t tmp = 0;
         if (read_int(cp, "max_time_in_sec", &tmp) == 0)
-            cfg->max_time_in_sec = tmp;
-    }
+            cfg->contact_plan.max_time_in_sec = tmp;
 
-    /* ---- [contact_plan.defaults] ---- */
-    toml_table_t* def = cp ? toml_table_in(cp, "defaults") : NULL;
-    if (def) {
-        read_double(def, "rate", &cfg->default_rate);
-        read_double(def, "range", &cfg->default_range);
+        /* ---- [contact_plan.defaults] ---- */
+        toml_table_t* def = toml_table_in(cp, "defaults");
+        if (def) {
+            read_double(def, "rate", &cfg->contact_plan.default_rate);
+            read_double(def, "range", &cfg->contact_plan.default_range);
+        }
     }
 
     /* ---- [[nodes]] ---- */
@@ -302,21 +302,22 @@ void dtn_config_print(const DtnConfig* cfg) {
             DTN_INFO("         %s", iface->dtn_addresses[j]);
     }
 
-    DTN_INFO("[contact_plan] name = \"%s\"  max_time_in_sec = %lld", cfg->contact_plan_name,
-             (long long)cfg->max_time_in_sec);
-    DTN_INFO("[defaults] rate=%.2f  range=%.2f", cfg->default_rate, cfg->default_range);
+    DTN_INFO("[contact_plan] name = \"%s\"  max_time_in_sec = %lld", cfg->contact_plan.name,
+             (long long)cfg->contact_plan.max_time_in_sec);
+    DTN_INFO("  [defaults] rate=%.2f  range=%.2f", cfg->contact_plan.default_rate,
+             cfg->contact_plan.default_range);
 
-    DTN_INFO("[[nodes]] count = %d", cfg->node_count);
-    for (int i = 0; i < cfg->node_count; i++) {
-        const DtnNodeEntry* n = &cfg->nodes[i];
-        DTN_INFO("  id=%d  name=\"%s\"  isDtnNode=%s", n->id, n->name,
+    DTN_INFO("  [[nodes]] count = %d", cfg->contact_plan.node_count);
+    for (int i = 0; i < cfg->contact_plan.node_count; i++) {
+        const DtnNodeEntry* n = &cfg->contact_plan.nodes[i];
+        DTN_INFO("    id=%d  name=\"%s\"  isDtnNode=%s", n->id, n->name,
                  n->is_dtn_node ? "true" : "false");
     }
 
-    DTN_INFO("[[edges]] count = %d", cfg->edge_count);
-    for (int i = 0; i < cfg->edge_count; i++) {
-        const DtnEdge* e = &cfg->edges[i];
-        DTN_INFO("  %d -> %d  start=%lld  end=%lld  bidirected=%s", e->from, e->to,
+    DTN_INFO("  [[edges]] count = %d", cfg->contact_plan.edge_count);
+    for (int i = 0; i < cfg->contact_plan.edge_count; i++) {
+        const DtnEdge* e = &cfg->contact_plan.edges[i];
+        DTN_INFO("    %d -> %d  start=%lld  end=%lld  bidirected=%s", e->from, e->to,
                  (long long)e->start, (long long)e->end, e->bidirected ? "true" : "false");
     }
 }

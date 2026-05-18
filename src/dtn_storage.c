@@ -649,7 +649,8 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     u8_t actual_payload_bytes = 8 - orig_payload_offset;
 
     if (actual_payload_bytes <= 0) {
-        DTN_WARN("DTN Storage: Not enough payload data after headers, falling back to basic matching");
+        DTN_WARN(
+            "DTN Storage: Not enough payload data after headers, falling back to basic matching");
         dtn_storage_delete_packet_by_ip_header(storage, orig_ip6hdr);
         return;
     }
