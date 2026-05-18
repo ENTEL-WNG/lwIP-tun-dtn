@@ -2,7 +2,7 @@
 
 [node]
 id     = 3
-name   = "PinkBadger"
+name   = "node3"
 is_dtn        = true
 dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3"]
 addresses     = ["fd00:01:02::1"]
@@ -38,7 +38,6 @@ isDtnNode = false
 
 [[nodes]]
 id = 2
-name = "SpecialName"
 isDtnNode = true
 
 [[nodes]]

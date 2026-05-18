@@ -25,9 +25,7 @@ class Contact:
         self.rate = rate
         self.owlt = owlt
         self.volume = rate * (end - start)
-        self.confidence = confidence
-
-        print(f"Created contect {frm} -> {to} : {start} - {end}")     
+        self.confidence = confidence  
 
         # variable parameters
         self.mav = [self.volume, self.volume, self.volume]

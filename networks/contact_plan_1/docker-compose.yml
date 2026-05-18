@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node1
     privileged: true
-    hostname: GoldenPuma
+    hostname: node1
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node1.toml
     volumes:
@@ -26,7 +26,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node2
     privileged: true
-    hostname: SpecialName
+    hostname: node2
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node2.toml
     volumes:
@@ -49,7 +49,7 @@ services:
       dockerfile: Dockerfile.node
     container_name: node3
     privileged: true
-    hostname: PinkBadger
+    hostname: node3
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node3.toml
     volumes:

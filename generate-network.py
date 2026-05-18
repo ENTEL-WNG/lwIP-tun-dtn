@@ -42,21 +42,21 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
 
-COLORS = [
-    "Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Cyan",
-    "Magenta", "Amber", "Crimson", "Indigo", "Violet", "Teal", "Scarlet",
-    "Silver", "Golden", "Ivory", "Cobalt", "Jade",
-]
+# COLORS = [
+#     "Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Cyan",
+#     "Magenta", "Amber", "Crimson", "Indigo", "Violet", "Teal", "Scarlet",
+#     "Silver", "Golden", "Ivory", "Cobalt", "Jade",
+# ]
 
-ANIMALS = [
-    "Fox", "Wolf", "Bear", "Eagle", "Hawk", "Falcon", "Tiger", "Lion",
-    "Panther", "Lynx", "Otter", "Badger", "Raven", "Owl", "Shark",
-    "Dolphin", "Bison", "Moose", "Puma", "Viper",
-]
+# ANIMALS = [
+#     "Fox", "Wolf", "Bear", "Eagle", "Hawk", "Falcon", "Tiger", "Lion",
+#     "Panther", "Lynx", "Otter", "Badger", "Raven", "Owl", "Shark",
+#     "Dolphin", "Bison", "Moose", "Puma", "Viper",
+# ]
 
 
-def random_name() -> str:
-    return f"{random.choice(COLORS)}{random.choice(ANIMALS)}"
+# def random_name() -> str:
+#     return f"{random.choice(COLORS)}{random.choice(ANIMALS)}"
 
 
 
@@ -247,7 +247,7 @@ def build_node_data(data: dict) -> dict:
 
         meta = node_meta.get(nid, {"name": None, "is_dtn": False})
         nid_hex = node_hex(nid)
-        name = meta["name"] if meta["name"] is not None else random_name()
+        name = meta["name"] if meta["name"] is not None else f"node{nid}"
         result[nid] = {
             "id":                  nid,
             "name":                name,
@@ -544,7 +544,7 @@ def generate_graph(data: dict, node_data: dict, out_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    plan_path = sys.argv[1] if len(sys.argv) > 1 else "contact-plan.toml"
+    plan_path = sys.argv[1] if len(sys.argv) > 1 else "networks/contact-plan.toml"
 
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
