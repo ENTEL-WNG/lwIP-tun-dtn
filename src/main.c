@@ -52,10 +52,6 @@
 // Constants
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
-// #define tun_ipv6_addr "fd00::1"
-// #define lwip_ipv6_addr "fd00::2"
-// #define HOST_enp0s9_IPV6_ADDR "fd00:01::2"
-// #define HOST_enp0s8_IPV6_ADDR "fd00:12::1"
 #define CONTACT_CHECK_INTERVAL_MS 1000
 
 DTN_Module* global_dtn_module = NULL;
@@ -267,7 +263,7 @@ int main() {
         if (netif_ip6_addr_state(&tun_netif, i) != IP6_ADDR_INVALID) {
             char s[IP6ADDR_STRLEN_MAX];
             ip6addr_ntoa_r(netif_ip6_addr(&tun_netif, i), s, sizeof(s));
-            DTN_INFO("  Index %d: %s (State: %u %s)", i, s, netif_ip6_addr_state(&tun_netif, i),
+            DTN_INFO("Index %d: %s (State: %u %s)", i, s, netif_ip6_addr_state(&tun_netif, i),
                      ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, i))
                          ? "[Preferred]"
                          : (ip6_addr_isvalid(netif_ip6_addr_state(&tun_netif, i))
@@ -279,7 +275,7 @@ int main() {
             if (ip6_addr_islinklocal(netif_ip6_addr(&tun_netif, i)) &&
                 !ip6_addr_ispreferred(netif_ip6_addr_state(&tun_netif, i))) {
                 netif_ip6_addr_set_state(&tun_netif, i, IP6_ADDR_PREFERRED);
-                DTN_INFO("    -> Set Link-Local (Index %d) to PREFERRED.", i);
+                DTN_INFO("-> Set Link-Local (Index %d) to PREFERRED.", i);
             }
         }
     }
@@ -398,15 +394,6 @@ int main() {
         }
 
         dtn_controller_attempt_forward_stored(global_dtn_module->controller, &tun_netif);
-
-        // bool cont = false;
-        // if (global_dtn_module && global_dtn_module->routing) {
-        //     cont = dtn_routing_update_contacts(global_dtn_module->routing);
-        // }
-
-        // if (global_dtn_module && global_dtn_module->controller && cont) {
-        //     dtn_controller_attempt_forward_stored(global_dtn_module->controller, &tun_netif);
-        // }
     }
 
     DTN_INFO("Shutting down...");

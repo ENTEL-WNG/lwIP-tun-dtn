@@ -377,11 +377,11 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    if (get_next_hop_node_id_result == DTN_ROUTING_NO_ROUTE) {
-        DTN_ERROR("No route found for package src: %s -> dest: %s", src_str, dest_str);
-        pbuf_free(p);
-        return;
-    }
+    // if (get_next_hop_node_id_result == DTN_ROUTING_NO_ROUTE) {
+    //     DTN_ERROR("No route found for package src: %s -> dest: %s", src_str, dest_str);
+    //     pbuf_free(p);
+    //     return;
+    // }
 
     dtn_socket_result_t socket_result = dtn_raw_socket_send_to_ipv6_address(p, &dest_addr);
     if (socket_result == DTN_SOCKET_OK) {
