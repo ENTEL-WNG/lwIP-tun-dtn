@@ -255,6 +255,10 @@ def init_dtn_node(cfg: dict) -> None:
         ip6tables("-A", "PREROUTING", "-i", iface, "-j", "MARK", "--set-mark", "1",
                   table="mangle")
 
+    # Exempt raw-socket egress (fwmark 2) from re-marking with 1.
+    # Without this, AF_INET6 raw socket packets would be marked 1 by the next
+    # rule, hit table 100, and loop back through tun0.
+    ip6tables("-A", "OUTPUT", "-m", "mark", "--mark", "2", "-j", "RETURN", table="mangle")
     ip6tables("-A", "OUTPUT", "-j", "MARK", "--set-mark", "1", table="mangle")
 
     # ---- 9. Docker fix: demote 'local' table to prio 1000 ---------------
@@ -271,6 +275,31 @@ def init_dtn_node(cfg: dict) -> None:
     ip("-6", "rule", "add", "fwmark", "1", "table", "100", "priority", "0")
     ip("-6", "route", "replace", "default",
        "via", lwip_addr, "dev", "tun0", "table", "100")
+
+    # ---- 10b. Policy routing: fwmark 2 -> table 200 -> physical egress ---
+    # Raw sockets (AF_INET6) in lwip_tun are marked 2. Without a dedicated
+    # table they would fall through to the main table where routes may not
+    # exist, or worse hit table 100 and loop back through tun0.
+    ip("-6", "rule", "del", "fwmark", "2", "table", "200", ignore_errors=True)
+    ip("-6", "rule", "add", "fwmark", "2", "table", "200", "priority", "1")
+    for iface in cfg.get("interface", []):
+        int_name    = iface["name"]
+        local_net   = ipaddress.ip_interface(iface["local_addr"]).network
+        remote_addr = iface["remote_addr"].split("/")[0]
+        # Directly-connected /64
+        ip("-6", "route", "replace", str(local_net), "dev", int_name, "table", "200",
+           ignore_errors=True)
+        # Non-local reachable prefixes — one /64 per listed DTN/regular address
+        added_nets_200: set[str] = set()
+        for addr_str in iface.get("dtn_addresses", []) + iface.get("addresses", []):
+            addr = ipaddress.ip_address(addr_str.split("/")[0])
+            if addr in local_net:
+                continue
+            net = str(ipaddress.ip_interface(f"{addr}/64").network)
+            if net not in added_nets_200:
+                ip("-6", "route", "replace", net, "via", remote_addr, "dev", int_name,
+                   "table", "200", ignore_errors=True)
+                added_nets_200.add(net)
 
     # ---- 11. Hand off to LwIP binary -------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
