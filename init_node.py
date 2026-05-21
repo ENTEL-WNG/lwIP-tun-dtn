@@ -23,7 +23,6 @@ import tomllib          # stdlib >= 3.11; install 'tomli' for 3.9/3.10
 import logging
 import ipaddress
 from pathlib import Path
-from datetime import datetime
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +101,6 @@ def setup_interfaces(cfg: dict) -> list[str]:
     """
     log.info("--- Setting interfaces and routes ---")
     all_interfaces: list[str] = []
-    node_id: int = cfg["node"]["id"]
 
     for iface in cfg.get("interface", []):
         int_name:    str = iface["name"]
@@ -194,6 +192,52 @@ def init_regular_node(cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-node traffic capture
+# ---------------------------------------------------------------------------
+
+def start_captures(node_id: int, plan_name: str) -> None:
+    """
+    Spawn tcpdump on all interfaces (physical + tun0) before os.execv.
+    The child processes outlive the exec and keep capturing under lwip_tun.
+
+    The output directory is /repo/captures/<plan>/<TEST_CASE_NUMBER>/.
+    TEST_CASE_NUMBER is set by generate-network.py and baked into the
+    compose file; edit docker-compose.yml by hand to override it.
+
+    Two files are written per node:
+        /repo/captures/<plan>/<run>/node<id>.pcap  — binary pcap
+        /repo/captures/<plan>/<run>/node<id>.txt   — human-readable text
+    """
+    test_case = os.environ.get("TEST_CASE_NUMBER", "0")
+    run_dir = Path(f"/repo/captures/{plan_name}/{test_case}")
+    run_dir.mkdir(parents=True, exist_ok=True)
+    base = run_dir / f"node{node_id}"
+
+    # -i any    : capture on all interfaces (physical + tun0)
+    # ip6       : BPF filter — IPv6 traffic only
+    # -nn       : no DNS/port name resolution (faster, no false lookups)
+    # -U        : write each packet to file immediately (unbuffered)
+    # -w <file> : write binary pcap output
+    subprocess.Popen(
+        ["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+    # -e        : print the interface name and link-layer header per packet
+    # -l        : line-buffered stdout (text appears immediately)
+    # -tttt     : absolute timestamp with date (2026-05-21 14:30:22.123456)
+    txt_file = open(f"{base}.txt", "w")
+    subprocess.Popen(
+        ["tcpdump", "-i", "any", "ip6", "-nn", "-e", "-l", "-tttt"],
+        stdout=txt_file,
+        stderr=txt_file,
+    )
+
+    log.info("Capture started -> %s.{pcap,txt}", base)
+
+
+# ---------------------------------------------------------------------------
 # DTN-node init  (replaces init_dtn_node.sh)
 # ---------------------------------------------------------------------------
 
@@ -225,43 +269,22 @@ def init_dtn_node(cfg: dict) -> None:
     # ---- 4. ip6tables — flush existing rules ------------------------------
     log.info("Flushing existing ip6tables rules...")
     for table, chain in [
-        ("raw",    "PREROUTING"),
-        ("raw",    "OUTPUT"),
         ("mangle", "PREROUTING"),
         ("mangle", "OUTPUT"),
-        ("filter", "OUTPUT"),
     ]:
         ip6tables("-F", chain, table=table, ignore_errors=True)
 
-    # ---- 5. Optional: netfilter logging (best-effort) ---------------------
-    run(["modprobe", "nf_log_ipv6"], ignore_errors=True)
-    sysctl("net.netfilter.nf_log.10", "nf_log_ipv6")
-
-    # ---- 6. ip6tables — TRACE (debug) ------------------------------------
+    # ---- 5. Mark ingress on data interfaces → table 100 → tun0 → lwIP ---
     for iface in all_interfaces:
-        ip6tables("-A", "PREROUTING", "-i", iface, "-j", "TRACE",
-                  table="raw", ignore_errors=True)
-    ip6tables("-A", "OUTPUT", "-j", "TRACE", table="raw", ignore_errors=True)
-
-    # ---- 7. Neighbour Discovery exemptions --------------------------------
-    # for nd_type in (133, 134, 135, 136):
-    #     ip6tables("-A", "PREROUTING",
-    #               "-p", "icmpv6", "--icmpv6-type", str(nd_type), "-j", "ACCEPT",
-    #               table="mangle")
-
-    # ---- 8. Mark all ingress traffic on data interfaces ------------------
-    for iface in all_interfaces:
-        log.info("Marking PREROUTING on %s -> mark 1", iface)
         ip6tables("-A", "PREROUTING", "-i", iface, "-j", "MARK", "--set-mark", "1",
                   table="mangle")
 
-    # Exempt raw-socket egress (fwmark 2) from re-marking with 1.
-    # Without this, AF_INET6 raw socket packets would be marked 1 by the next
-    # rule, hit table 100, and loop back through tun0.
+    # fwmark 2 = raw socket egress; skip the mark-1 rule to avoid looping
+    # packets back through tun0 (table 100 default → tun0).
     ip6tables("-A", "OUTPUT", "-m", "mark", "--mark", "2", "-j", "RETURN", table="mangle")
     ip6tables("-A", "OUTPUT", "-j", "MARK", "--set-mark", "1", table="mangle")
 
-    # ---- 9. Docker fix: demote 'local' table to prio 1000 ---------------
+    # ---- 6. Docker fix: demote 'local' table to prio 1000 ---------------
     # Must happen before we add our fwmark rule at prio 0, otherwise
     # `ip rule del pref 0` would remove the fwmark rule instead of local.
     result = run(["ip", "-6", "rule", "show"], check=False)
@@ -270,16 +293,15 @@ def init_dtn_node(cfg: dict) -> None:
            ignore_errors=True)
         ip("-6", "rule", "del", "pref", "0", ignore_errors=True)
 
-    # ---- 10. Policy routing: fwmark 1 -> table 100 -> via LwIP ----------
+    # ---- 7. Policy routing: fwmark 1 -> table 100 -> via LwIP ----------
     ip("-6", "rule", "del", "fwmark", "1", "table", "100", ignore_errors=True)
     ip("-6", "rule", "add", "fwmark", "1", "table", "100", "priority", "0")
     ip("-6", "route", "replace", "default",
        "via", lwip_addr, "dev", "tun0", "table", "100")
 
-    # ---- 10b. Policy routing: fwmark 2 -> table 200 -> physical egress ---
-    # Raw sockets (AF_INET6) in lwip_tun are marked 2. Without a dedicated
-    # table they would fall through to the main table where routes may not
-    # exist, or worse hit table 100 and loop back through tun0.
+    # ---- 8. Policy routing: fwmark 2 -> table 200 -> physical egress ----
+    # AF_INET6 raw sockets in lwip_tun carry fwmark 2 (SO_MARK). They need
+    # a routing table with direct per-interface routes.
     ip("-6", "rule", "del", "fwmark", "2", "table", "200", ignore_errors=True)
     ip("-6", "rule", "add", "fwmark", "2", "table", "200", "priority", "1")
     for iface in cfg.get("interface", []):
@@ -301,7 +323,7 @@ def init_dtn_node(cfg: dict) -> None:
                    "table", "200", ignore_errors=True)
                 added_nets_200.add(net)
 
-    # ---- 11. Hand off to LwIP binary -------------------------------------
+    # ---- 9. Hand off to LwIP binary --------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
     time.sleep(2)
     lwip_bin = Path("./lwip_tun")
@@ -309,12 +331,9 @@ def init_dtn_node(cfg: dict) -> None:
         log.error("lwip_tun binary not found at %s", lwip_bin.resolve())
         sys.exit(1)
 
-    # os.environ["DTN_CONFIG_PATH"] = toml_path
-    os.execv(str(lwip_bin), [str(lwip_bin)])   # replaces this process
-    log.info("--- Node %s Setup Complete. Keeping container alive ---", node_id)
-    # Equivalent of `exec sleep infinity`
-    while True:
-        time.sleep(3600)
+    start_captures(node_id, cfg["contact_plan"]["name"])
+
+    os.execv(str(lwip_bin), [str(lwip_bin)])
 
 # ---------------------------------------------------------------------------
 # Build binary

@@ -32,7 +32,6 @@ Per-interface reachable addresses (directional BFS excluding the local node):
 
 import sys
 import tomllib
-import random
 from collections import deque
 from pathlib import Path
 
@@ -41,25 +40,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import networkx as nx
-
-# COLORS = [
-#     "Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Pink", "Cyan",
-#     "Magenta", "Amber", "Crimson", "Indigo", "Violet", "Teal", "Scarlet",
-#     "Silver", "Golden", "Ivory", "Cobalt", "Jade",
-# ]
-
-# ANIMALS = [
-#     "Fox", "Wolf", "Bear", "Eagle", "Hawk", "Falcon", "Tiger", "Lion",
-#     "Panther", "Lynx", "Otter", "Badger", "Raven", "Owl", "Shark",
-#     "Dolphin", "Bison", "Moose", "Puma", "Viper",
-# ]
-
-
-# def random_name() -> str:
-#     return f"{random.choice(COLORS)}{random.choice(ANIMALS)}"
-
-
-
 
 # ---------------------------------------------------------------------------
 # Address helpers
@@ -357,7 +337,11 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
         networks[net_name] = {"driver": "bridge", "enable_ipv6": True}
 
     # The contact-plan sub-directory name (last component of config_dir)
-    plan_subdir = config_dir.name   # e.g. "contact plan 1"
+    plan_subdir = config_dir.name   # e.g. "contact_plan_1"
+
+    # TEST_CASE_NUMBER is baked into every service. Edit docker-compose.yml by
+    # hand to change it before `docker compose up`.
+    test_case_number = 0
 
     services: dict[str, dict] = {}
     for nid in sorted(node_data):
@@ -387,8 +371,8 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
             "privileged": True,
             "hostname": node["name"],
             "environment": {
-                # "NODE": str(nid),
                 "DTN_CONFIG_PATH": container_config,
+                "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
             },
             # Mount the entire repo into the container so:
             #   1. The compiled lwip_tun binary is always up-to-date (or can be
@@ -414,13 +398,46 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
 
         services[svc_name] = service
 
+    # Capture service — runs in host network namespace (network_mode: host) so
+    # tcpdump can capture directly on the Docker bridge interfaces (br-xxxx).
+    # Capturing on a bridge interface sees ALL frames including unicast between
+    # containers, unlike a container veth where the bridge FDB only forwards
+    # frames addressed to that port.
+    #
+    # The capture logic lives in a generated shell script (capture.sh) so there
+    # are no Compose/shell escaping issues.  TEST_CASE_NUMBER is read from the
+    # environment variable set by the container.
+    #
+    # Produces two files per run:
+    #   capture.pcap  — binary pcap  (-U: unbuffered writes)
+    #   capture.txt   — human-readable (-e: iface+link header, -tttt: full timestamp)
+    # Live Wireshark: docker exec capture tcpdump -i any ip6 -nn -U -w - | wireshark -k -i -
+    script_container_path = f"{repo_root_container}/networks/capture.sh"
+
+    services["capture"] = {
+        "image": "nicolaka/netshoot",
+        "container_name": "capture",
+        "network_mode": "host",
+        "entrypoint": ["sh", script_container_path],
+        "privileged": True,
+        "environment": {"TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}"},
+        "volumes": [f"{repo_root_host}:{repo_root_container}"],
+    }
+
     compose = {
         "services": services,
         "networks": networks,
     }
 
-    out_path.write_text(yaml.dump(compose, default_flow_style=False, sort_keys=False))
+    out_path.write_text(yaml.dump(compose, default_flow_style=False, sort_keys=False, width=float("inf")))
     print(f"  wrote {out_path}")
+
+    env_path = out_path.parent / ".env"
+    if not env_path.exists():
+        env_path.write_text(f"TEST_CASE_NUMBER={test_case_number}\n")
+        print(f"  wrote {env_path}")
+    else:
+        print(f"  skipped {env_path} (already exists)")
 
 
 # ---------------------------------------------------------------------------

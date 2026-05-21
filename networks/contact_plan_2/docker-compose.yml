@@ -8,6 +8,7 @@ services:
     hostname: node1
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node1.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
     working_dir: /repo
@@ -29,6 +30,7 @@ services:
     hostname: node2
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node2.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
     working_dir: /repo
@@ -54,6 +56,7 @@ services:
     hostname: node3
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node3.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
     working_dir: /repo
@@ -77,6 +80,7 @@ services:
     hostname: node4
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node4.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
     working_dir: /repo
@@ -100,6 +104,7 @@ services:
     hostname: node5
     environment:
       DTN_CONFIG_PATH: /repo/networks/contact_plan_2/node5.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
     working_dir: /repo
@@ -114,6 +119,18 @@ services:
         mac_address: 00:02:00:05:00:05
       net-node4-node5:
         mac_address: 00:04:00:05:00:05
+  capture:
+    image: nicolaka/netshoot
+    container_name: capture
+    network_mode: host
+    entrypoint:
+    - sh
+    - /repo/networks/capture.sh
+    privileged: true
+    environment:
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
+    volumes:
+    - ../..:/repo
 networks:
   net-node1-node2:
     driver: bridge
