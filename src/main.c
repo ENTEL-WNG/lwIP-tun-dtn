@@ -182,12 +182,11 @@ err_t tunif_init(struct netif* netif) {
 int main() {
     lwip_init();
     dtn_config_load(&dtn_config);
-    dtn_config_print(&dtn_config);
-    dtn_log_init();
-
     if (dtn_config.env != DTN_ENV_PRODUCTION) {
         sys_now_reset_base();
     }
+    dtn_config_print(&dtn_config);
+    dtn_log_init();
 
     struct stat st = {0};
     if (stat(STORAGE_DIR, &st) == -1) {

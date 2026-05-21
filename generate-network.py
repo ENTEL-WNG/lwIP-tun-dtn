@@ -420,7 +420,10 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
         "network_mode": "host",
         "entrypoint": ["sh", script_container_path],
         "privileged": True,
-        "environment": {"TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}"},
+        "environment": {
+            "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
+            "PLAN_NAME": plan_subdir,
+        },
         "volumes": [f"{repo_root_host}:{repo_root_container}"],
     }
 
@@ -584,7 +587,16 @@ def main():
 
     generate_compose(node_data, out_dir, out_dir / "docker-compose.yml")
 
+    test_script = out_dir / "test.sh"
+    if not test_script.exists():
+        test_script.write_text('#!/bin/sh\necho "Tests not implemented"\n')
+        test_script.chmod(0o755)
+        print(f"  wrote {test_script}")
+    else:
+        print(f"  skipped {test_script} (already exists)")
+
     print(f"\nGenerated {len(node_data)} config(s) + docker-compose.yml in '{out_dir}/'")
+    print(f"OUTPUT_DIR={out_dir}")
 
 
 if __name__ == "__main__":

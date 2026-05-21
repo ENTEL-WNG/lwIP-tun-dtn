@@ -173,6 +173,20 @@ def setup_interfaces(cfg: dict) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# ip6tables TRACE rules (required for xtables-monitor --trace)
+# ---------------------------------------------------------------------------
+
+def setup_trace_rules(interfaces: list[str]) -> None:
+    """Install TRACE rules in the raw table so xtables-monitor --trace works."""
+    for chain in ("PREROUTING", "OUTPUT"):
+        ip6tables("-F", chain, table="raw", ignore_errors=True)
+    for iface in interfaces:
+        ip6tables("-A", "PREROUTING", "-i", iface, "-j", "TRACE", table="raw",
+                  ignore_errors=True)
+    ip6tables("-A", "OUTPUT", "-j", "TRACE", table="raw", ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
 # Regular-node init  (replaces init_reg_node.sh)
 # ---------------------------------------------------------------------------
 
@@ -183,10 +197,11 @@ def init_regular_node(cfg: dict) -> None:
     sysctl("net.ipv6.conf.all.accept_dad", "0")
     sysctl("net.ipv6.conf.all.forwarding", "1")
 
-    setup_interfaces(cfg)
+    all_interfaces = setup_interfaces(cfg)
+    setup_trace_rules(all_interfaces)
+    start_captures(node_id, cfg["contact_plan"]["name"])
 
     log.info("--- Node %s Setup Complete. Keeping container alive ---", node_id)
-    # Equivalent of `exec sleep infinity`
     while True:
         time.sleep(3600)
 
@@ -197,44 +212,12 @@ def init_regular_node(cfg: dict) -> None:
 
 def start_captures(node_id: int, plan_name: str) -> None:
     """
-    Spawn tcpdump on all interfaces (physical + tun0) before os.execv.
-    The child processes outlive the exec and keep capturing under lwip_tun.
-
-    The output directory is /repo/captures/<plan>/<TEST_CASE_NUMBER>/.
-    TEST_CASE_NUMBER is set by generate-network.py and baked into the
-    compose file; edit docker-compose.yml by hand to override it.
-
-    Two files are written per node:
-        /repo/captures/<plan>/<run>/node<id>.pcap  — binary pcap
-        /repo/captures/<plan>/<run>/node<id>.txt   — human-readable text
+    Run networks/capture_node.sh before os.execv into lwip_tun.
+    The script's tcpdump processes outlive the exec and keep capturing.
     """
-    test_case = os.environ.get("TEST_CASE_NUMBER", "0")
-    run_dir = Path(f"/repo/captures/{plan_name}/{test_case}")
-    run_dir.mkdir(parents=True, exist_ok=True)
-    base = run_dir / f"node{node_id}"
-
-    # -i any    : capture on all interfaces (physical + tun0)
-    # ip6       : BPF filter — IPv6 traffic only
-    # -nn       : no DNS/port name resolution (faster, no false lookups)
-    # -U        : write each packet to file immediately (unbuffered)
-    # -w <file> : write binary pcap output
-    subprocess.Popen(
-        ["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    # -e        : print the interface name and link-layer header per packet
-    # -l        : line-buffered stdout (text appears immediately)
-    # -tttt     : absolute timestamp with date (2026-05-21 14:30:22.123456)
-    txt_file = open(f"{base}.txt", "w")
-    subprocess.Popen(
-        ["tcpdump", "-i", "any", "ip6", "-nn", "-e", "-l", "-tttt"],
-        stdout=txt_file,
-        stderr=txt_file,
-    )
-
-    log.info("Capture started -> %s.{pcap,txt}", base)
+    script = "/repo/networks/capture_node.sh"
+    subprocess.Popen(["sh", script, str(node_id), plan_name])
+    log.info("Capture script started for node%d (plan=%s)", node_id, plan_name)
 
 
 # ---------------------------------------------------------------------------
@@ -269,10 +252,15 @@ def init_dtn_node(cfg: dict) -> None:
     # ---- 4. ip6tables — flush existing rules ------------------------------
     log.info("Flushing existing ip6tables rules...")
     for table, chain in [
+        ("raw",    "PREROUTING"),
+        ("raw",    "OUTPUT"),
         ("mangle", "PREROUTING"),
         ("mangle", "OUTPUT"),
     ]:
         ip6tables("-F", chain, table=table, ignore_errors=True)
+
+    # ---- 4b. TRACE rules (enables xtables-monitor --trace) ---------------
+    setup_trace_rules(all_interfaces)
 
     # ---- 5. Mark ingress on data interfaces → table 100 → tun0 → lwIP ---
     for iface in all_interfaces:
