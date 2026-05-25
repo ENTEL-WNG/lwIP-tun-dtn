@@ -175,6 +175,7 @@ bool is_local_address(const ip6_addr_t* dest_addr, const char* addr) {
         ip6_addr_set_zone(&dest_addr_nozone, IP6_NO_ZONE);
         ip6_addr_set_zone(&local_addr, IP6_NO_ZONE);
 #endif
+
         if (ip6_addr_eq(&dest_addr_nozone, &local_addr)) {
             return true;
         }
@@ -346,15 +347,14 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
             DTN_DEBUG("Successfully stored package src: %s -> dest: %s with next hope node id %d",
                       src_str, dest_str, next_hop_node_id);
             // Create a copy for DTN-PCK-RECEIVED
-            // struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
-            // if (p_copy != NULL) {
-            //     if (pbuf_copy(p_copy, p) == ERR_OK) {
-            //         // Send DTN-PCK-RECEIVED message
-            //         // dtn_icmpv6_send_pck_received(inp_netif, p_copy,
-            //         ICMP6_CODE_DTN_NO_CONTACT);
-            //     }
-            //     pbuf_free(p_copy);
-            // }
+            struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
+            if (p_copy != NULL) {
+                if (pbuf_copy(p_copy, p) == ERR_OK) {
+                    // Send DTN-PCK-RECEIVED message
+                    // dtn_icmpv6_send_pck_received(inp_netif, p_copy, ICMP6_CODE_DTN_NO_CONTACT);
+                }
+                pbuf_free(p_copy);
+            }
             return;
         }
 

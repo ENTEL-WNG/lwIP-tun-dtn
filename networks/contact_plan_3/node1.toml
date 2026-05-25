@@ -24,7 +24,7 @@ dtn_addresses  = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3"]
 addresses      = ["fd00:01:02::1"]
 
 [contact_plan]
-name = "contact_plan_1"
+name = "contact_plan_3"
 max_time_in_sec = 200
 
 [contact_plan.defaults]

@@ -7,7 +7,7 @@ services:
     privileged: true
     hostname: node1
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node1.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_3/node1.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -17,7 +17,7 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_1/node1.toml
+    - /repo/networks/contact_plan_3/node1.toml
     networks:
       net-node1-node2:
         mac_address: 00:01:00:02:00:01
@@ -29,7 +29,7 @@ services:
     privileged: true
     hostname: node2
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node2.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_3/node2.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -39,7 +39,7 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_1/node2.toml
+    - /repo/networks/contact_plan_3/node2.toml
     networks:
       net-node1-node2:
         mac_address: 00:01:00:02:00:02
@@ -53,7 +53,7 @@ services:
     privileged: true
     hostname: node3
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_1/node3.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_3/node3.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -63,7 +63,7 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_1/node3.toml
+    - /repo/networks/contact_plan_3/node3.toml
     networks:
       net-node2-node3:
         mac_address: 00:02:00:03:00:03
@@ -77,7 +77,7 @@ services:
     privileged: true
     environment:
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
-      PLAN_NAME: contact_plan_1
+      PLAN_NAME: contact_plan_3
     volumes:
     - ../..:/repo
 networks:

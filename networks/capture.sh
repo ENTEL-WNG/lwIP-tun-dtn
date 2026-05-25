@@ -17,7 +17,7 @@
 
 set -e
 
-CAPTURES="/repo/captures/${PLAN_NAME}/${TEST_CASE_NUMBER}"
+CAPTURES="/repo/networks/${PLAN_NAME}/captures/${TEST_CASE_NUMBER}"
 mkdir -p "$CAPTURES"
 
 echo "Capturing to $CAPTURES/capture.{pcap,txt}"

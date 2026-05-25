@@ -9,14 +9,14 @@
 #   TEST_CASE_NUMBER — run index set by docker-compose (default: 0)
 #
 # Two files are written:
-#   /repo/captures/<plan>/<run>/node<id>.pcap  — binary pcap
-#   /repo/captures/<plan>/<run>/node<id>.txt   — human-readable text
+#   /repo/networks/<plan>/captures/<run>/node<id>.pcap  — binary pcap
+#   /repo/networks/<plan>/captures/<run>/node<id>.txt   — human-readable text
 
 NODE_ID="$1"
 PLAN_NAME="$2"
 TEST_CASE_NUMBER="${TEST_CASE_NUMBER:-0}"
 
-CAPTURES="/repo/captures/${PLAN_NAME}/${TEST_CASE_NUMBER}"
+CAPTURES="/repo/networks/${PLAN_NAME}/captures/${TEST_CASE_NUMBER}"
 BASE="${CAPTURES}/node${NODE_ID}"
 
 mkdir -p "$CAPTURES"

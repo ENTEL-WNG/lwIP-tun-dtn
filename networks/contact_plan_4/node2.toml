@@ -30,16 +30,16 @@ local_mac      = "00:02:00:03:00:02"
 remote_addr    = "fd00:02:03::3/64"
 remote_mac  = "00:02:00:03:00:03"
 remote_node_id = 3
-start_in_sec   = 10
-end_in_sec     = 100
+start_in_sec   = 900
+end_in_sec     = 1000
 rate           = 1
 range          = 1
 dtn_addresses  = ["fd00:02:03::2", "fd00:02:03::3"]
 addresses      = []
 
 [contact_plan]
-name = "contact_plan_1"
-max_time_in_sec = 200
+name = "contact_plan_4"
+max_time_in_sec = 1000
 
 [contact_plan.defaults]
 rate = 100
@@ -69,6 +69,6 @@ bidirected = true
 [[edges]]
 from = 2
 to = 3
-start_in_sec = 10
-end_in_sec = 100
+start_in_sec = 900
+end_in_sec = 1000
 bidirected = true

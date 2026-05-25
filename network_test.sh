@@ -8,10 +8,12 @@
 #   1. Generate per-node configs and docker-compose from the contact plan
 #   2. docker compose up (detached, with build)
 #   3. Run networks/<plan>/test.sh
-#   4. Collect docker compose logs → captures/<plan>/<run>/logs
+#   4. Collect docker compose logs → networks/<plan>/captures/<run>/logs
 #   5. docker compose down
 #   6. Merge node*.txt tcpdump files into a single time-sorted tcpdump file
 #   7. Print completion message
+
+LWIP_SETTLE_TIME=3
 
 set -euo pipefail
 
@@ -55,7 +57,7 @@ if [ -f "$ENV_FILE" ]; then
     TEST_CASE_NUMBER=$(grep '^TEST_CASE_NUMBER=' "$ENV_FILE" | cut -d= -f2)
 fi
 
-CAPTURES_DIR="captures/${PLAN_NAME}/${TEST_CASE_NUMBER}"
+CAPTURES_DIR="${COMPOSE_DIR}/captures/${TEST_CASE_NUMBER}"
 mkdir -p "$CAPTURES_DIR"
 
 echo "--- Run index: $TEST_CASE_NUMBER (output: $CAPTURES_DIR) ---"
@@ -87,7 +89,7 @@ while true; do
 done
 
 echo "--- Waiting 5s for network to settle and lwip to start ---"
-sleep 5
+sleep $LWIP_SETTLE_TIME
 
 # --- Step 3: Run test.sh ---
 TEST_SCRIPT="${COMPOSE_DIR}/test.sh"
@@ -99,8 +101,9 @@ else
 fi
 
 # --- Step 4: Collect logs (before down, containers still exist) ---
-echo "--- Waiting 1s docker compose logs---"
-sleep 1
+echo "--- Waiting 3s for docker compose logs---"
+sleep 3
+
 echo "--- Collecting docker compose logs ---"
 rm -f "${CAPTURES_DIR}/logs.txt"
 docker compose -f "$COMPOSE_FILE" logs --no-color --timestamps 2>&1 \
