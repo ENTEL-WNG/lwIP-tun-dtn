@@ -38,11 +38,9 @@ rm -f "${CAPTURES}/capture.pcap" "${CAPTURES}/capture.txt"
 # -tttt     : full absolute timestamp with date (txt only)
 
 tcpdump -i any ip6 -nn -U \
-    --direction=inout \
     -w "${CAPTURES}/capture.pcap" &
 
 tcpdump -i any ip6 -nn -e -l -tttt \
-    --direction=inout \
     > "${CAPTURES}/capture.txt" 2>&1 &
 
 wait

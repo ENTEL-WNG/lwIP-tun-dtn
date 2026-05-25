@@ -41,3 +41,5 @@ tcpdump -i any ip6 -nn -e -l -tttt \
 # rules. Requires TRACE rules in ip6tables raw table (set up by init_node.py).
 xtables-monitor --trace \
     > "${BASE}_trace.txt" 2>&1 &
+
+
