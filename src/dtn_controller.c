@@ -63,75 +63,6 @@ void dtn_controller_destroy(DTN_Controller* controller) {
     free(controller);
 }
 
-static bool should_attempt_forward(DTN_Controller* controller, const ip6_addr_t* dest_addr) {
-    u32_t current_time = sys_now();
-
-    // Check if this destination is in tracking list
-    for (int i = 0; i < MAX_DESTINATIONS; i++) {
-        if (controller->forwarding_attempts[i].is_valid) {
-            ip6_addr_t tracking_addr = controller->forwarding_attempts[i].destination;
-
-#if LWIP_IPV6_SCOPES
-            ip6_addr_t dest_nozone = *dest_addr;
-            ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
-            ip6_addr_set_zone(&tracking_addr, IP6_NO_ZONE);
-
-            if (ip6_addr_cmp(&dest_nozone, &tracking_addr)) {
-#else
-            if (ip6_addr_cmp(dest_addr, &tracking_addr)) {
-#endif
-                u32_t time_since_last_attempt =
-                    current_time - controller->forwarding_attempts[i].last_attempt_time;
-
-                if (time_since_last_attempt >= FORWARDING_RETRY_DELAY_MS) {
-                    if (controller->forwarding_attempts[i].retry_count >= MAX_FORWARDING_RETRIES) {
-                        // Max retries reached, delete packet from storage
-                        Storage_Function* storage = controller->parent_module->storage;
-                        if (storage) {
-                            Stored_Packet_Entry* expired_packet =
-                                dtn_storage_retrieve_packet_for_dest(storage, dest_addr);
-                            if (expired_packet) {
-                                char addr_str[IP6ADDR_STRLEN_MAX];
-                                ip6addr_ntoa_r(dest_addr, addr_str, sizeof(addr_str));
-                                DTN_WARN(
-                                    "DTN Controller: Deleting packet for %s after %d failed "
-                                    "transmission attempts",
-                                    addr_str, MAX_FORWARDING_RETRIES);
-
-                                // Free the packet and entry
-                                pbuf_free(expired_packet->p);
-                                dtn_storage_free_retrieved_entry_struct(expired_packet);
-                            }
-                        }
-
-                        // Remove from tracking list
-                        controller->forwarding_attempts[i].is_valid = false;
-                        return false;
-                    }
-
-                    controller->forwarding_attempts[i].last_attempt_time = current_time;
-                    controller->forwarding_attempts[i].retry_count++;
-                    return true;
-                } else {
-                    return false;
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < MAX_DESTINATIONS; i++) {
-        if (!controller->forwarding_attempts[i].is_valid) {
-            controller->forwarding_attempts[i].is_valid = true;
-            memcpy(&controller->forwarding_attempts[i].destination, dest_addr, sizeof(ip6_addr_t));
-            controller->forwarding_attempts[i].last_attempt_time = current_time;
-            controller->forwarding_attempts[i].retry_count = 1;
-            return true;
-        }
-    }
-
-    return true;
-}
-
 void dtn_controller_remove_tracking(DTN_Controller* controller, const ip6_addr_t* dest_addr) {
     if (!controller || !dest_addr) {
         return;
@@ -304,14 +235,14 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    int next_hop_node_id;
+    DtnRoutingResult routing_result;
     int get_next_hop_node_id_result = dtn_routing_get_next_hop_node_id(
-        routing->base_time_in_ms, sys_now(), ip6hdr, &next_hop_node_id);
+        routing->base_time_in_ms, sys_now(), ip6hdr, &routing_result);
 
     if (get_next_hop_node_id_result == DTN_ROUTING_OK) {
         bool is_next_hop_active;
-        int is_next_hop_active_contact_result =
-            dtn_routing_is_next_hop_active(sys_now(), next_hop_node_id, &is_next_hop_active);
+        int is_next_hop_active_contact_result = dtn_routing_is_next_hop_active(
+            sys_now(), routing_result.next_hop_node_id, &is_next_hop_active);
 
         if (is_next_hop_active_contact_result == DTN_ROUTING_OK && is_next_hop_active) {
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
@@ -329,23 +260,23 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
             dtn_update_or_add_custodian_option(&p, dtn_config.lwip_ipv6_addr);
             dtn_socket_result_t socket_result =
-                dtn_raw_socket_send_to_node_id(p, next_hop_node_id, &dest_addr);
+                dtn_raw_socket_send_to_node_id(p, routing_result.next_hop_node_id, &dest_addr);
 
             if (socket_result == DTN_SOCKET_OK) {
                 DTN_DEBUG("Successfully send package src: %s -> dest: %s used node id %d", src_str,
-                          dest_str, next_hop_node_id);
+                          dest_str, routing_result.next_hop_node_id);
             } else {
                 DTN_ERROR("Failed to send package src: %s -> dest: %s used node id %d, error: %d",
-                          src_str, dest_str, next_hop_node_id, socket_result);
+                          src_str, dest_str, routing_result.next_hop_node_id, socket_result);
             }
 
             pbuf_free(p);
             return;
         }
 
-        if (dtn_storage_store_packet(storage, p, &dest_addr)) {
+        if (dtn_storage_store_packet(storage, p, &dest_addr, &routing_result)) {
             DTN_DEBUG("Successfully stored package src: %s -> dest: %s with next hope node id %d",
-                      src_str, dest_str, next_hop_node_id);
+                      src_str, dest_str, routing_result.next_hop_node_id);
             // Create a copy for DTN-PCK-RECEIVED
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
             if (p_copy != NULL) {
@@ -403,36 +334,38 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
 
     Storage_Function* storage = controller->parent_module->storage;
     Routing_Function* routing = controller->parent_module->routing;
-
-    // Update routing contacts based on current time
-    // dtn_routing_update_contacts(routing);
-
     Stored_Packet_Entry* entry = storage->packet_list_head;
 
     while (entry != NULL) {
         Stored_Packet_Entry* next_entry = entry->next;
 
-        // Check if enough time has passed since last attempt
-        if (should_attempt_forward(controller, &entry->original_dest)) {
+        double sys_now_in_sec = sys_now() / 1000.0;
+        DTN_DEBUG("%f <= %f", sys_now_in_sec, entry->delivery_time_in_sec);
+        if (sys_now_in_sec >= entry->delivery_time_in_sec) {
             struct pbuf* p = entry->p;
             struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
 
+            char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
             ip6_addr_t src_addr, dest_addr, sender_ip;
             ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
             ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+            ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
+            ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
+
+            DTN_INFO("Attempting to forward stored package src: %s -> dest: %s", src_str, dest_str);
 
             if (!dtn_extract_custodian_option(entry->p, &sender_ip)) {
                 memcpy(&sender_ip, &src_addr, sizeof(ip6_addr_t));
             }
 
-            int next_hop_node_id;
+            DtnRoutingResult routing_result;
             int get_next_hop_node_id_result = dtn_routing_get_next_hop_node_id(
-                routing->base_time_in_ms, sys_now(), ip6hdr, &next_hop_node_id);
+                routing->base_time_in_ms, sys_now(), ip6hdr, &routing_result);
 
             if (get_next_hop_node_id_result == DTN_ROUTING_OK) {
                 bool is_next_hop_active;
                 int is_next_hop_active_contact_result = dtn_routing_is_next_hop_active(
-                    sys_now(), next_hop_node_id, &is_next_hop_active);
+                    sys_now(), routing_result.next_hop_node_id, &is_next_hop_active);
 
                 if (is_next_hop_active_contact_result == DTN_ROUTING_OK && is_next_hop_active) {
                     struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
@@ -445,44 +378,36 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
                         pbuf_free(p_copy);
                     }
 
-                    dtn_update_or_add_custodian_option(&p, dtn_config.lwip_ipv6_addr);
-                    dtn_socket_result_t socket_result =
-                        dtn_raw_socket_send_to_node_id(p, next_hop_node_id, &dest_addr);
+                    /* dtn_update_or_add_custodian_option always frees the original
+                     * pbuf and returns a new one. Null out entry->p first so that
+                     * dtn_storage_remove_entry does not double-free it. */
+                    entry->p = NULL;
+                    struct pbuf* p_send = p;
+                    dtn_update_or_add_custodian_option(&p_send, dtn_config.lwip_ipv6_addr);
 
-                    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
-                    ip6_addr_t src_addr, dest_addr;
-                    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
-                    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
-                    ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
-                    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
-                    pbuf_free(p);
+                    dtn_socket_result_t socket_result = dtn_raw_socket_send_to_node_id(
+                        p_send, routing_result.next_hop_node_id, &dest_addr);
+
+                    pbuf_free(p_send);
 
                     if (socket_result == DTN_SOCKET_OK) {
-                        DTN_DEBUG(
-                            "Successfully forwarded stored package src: %s -> dest: %s used node "
-                            "id %d",
-                            src_str, dest_str, next_hop_node_id);
-                        dtn_storage_remove_packet_from_disk(storage, entry->filename);
-                        free(entry);
-                        storage->stored_packets_count--;
+                        DTN_INFO(
+                            "Successfully forwarded stored package src: %s -> dest: %s via node %d",
+                            src_str, dest_str, routing_result.next_hop_node_id);
+                        dtn_storage_remove_entry(storage, entry);
                     } else {
                         DTN_ERROR(
-                            "Failed to forward stored package src: %s -> dest: %s used node id %d, "
+                            "Failed to forward stored package src: %s -> dest: %s via node %d, "
                             "error: %d",
-                            src_str, dest_str, next_hop_node_id, socket_result);
+                            src_str, dest_str, routing_result.next_hop_node_id, socket_result);
                     }
                 }
             } else {
-                char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
-                ip6_addr_t src_addr, dest_addr;
-                ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
-                ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
-                ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
-                ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
                 DTN_ERROR(
                     "Failed to get next hop node id for stored package src: %s -> dest: %s "
                     "error: %d",
-                    src_str, dest_str, next_hop_node_id, get_next_hop_node_id_result);
+                    src_str, dest_str, routing_result.next_hop_node_id,
+                    get_next_hop_node_id_result);
             }
         }
         entry = next_entry;

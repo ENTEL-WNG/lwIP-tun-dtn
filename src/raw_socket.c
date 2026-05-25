@@ -36,7 +36,7 @@
 #include "lwip/pbuf.h"
 #include "raw_socket.h"
 
-// #define USE_AF_INET6
+#define USE_AF_INET6
 
 #ifdef USE_AF_INET6
 dtn_socket_result_t dtn_init_raw_socket(void) {

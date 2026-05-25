@@ -13,8 +13,6 @@
 #   6. Merge node*.txt tcpdump files into a single time-sorted tcpdump file
 #   7. Print completion message
 
-LWIP_SETTLE_TIME=3
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -62,6 +60,11 @@ mkdir -p "$CAPTURES_DIR"
 
 echo "--- Run index: $TEST_CASE_NUMBER (output: $CAPTURES_DIR) ---"
 
+# --- Step 1b: Clean dtn_storage directories ---
+# echo "--- Cleaning dtn_storage directories ---"
+# rm -rf "${SCRIPT_DIR}/dtn_storage"
+# echo "dtn_storage cleaned."
+
 # --- Step 2: docker compose up ---
 echo "--- Starting docker compose ---"
 docker compose -f "$COMPOSE_FILE" up -d --build
@@ -87,9 +90,6 @@ while true; do
     sleep 2
     ELAPSED=$((ELAPSED + 2))
 done
-
-echo "--- Waiting 5s for network to settle and lwip to start ---"
-sleep $LWIP_SETTLE_TIME
 
 # --- Step 3: Run test.sh ---
 TEST_SCRIPT="${COMPOSE_DIR}/test.sh"

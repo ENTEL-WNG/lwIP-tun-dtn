@@ -82,7 +82,7 @@ int main() {
 
     ip6_addr_t src, dst;
     ip6addr_aton("fd00:1:2::1", &src);
-    ip6addr_aton("fd00:4:5::4", &dst);
+    ip6addr_aton("fd00:2:3::3", &dst);
     // ip6addr_aton("fd00:3:4::4", &dst);
     // ip6addr_aton("fe00:2:5::5", &dst);
     ip6_addr_copy_to_packed(ip6h->src, src);

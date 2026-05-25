@@ -82,6 +82,50 @@ int py_cgr_clean_all(dtn_routing_result_t retcode) {
     return retcode;
 }
 
+/* Fetch and track an attribute; handle NULL and Py_None.
+ * Returns the PyObject* on success, NULL on failure. */
+static PyObject* py_get_attr(PyObject* obj, const char* attr) {
+    PyObject* val = track_obj(PyObject_GetAttrString(obj, attr));
+    if (val == NULL) {
+        DTN_ERROR("DTN Routing: object has no attribute '%s'", attr);
+        return NULL;
+    }
+    if (val == Py_None) {
+        DTN_DEBUG("DTN Routing: attribute '%s' is None", attr);
+        return NULL;
+    }
+    return val;
+}
+
+/* Get an integer attribute from a Python object. */
+static int py_get_long_attr(PyObject* obj, const char* attr, long* out) {
+    PyObject* val = py_get_attr(obj, attr);
+    if (val == NULL)
+        return -1;
+    if (!PyLong_Check(val)) {
+        DTN_ERROR("DTN Routing: attribute '%s' is not an integer", attr);
+        return -1;
+    }
+    *out = PyLong_AsLong(val);
+    return 0;
+}
+
+/* Get a numeric attribute (int or float) as double. */
+static int py_get_double_attr(PyObject* obj, const char* attr, double* out) {
+    PyObject* val = py_get_attr(obj, attr);
+    if (val == NULL)
+        return -1;
+    if (PyFloat_Check(val)) {
+        *out = PyFloat_AsDouble(val);
+    } else if (PyLong_Check(val)) {
+        *out = (double)PyLong_AsLong(val);
+    } else {
+        DTN_ERROR("DTN Routing: attribute '%s' is not a number", attr);
+        return -1;
+    }
+    return 0;
+}
+
 int dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node) {
     if (!is_dtn_node) {
         DTN_ERROR("Invalid arguments to is_node_id_dtn_node.");
@@ -135,8 +179,8 @@ long _ipv6_to_nodeid(const char* ip6) {
 }
 
 int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms,
-                                     struct ip6_hdr* ip6h, int* next_hop_node_id) {
-    if (start_time_in_ms < 0 || current_time_in_ms < 0 || !ip6h || !next_hop_node_id) {
+                                     struct ip6_hdr* ip6h, DtnRoutingResult* result) {
+    if (start_time_in_ms < 0 || current_time_in_ms < 0 || !ip6h || !result) {
         DTN_ERROR("Invalid arguments to get_next_dnt_hop.");
         return DTN_ROUTING_ERR;
     }
@@ -178,15 +222,15 @@ int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_tim
     DTN_DEBUG("src_node_id: %ld -> curr_node_id: %ld -> dest_node_id: %ld - deadline: %ld",
               src_node_id, curr_node_id, dest_node_id, deadline);
 
-    return _dtn_routing_get_next_hop_node_id(
-        dtn_config.contact_plan_path, start_time_in_sec, current_time_in_sec, curr_node_id,
-        src_node_id, dest_node_id, deadline, package_length, dscp, next_hop_node_id);
+    return _dtn_routing_get_next_hop_node_id(dtn_config.contact_plan_path, start_time_in_sec,
+                                             current_time_in_sec, curr_node_id, src_node_id,
+                                             dest_node_id, deadline, package_length, dscp, result);
 }
 
 int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time_in_sec,
                                       double current_time_in_sec, long current_node_id,
                                       long src_node_id, long dest_node_id, long deadline,
-                                      long package_length, long dscp, int* next_hop_node_id) {
+                                      long package_length, long dscp, DtnRoutingResult* result) {
     Py_Initialize();
     if (!Py_IsInitialized()) {
         DTN_ERROR("Python not initialized");
@@ -270,25 +314,18 @@ int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time
     }
 
     PyObject* first = PyList_GetItem(candidates, 0);
-    PyObject* pNextNode = PyObject_GetAttrString(first, "next_node");
-    if (pNextNode == NULL) {
-        DTN_ERROR("DTN Routing: candidate object has no attribute next_node");
-        return py_cgr_clean_all(DTN_ROUTING_ERR);
-    }
 
-    if (pNextNode == Py_None) {
-        DTN_DEBUG("DTN Routing: next_node is None — no route");
+    long next_hop_node_id;
+    if (py_get_long_attr(first, "next_node", &next_hop_node_id) != 0)
         return py_cgr_clean_all(DTN_ROUTING_NO_ROUTE);
-    }
-
-    if (!PyLong_Check(pNextNode)) {
-        DTN_ERROR("DTN Routing: next_node is not an integer");
+    if (py_get_double_attr(first, "to_time", &result->to_time) != 0)
         return py_cgr_clean_all(DTN_ROUTING_ERR);
-    }
+    if (py_get_double_attr(first, "best_delivery_time", &result->best_delivery_time) != 0)
+        return py_cgr_clean_all(DTN_ROUTING_ERR);
 
-    long _next_hop_node_id = PyLong_AsLong(pNextNode);
-    *next_hop_node_id = (int)_next_hop_node_id;
-    DTN_DEBUG("DTN Routing: next hop node id %d", *next_hop_node_id);
+    result->next_hop_node_id = (int)next_hop_node_id;
+    DTN_DEBUG("DTN Routing: next hop node id %d | best_delivery_time %f | max_delivery_time %f",
+              result->next_hop_node_id, result->best_delivery_time, result->to_time);
 
     return py_cgr_clean_all(DTN_ROUTING_OK);
 }

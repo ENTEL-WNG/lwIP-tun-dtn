@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "dtn_config.h"
 #include "dtn_custody.h"
 #include "dtn_logger.h"
 #include "lwip/ip6_addr.h"
@@ -41,16 +42,27 @@ typedef struct {
 
 // Creates storage directory if it doesn't exist
 int dtn_storage_init_directory(Storage_Function* storage) {
-    struct stat st = {0};
+    char tmp[MAX_PATH_LENGTH];
+    strncpy(tmp, storage->storage_directory, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
 
-    if (stat(storage->storage_directory, &st) == -1) {
-        DTN_INFO("DTN Storage: Creating directory %s", storage->storage_directory);
-        int result = mkdir(storage->storage_directory, 0755);
-        if (result == -1) {
-            DTN_ERROR("DTN Storage: Failed to create storage directory: %s", strerror(errno));
-            return 0;
+    for (char* p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            if (mkdir(tmp, 0755) == -1 && errno != EEXIST) {
+                DTN_ERROR("Failed to create directory %s: %s", tmp, strerror(errno));
+                return 0;
+            }
+            *p = '/';
         }
     }
+
+    if (mkdir(tmp, 0755) == -1 && errno != EEXIST) {
+        DTN_ERROR("Failed to create directory %s: %s", tmp, strerror(errno));
+        return 0;
+    }
+
+    DTN_INFO("Directory ready: %s", storage->storage_directory);
     return 1;
 }
 
@@ -68,12 +80,12 @@ int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Ent
 
     if (snprintf(entry->filename, MAX_PATH_LENGTH, "%s/pkt_%s_%u.dat", storage->storage_directory,
                  addr_str, entry->stored_time_ms) >= MAX_PATH_LENGTH) {
-        DTN_WARN("DTN Storage: Filename was truncated");
+        DTN_WARN("Filename was truncated");
     }
 
     FILE* file = fopen(entry->filename, "wb");
     if (!file) {
-        DTN_ERROR("DTN Storage: Failed to open file for writing: %s", strerror(errno));
+        DTN_ERROR("Failed to open file for writing: %s", strerror(errno));
         return 0;
     }
 
@@ -85,27 +97,27 @@ int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Ent
     memcpy(&header.original_dest, &entry->original_dest, sizeof(ip6_addr_t));
 
     if (fwrite(&header, sizeof(header), 1, file) != 1) {
-        DTN_ERROR("DTN Storage: Failed to write packet header: %s", strerror(errno));
+        DTN_ERROR("Failed to write packet header: %s", strerror(errno));
         fclose(file);
         return 0;
     }
 
     char* buffer = malloc(entry->p->tot_len);
     if (!buffer) {
-        DTN_ERROR("DTN Storage: Failed to allocate buffer for packet data");
+        DTN_ERROR("Failed to allocate buffer for packet data");
         fclose(file);
         return 0;
     }
 
     if (pbuf_copy_partial(entry->p, buffer, entry->p->tot_len, 0) != entry->p->tot_len) {
-        DTN_ERROR("DTN Storage: Failed to copy packet data to buffer");
+        DTN_ERROR("Failed to copy packet data to buffer");
         free(buffer);
         fclose(file);
         return 0;
     }
 
     if (fwrite(buffer, 1, entry->p->tot_len, file) != entry->p->tot_len) {
-        DTN_ERROR("DTN Storage: Failed to write packet data: %s", strerror(errno));
+        DTN_ERROR("Failed to write packet data: %s", strerror(errno));
         free(buffer);
         fclose(file);
         return 0;
@@ -114,7 +126,7 @@ int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Ent
     free(buffer);
     fclose(file);
 
-    DTN_INFO("DTN Storage: Packet saved to %s", entry->filename);
+    DTN_INFO("Packet saved to %s", entry->filename);
     return 1;
 }
 
@@ -123,11 +135,11 @@ int dtn_storage_remove_packet_from_disk(Storage_Function* storage, const char* f
         return 0;
 
     if (remove(filename) != 0) {
-        DTN_ERROR("DTN Storage: Failed to remove packet file: %s", strerror(errno));
+        DTN_ERROR("Failed to remove packet file: %s", strerror(errno));
         return 0;
     }
 
-    DTN_INFO("DTN Storage: Removed packet file %s", filename);
+    DTN_INFO("Removed packet file %s", filename);
     return 1;
 }
 
@@ -138,32 +150,32 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     FILE* file = fopen(filename, "rb");
     if (!file) {
-        DTN_ERROR("DTN Storage: Failed to open packet file for reading: %s", strerror(errno));
+        DTN_ERROR("Failed to open packet file for reading: %s", strerror(errno));
         return NULL;
     }
 
     PacketFileHeader header;
     if (fread(&header, sizeof(header), 1, file) != 1) {
-        DTN_ERROR("DTN Storage: Failed to read packet header: %s", strerror(errno));
+        DTN_ERROR("Failed to read packet header: %s", strerror(errno));
         fclose(file);
         return NULL;
     }
 
     if (memcmp(header.magic, "DTNP", 4) != 0) {
-        DTN_ERROR("DTN Storage: Invalid packet file format");
+        DTN_ERROR("Invalid packet file format");
         fclose(file);
         return NULL;
     }
 
     char* buffer = malloc(header.packet_len);
     if (!buffer) {
-        DTN_ERROR("DTN Storage: Failed to allocate buffer for packet data");
+        DTN_ERROR("Failed to allocate buffer for packet data");
         fclose(file);
         return NULL;
     }
 
     if (fread(buffer, 1, header.packet_len, file) != header.packet_len) {
-        DTN_ERROR("DTN Storage: Failed to read packet data: %s", strerror(errno));
+        DTN_ERROR("Failed to read packet data: %s", strerror(errno));
         free(buffer);
         fclose(file);
         return NULL;
@@ -173,13 +185,13 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     struct pbuf* p = pbuf_alloc(PBUF_RAW, header.packet_len, PBUF_RAM);
     if (!p) {
-        DTN_ERROR("DTN Storage: Failed to allocate pbuf for loaded packet");
+        DTN_ERROR("Failed to allocate pbuf for loaded packet");
         free(buffer);
         return NULL;
     }
 
     if (pbuf_take(p, buffer, header.packet_len) != ERR_OK) {
-        DTN_ERROR("DTN Storage: Failed to copy data to pbuf");
+        DTN_ERROR("Failed to copy data to pbuf");
         pbuf_free(p);
         free(buffer);
         return NULL;
@@ -189,7 +201,7 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     Stored_Packet_Entry* entry = malloc(sizeof(Stored_Packet_Entry));
     if (!entry) {
-        DTN_ERROR("DTN Storage: Failed to allocate memory for packet entry");
+        DTN_ERROR("Failed to allocate memory for packet entry");
         pbuf_free(p);
         return NULL;
     }
@@ -204,7 +216,7 @@ static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* 
 
     char addr_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
-    DTN_INFO("DTN Storage: Loaded packet for %s from %s", addr_str, filename);
+    DTN_INFO("Loaded packet for %s from %s", addr_str, filename);
 
     return entry;
 }
@@ -215,7 +227,7 @@ int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
 
     DIR* dir = opendir(storage->storage_directory);
     if (!dir) {
-        DTN_ERROR("DTN Storage: Failed to open storage directory: %s", strerror(errno));
+        DTN_ERROR("Failed to open storage directory: %s", strerror(errno));
         return 0;
     }
 
@@ -235,7 +247,7 @@ int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
         char full_path[PATH_MAX];
 
         if (strlen(storage->storage_directory) + strlen(entry->d_name) + 2 > sizeof(full_path)) {
-            DTN_WARN("DTN Storage: Path too long for file %s, skipping", entry->d_name);
+            DTN_WARN("Path too long for file %s, skipping", entry->d_name);
             continue;
         }
 
@@ -259,14 +271,14 @@ int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
             loaded_count++;
 
             if (storage->stored_packets_count >= MAX_STORED_PACKETS) {
-                DTN_INFO("DTN Storage: Maximum packet count reached, stopping load");
+                DTN_INFO("Maximum packet count reached, stopping load");
                 break;
             }
         }
     }
 
     closedir(dir);
-    DTN_INFO("DTN Storage: Loaded %d packets from disk", loaded_count);
+    DTN_INFO("Loaded %d packets from disk", loaded_count);
     return loaded_count;
 }
 
@@ -278,14 +290,14 @@ Storage_Function* dtn_storage_create(DTN_Module* parent) {
         storage->max_storage_bytes = 1024 * 1024;  // 1MB limit
         storage->packet_list_head = NULL;
 
-        strncpy(storage->storage_directory, STORAGE_DIR, MAX_PATH_LENGTH - 1);
+        strncpy(storage->storage_directory, dtn_config.storage_path, MAX_PATH_LENGTH - 1);
         storage->storage_directory[MAX_PATH_LENGTH - 1] = '\0';
 
         DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).",
                  storage->max_storage_bytes, MAX_STORED_PACKETS);
 
         if (!dtn_storage_init_directory(storage)) {
-            DTN_ERROR("DTN Storage: Failed to initialize storage directory");
+            DTN_ERROR("Failed to initialize storage directory");
             free(storage);
             return NULL;
         }
@@ -308,7 +320,7 @@ void dtn_storage_destroy(Storage_Function* storage) {
         next_entry = current->next;
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(&current->original_dest, addr_str, sizeof(addr_str));
-        DTN_INFO("DTN Storage: Freeing stored pbuf (original dest: %s) during destroy.", addr_str);
+        DTN_INFO("Freeing stored pbuf (original dest: %s) during destroy.", addr_str);
         pbuf_free(current->p);
         free(current);
         current = next_entry;
@@ -325,29 +337,61 @@ int dtn_storage_is_full(Storage_Function* storage) {
     return storage->stored_packets_count >= MAX_STORED_PACKETS;
 }
 
+void dtn_storage_remove_entry(Storage_Function* storage, Stored_Packet_Entry* entry) {
+    if (!storage || !entry)
+        return;
+
+    /* Unlink from list — walk to find prev. */
+    Stored_Packet_Entry* prev = NULL;
+    Stored_Packet_Entry* cur = storage->packet_list_head;
+    while (cur != NULL && cur != entry) {
+        prev = cur;
+        cur = cur->next;
+    }
+    if (cur == NULL) {
+        DTN_WARN("DTN Storage: remove_entry called with entry not in list");
+        return;
+    }
+    if (prev == NULL)
+        storage->packet_list_head = entry->next;
+    else
+        prev->next = entry->next;
+
+    storage->stored_packets_count--;
+
+    /* Remove disk file. */
+    dtn_storage_remove_packet_from_disk(storage, entry->filename);
+
+    /* Free pbuf and struct. */
+    if (entry->p)
+        pbuf_free(entry->p);
+    free(entry);
+}
+
 int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
-                             const ip6_addr_t* original_dest) {
-    if (!storage || !p || !original_dest) {
-        DTN_ERROR("DTN Storage: Invalid arguments to store_packet.");
+                             const ip6_addr_t* original_dest,
+                             const DtnRoutingResult* routing_result) {
+    if (!storage || !p || !original_dest || !routing_result) {
+        DTN_ERROR("Invalid arguments to store_packet.");
         return 0;
     }
 
     if (dtn_storage_is_full(storage)) {
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(original_dest, addr_str, sizeof(addr_str));
-        DTN_INFO("DTN Storage: Storage is full. Cannot store packet for %s.", addr_str);
+        DTN_INFO("Storage is full. Cannot store packet for %s.", addr_str);
         return 0;
     }
 
     // Create a copy of the packet to strip headers if needed
     struct pbuf* p_to_store = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
     if (!p_to_store) {
-        DTN_ERROR("DTN Storage: Failed to allocate pbuf for storage copy");
+        DTN_ERROR("Failed to allocate pbuf for storage copy");
         return 0;
     }
 
     if (pbuf_copy(p_to_store, p) != ERR_OK) {
-        DTN_ERROR("DTN Storage: Failed to copy packet for storage");
+        DTN_ERROR("Failed to copy packet for storage");
         pbuf_free(p_to_store);
         return 0;
     }
@@ -357,7 +401,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
 
     Stored_Packet_Entry* new_entry = (Stored_Packet_Entry*)malloc(sizeof(Stored_Packet_Entry));
     if (!new_entry) {
-        DTN_ERROR("DTN Storage: Failed to allocate memory for Stored_Packet_Entry");
+        DTN_ERROR("Failed to allocate memory for Stored_Packet_Entry");
         pbuf_free(p_to_store);
         return 0;
     }
@@ -365,11 +409,13 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     new_entry->p = p_to_store;  // Store the stripped version
     memcpy(&new_entry->original_dest, original_dest, sizeof(ip6_addr_t));
     new_entry->stored_time_ms = sys_now();
+    new_entry->delivery_time_in_sec = routing_result->best_delivery_time;
+    new_entry->max_delivery_time_in_sec = routing_result->to_time;
     new_entry->next = NULL;
     new_entry->filename[0] = '\0';
 
     if (!dtn_storage_save_packet_to_disk(storage, new_entry)) {
-        DTN_ERROR("DTN Storage: Failed to save packet to disk");
+        DTN_ERROR("Failed to save packet to disk");
         pbuf_free(new_entry->p);
         free(new_entry);
         return 0;
@@ -388,8 +434,8 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     storage->stored_packets_count++;
     char addr_str_log[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(original_dest, addr_str_log, sizeof(addr_str_log));
-    DTN_INFO("DTN Storage: Packet for %s stored successfully at time %u. Total stored: %zu",
-             addr_str_log, new_entry->stored_time_ms, storage->stored_packets_count);
+    DTN_INFO("Packet for %s stored successfully at time %u. Total stored: %zu", addr_str_log,
+             new_entry->stored_time_ms, storage->stored_packets_count);
 
     return 1;
 }
@@ -438,8 +484,8 @@ Stored_Packet_Entry* dtn_storage_retrieve_packet_for_dest(Storage_Function* stor
 
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(&match->original_dest, addr_str, sizeof(addr_str));
-        DTN_INFO("DTN Storage: Retrieving packet for %s (stored at %u). Total stored now: %zu",
-                 addr_str, match->stored_time_ms, storage->stored_packets_count);
+        DTN_INFO("Retrieving packet for %s (stored at %u). Total stored now: %zu", addr_str,
+                 match->stored_time_ms, storage->stored_packets_count);
 
         dtn_storage_remove_packet_from_disk(storage, match->filename);
 
@@ -454,7 +500,7 @@ void dtn_storage_free_retrieved_entry_struct(Stored_Packet_Entry* entry) {
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
         DTN_INFO(
-            "DTN Storage: Freeing Stored_Packet_Entry structure for %s (pbuf management is "
+            "Freeing Stored_Packet_Entry structure for %s (pbuf management is "
             "caller's responsibility).",
             addr_str);
         free(entry);
@@ -485,20 +531,20 @@ Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* stor
             // Found a match, create a new entry
             Stored_Packet_Entry* copy = (Stored_Packet_Entry*)malloc(sizeof(Stored_Packet_Entry));
             if (!copy) {
-                DTN_INFO("DTN Storage: Failed to allocate memory for packet copy");
+                DTN_INFO("Failed to allocate memory for packet copy");
                 return NULL;
             }
 
             // Copy the packet itself
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, current->p->tot_len, PBUF_RAM);
             if (!p_copy) {
-                DTN_INFO("DTN Storage: Failed to allocate pbuf for packet copy");
+                DTN_INFO("Failed to allocate pbuf for packet copy");
                 free(copy);
                 return NULL;
             }
 
             if (pbuf_copy(p_copy, current->p) != ERR_OK) {
-                DTN_INFO("DTN Storage: Failed to copy packet data");
+                DTN_INFO("Failed to copy packet data");
                 pbuf_free(p_copy);
                 free(copy);
                 return NULL;
@@ -513,7 +559,7 @@ Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* stor
 
             char addr_str[IP6ADDR_STRLEN_MAX];
             ip6addr_ntoa_r(&copy->original_dest, addr_str, sizeof(addr_str));
-            DTN_INFO("DTN Storage: Created copy of packet for %s (original stored at %u)", addr_str,
+            DTN_INFO("Created copy of packet for %s (original stored at %u)", addr_str,
                      copy->stored_time_ms);
 
             return copy;
@@ -544,8 +590,7 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
     ip6addr_ntoa_r(&orig_src, orig_src_str, sizeof(orig_src_str));
     ip6addr_ntoa_r(&orig_dest, orig_dest_str, sizeof(orig_dest_str));
 
-    DTN_INFO("DTN Storage: Looking for stored packet matching src=%s, dest=%s", orig_src_str,
-             orig_dest_str);
+    DTN_INFO("Looking for stored packet matching src=%s, dest=%s", orig_src_str, orig_dest_str);
 
     Stored_Packet_Entry* current = storage->packet_list_head;
     Stored_Packet_Entry* prev = NULL;
@@ -566,7 +611,7 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
                 }
 
                 DTN_INFO(
-                    "DTN Storage: Deleting stored packet for %s (src=%s) as next hop confirmed "
+                    "Deleting stored packet for %s (src=%s) as next hop confirmed "
                     "reception",
                     orig_dest_str, orig_src_str);
 
@@ -586,8 +631,7 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
     }
 
     if (!found) {
-        DTN_INFO("DTN Storage: No matching stored packet found for %s (src=%s)", orig_dest_str,
-                 orig_src_str);
+        DTN_INFO("No matching stored packet found for %s (src=%s)", orig_dest_str, orig_src_str);
     }
 }
 
@@ -601,7 +645,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     // of original payload
 
     if (icmp_packet->len < IP6_HLEN + 8 + 9 + IP6_HLEN + 8) {
-        DTN_INFO("DTN Storage: ICMP packet too small for proper parsing");
+        DTN_INFO("ICMP packet too small for proper parsing");
         return;
     }
 
@@ -626,7 +670,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     ip6addr_ntoa_r(&orig_dest, orig_dest_str, sizeof(orig_dest_str));
 
     DTN_INFO(
-        "DTN Storage: Looking for stored packet matching src=%s, dest=%s with payload "
+        "Looking for stored packet matching src=%s, dest=%s with payload "
         "verification",
         orig_src_str, orig_dest_str);
 
@@ -640,8 +684,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
         orig_payload_offset = (hbh_hdr_len + 1) * 8;
         orig_nexth = orig_first_8_bytes[0];
 
-        DTN_INFO("DTN Storage: Skipping hop-by-hop header (%d bytes) in ICMP data",
-                 orig_payload_offset);
+        DTN_INFO("Skipping hop-by-hop header (%d bytes) in ICMP data", orig_payload_offset);
     }
 
     // Get pointer to actual payload (after any headers)
@@ -649,8 +692,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     u8_t actual_payload_bytes = 8 - orig_payload_offset;
 
     if (actual_payload_bytes <= 0) {
-        DTN_WARN(
-            "DTN Storage: Not enough payload data after headers, falling back to basic matching");
+        DTN_WARN("Not enough payload data after headers, falling back to basic matching");
         dtn_storage_delete_packet_by_ip_header(storage, orig_ip6hdr);
         return;
     }
@@ -673,7 +715,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                 // Stored packets shouldn't have hop-by-hop headers, but check anyway
                 if (stored_nexth == IP6_NEXTH_HOPBYHOP) {
                     DTN_INFO(
-                        "DTN Storage: Warning - stored packet has hop-by-hop header "
+                        "Warning - stored packet has hop-by-hop header "
                         "(unexpected)");
                     continue;
                 }
@@ -685,7 +727,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                     u8_t* stored_payload = (u8_t*)current->p->payload + stored_payload_offset;
 
                     if (memcmp(stored_payload, orig_payload_start, actual_payload_bytes) != 0) {
-                        DTN_INFO("DTN Storage: Payload mismatch for src=%s, dest=%s", orig_src_str,
+                        DTN_INFO("Payload mismatch for src=%s, dest=%s", orig_src_str,
                                  orig_dest_str);
                         payload_matches = false;
                     }
@@ -693,8 +735,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
 
                 // 4. Check if protocols match (after stripping HBH from original)
                 if (stored_nexth != orig_nexth) {
-                    DTN_INFO("DTN Storage: Protocol mismatch: stored=%d, orig=%d", stored_nexth,
-                             orig_nexth);
+                    DTN_INFO("Protocol mismatch: stored=%d, orig=%d", stored_nexth, orig_nexth);
                     payload_matches = false;
                 }
 
@@ -709,7 +750,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                     }
 
                     DTN_INFO(
-                        "DTN Storage: Deleting stored packet for %s (src=%s) with payload "
+                        "Deleting stored packet for %s (src=%s) with payload "
                         "verification",
                         orig_dest_str, orig_src_str);
 
@@ -732,7 +773,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
 
     if (!found) {
         DTN_INFO(
-            "DTN Storage: No matching stored packet found for %s (src=%s) with payload "
+            "No matching stored packet found for %s (src=%s) with payload "
             "verification\n",
             orig_dest_str, orig_src_str);
     }

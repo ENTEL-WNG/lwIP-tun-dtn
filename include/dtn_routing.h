@@ -35,6 +35,12 @@ typedef enum {
     DTN_ROUTING_ERR = -1,
 } dtn_routing_result_t;
 
+typedef struct {
+    int    next_hop_node_id;
+    double to_time;
+    double best_delivery_time;
+} DtnRoutingResult;
+
 Routing_Function* dtn_routing_create(DTN_Module* parent);
 
 void dtn_routing_destroy(Routing_Function* routing);
@@ -45,12 +51,12 @@ int dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id,
                                    bool* is_next_hop_active);
 
 int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms,
-                                     struct ip6_hdr* ip6h, int* next_hop_node_id);
+                                     struct ip6_hdr* ip6h, DtnRoutingResult* result);
 
 int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time_in_sec,
                                       double current_time_in_sec, long current_node_id,
                                       long src_node_id, long dest_node_id, long deadline,
-                                      long package_length, long dscp, int* next_hop_node_id);
+                                      long package_length, long dscp, DtnRoutingResult* result);
 
 // bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t* dest_ip);
 

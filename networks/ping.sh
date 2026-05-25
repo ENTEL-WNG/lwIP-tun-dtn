@@ -10,7 +10,7 @@ echo "--- Waiting ${SLEEP}s for ping ---"
 sleep $SLEEP
 
 echo "--- Ping: $FROM_NODE -> $TO_NODE ($TO_NODE_ADDR) ---"
-if docker exec "$FROM_NODE" ping6 -c 1 -w "$WAIT" "$TO_NODE_ADDR"; then
+if docker exec "$FROM_NODE" ping6 -c 1 -W "$WAIT" "$TO_NODE_ADDR"; then
     echo "SUCCESS Ping: $FROM_NODE -> $TO_NODE ($TO_NODE_ADDR) ---"
 else
     echo "FAILED Ping: $FROM_NODE -> $TO_NODE ($TO_NODE_ADDR) ---"

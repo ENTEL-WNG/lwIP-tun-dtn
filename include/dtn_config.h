@@ -103,6 +103,8 @@ typedef struct {
     /* env variables */
     dtn_env_t env;
     char contact_plan_path[DTN_MAX_CONFIG_PATH];
+    char storage_path[DTN_MAX_CONFIG_PATH];
+
     /* [node] */
     int id;
     char name[DTN_MAX_NAME_LEN];
