@@ -56,8 +56,8 @@ void test_init_config() {
 
     dtn_config_print(&dtn_config);
 
-    printf("Node ID: %d, DTN: %s\n", dtn_config.id, dtn_config.is_dtn ? "yes" : "no");
-    printf("Interfaces: %d\n", dtn_config.interface_count);
+    DTN_TEST("Node ID: %d, DTN: %s\n", dtn_config.id, dtn_config.is_dtn ? "yes" : "no");
+    DTN_TEST("Interfaces: %d\n", dtn_config.interface_count);
 }
 
 int main() {
@@ -91,23 +91,15 @@ int main() {
     uint8_t* payload_ptr = (uint8_t*)p->payload + sizeof(struct ip6_hdr);
     memset(payload_ptr, 0xAB, PAYLOAD_LEN);
 
-    printf("START TESTING\n");
-
-    // test_config();
-
-    // test_payload_length(ip6h);
-
-    // ip6_addr_t edge_to_ipv6_addr;
-    // edge_to_ipv6(3, 4, &edge_to_ipv6_addr);
-    // edge_to_ipv6(10, 3, &edge_to_ipv6_addr);
+    DTN_TEST("START TESTING\n");
 
     int next_hop_node_id;
     dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &next_hop_node_id);
-    printf("next_hop_node_id: %d\n", next_hop_node_id);
+    DTN_TEST("next_hop_node_id: %d\n", next_hop_node_id);
     dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &next_hop_node_id);
-    printf("next_hop_node_id: %d\n", next_hop_node_id);
+    DTN_TEST("next_hop_node_id: %d\n", next_hop_node_id);
 
-    printf("STOP TESTING\n");
+    DTN_TEST("STOP TESTING\n");
 
     pbuf_free(p);
     return 0;

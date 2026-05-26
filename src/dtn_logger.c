@@ -15,7 +15,7 @@ static dtn_level_t global_log_level = DTN_LEVEL_DEBUG;
 static dtn_time_t global_time_format = SYS_TIME;
 
 // Map enum values to strings for printing
-static const char* level_strings[] = {"FATAL", "ERROR", "WARN ", "INFO ", "DEBUG"};
+static const char* level_strings[] = {"FATAL", "ERROR", "WARN ", "INFO ", "TEST ", "DEBUG"};
 
 void dtn_log_init() {
     if (dtn_config.env == DTN_ENV_PRODUCTION) {
