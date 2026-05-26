@@ -51,27 +51,17 @@ APP_SRC = \
 THIRD_PARTY_SRC = \
     third_party/tomlc99/toml.c
 
-APP_SRC_NO_MAIN = $(filter-out src/main.c, $(APP_SRC))
+SOURCES = $(APP_SRC) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC)
+OBJECTS = $(SOURCES:.c=.o)
+TARGET  = lwip_tun
 
-SOURCES      = $(APP_SRC) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC)
-SOURCES_TEST = $(APP_SRC_NO_MAIN) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC) tests/main.c
-
-OBJECTS      = $(SOURCES:.c=.o)
-OBJECTS_TEST = $(SOURCES_TEST:.c=.o)
-
-TARGET      = lwip_tun
-TARGET_TEST = lwip_tun_test
-
-all: $(TARGET) $(TARGET_TEST)
+all: $(TARGET)
 
 $(TARGET): $(OBJECTS)
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-$(TARGET_TEST): $(OBJECTS_TEST)
 	$(CC) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(OBJECTS) $(OBJECTS_TEST) $(TARGET) $(TARGET_TEST)
+	rm -f $(OBJECTS) $(TARGET)

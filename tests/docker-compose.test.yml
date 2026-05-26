@@ -1,0 +1,11 @@
+services:
+  test:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile.test
+    container_name: lwip_tun_test
+    working_dir: /repo
+    environment:
+      DTN_CONFIG_PATH: /repo/tests/node_test.toml
+    volumes:
+      - ..:/repo

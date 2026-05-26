@@ -49,7 +49,7 @@ void test_payload_length(struct ip6_hdr* ip6h) {
 }
 
 void test_init_config() {
-    setenv(DTN_CONFIG_PATH, "networks/contact_plan_2/node2.toml", 1);
+    // setenv(DTN_CONFIG_PATH, "tests/node_test.toml", 1);
 
     if (dtn_config_load(&dtn_config) != 0)
         return;
