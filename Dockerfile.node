@@ -1,10 +1,22 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS builder
 
 RUN apt-get update && apt-get install -y \
     build-essential \
     libpcap-dev \
-    libpcap0.8 \
     python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /repo
+COPY . .
+RUN make clean && make
+
+# ── runtime stage ─────────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libpcap0.8 \
+    python3 \
+    python3-pip \
     iproute2 \
     iptables \
     procps \
@@ -12,9 +24,9 @@ RUN apt-get update && apt-get install -y \
     tcpdump \
     netcat-openbsd \
     # Python runtime (tomllib is stdlib >= 3.11; Debian bookworm ships 3.11)
-    python3 \
-    python3-pip \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /repo/lwip_tun /usr/local/bin/lwip_tun
 
 WORKDIR /repo
 
@@ -22,7 +34,7 @@ WORKDIR /repo
 ENV CONFIG_PATH=/repo/node.toml
 
 # init_node.py reads the TOML at CONFIG_PATH, applies sysctl/ip/ip6tables/
-# routing rules, runs `make -C /repo` to build lwip_tun, then either execs
-# /repo/lwip_tun (DTN nodes) or sleeps (regular).
+# routing rules, then either execs /usr/local/bin/lwip_tun (DTN nodes) or
+# sleeps (regular nodes).
 ENTRYPOINT ["python3", "/repo/init_node.py"]
 CMD ["${CONFIG_PATH}"]
