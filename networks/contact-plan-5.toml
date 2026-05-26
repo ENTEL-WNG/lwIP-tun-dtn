@@ -1,9 +1,9 @@
 [contact_plan]
-name = "contact_plan_4"
+name = "contact_plan_5"
 max_time_in_sec = 1000
 
 [contact_plan.defaults]
-rate = 100
+rate = 200
 range = 1
 
 # Node Definitions
@@ -19,6 +19,14 @@ isDtnNode = true
 id = 3
 isDtnNode = true
 
+[[nodes]]
+id = 4
+isDtnNode = true
+
+[[nodes]]
+id = 5
+isDtnNode = true
+
 # Edge Definitions
 [[edges]]
 from = 1
@@ -30,6 +38,27 @@ bidirected = true
 [[edges]]
 from = 2
 to = 3
+start_in_sec = 0
+end_in_sec = 20
+bidirected = true
+
+[[edges]]
+from = 3
+to = 4
+start_in_sec = 0
+end_in_sec = 1000
+bidirected = true
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 20
+end_in_sec = 1000
+bidirected = true
+
+[[edges]]
+from = 4
+to = 5
 start_in_sec = 0
 end_in_sec = 1000
 bidirected = true

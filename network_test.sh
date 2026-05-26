@@ -107,6 +107,7 @@ sleep 3
 echo "--- Collecting docker compose logs ---"
 rm -f "${CAPTURES_DIR}/logs.txt"
 docker compose -f "$COMPOSE_FILE" logs --no-color --timestamps 2>&1 \
+    | sed 's/^\([^ ]*\) *|/\1 |/' \
     | sort -k3 \
     > "${CAPTURES_DIR}/logs.txt"
 echo "Logs written to ${CAPTURES_DIR}/logs.txt"

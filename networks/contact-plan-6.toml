@@ -1,5 +1,5 @@
 [contact_plan]
-name = "contact_plan_1"
+name = "contact_plan_6"
 max_time_in_sec = 200
 
 [contact_plan.defaults]
@@ -23,13 +23,13 @@ isDtnNode = true
 [[edges]]
 from = 1
 to = 2
-start_in_sec = 20
+start_in_sec = 0
 end_in_sec = 100
 bidirected = true
 
 [[edges]]
 from = 2
 to = 3
-start_in_sec = 0
+start_in_sec = 10
 end_in_sec = 100
 bidirected = true

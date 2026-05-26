@@ -314,9 +314,9 @@ def init_dtn_node(cfg: dict) -> None:
     # ---- 9. Hand off to LwIP binary --------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
     time.sleep(2)
-    lwip_bin = Path("./lwip_tun")
+    lwip_bin = Path("/repo/lwip_tun")
     if not lwip_bin.exists():
-        log.error("lwip_tun binary not found at %s", lwip_bin.resolve())
+        log.error("lwip_tun binary not found at %s", lwip_bin)
         sys.exit(1)
 
     start_captures(node_id, cfg["contact_plan"]["name"])
