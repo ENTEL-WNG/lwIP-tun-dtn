@@ -13,6 +13,8 @@
 #   6. Merge node*.txt tcpdump files into a single time-sorted tcpdump file
 #   7. Print completion message
 
+# for f in ./networks/*.toml; do ./network_test.sh "$f"; done
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

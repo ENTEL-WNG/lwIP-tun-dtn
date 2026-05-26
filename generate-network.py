@@ -564,7 +564,7 @@ def generate_graph(data: dict, node_data: dict, out_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    plan_path = sys.argv[1] if len(sys.argv) > 1 else "networks/contact-plan.toml"
+    plan_path = sys.argv[1] if len(sys.argv) > 1 else "networks/contact-plan-ping.toml"
 
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
