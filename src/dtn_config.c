@@ -232,10 +232,8 @@ int dtn_config_load(DtnConfig* cfg) {
     toml_table_t* node_tbl = toml_table_in(root, "node");
     if (node_tbl) {
         int64_t id = 0;
-        if (read_int(node_tbl, "id", &id) == 0) {
+        if (read_int(node_tbl, "id", &id) == 0)
             cfg->id = (int)id;
-            snprintf(cfg->storage_path, sizeof(cfg->storage_path), "./dtn_storage/%d", cfg->id);
-        }
         copy_str_opt(node_tbl, "name", cfg->name, DTN_MAX_NAME_LEN);
         read_bool(node_tbl, "is_dtn", &cfg->is_dtn);
         copy_str(node_tbl, "tun_ipv6_addr", cfg->tun_ipv6_addr, DTN_MAX_ADDR_LEN);
@@ -267,6 +265,10 @@ int dtn_config_load(DtnConfig* cfg) {
         }
     }
 
+    /* storage_path needs both node id and contact plan name */
+    snprintf(cfg->storage_path, sizeof(cfg->storage_path), "./dtn_storage/%s",
+             cfg->contact_plan.name[0] ? cfg->contact_plan.name : "default");
+
     /* ---- [[nodes]] ---- */
     parse_nodes(root, cfg);
 
@@ -285,6 +287,7 @@ void dtn_config_print(const DtnConfig* cfg) {
     DTN_INFO("  is_dtn   = %s", cfg->is_dtn ? "true" : "false");
     DTN_INFO("  tun_ipv6_addr   = %s", cfg->tun_ipv6_addr);
     DTN_INFO("  lwip_ipv6_addr   = %s", cfg->lwip_ipv6_addr);
+    DTN_INFO("  storage_path    = %s", cfg->storage_path);
 
     DTN_INFO("  dtn_addresses (%d):", cfg->dtn_address_count);
     for (int i = 0; i < cfg->dtn_address_count; i++)

@@ -129,20 +129,26 @@ void test_storage_sqlite(void) {
         dtn_storage_destroy(storage);
         return;
     }
-    if (storage->stored_packets_count != 1) {
-        DTN_TEST("FAIL: expected stored_packets_count == 1, got %zu\n",
-                 storage->stored_packets_count);
+    if (dtn_storage_count(storage) != 1) {
+        DTN_TEST("FAIL: expected count == 1, got %d\n", dtn_storage_count(storage));
         dtn_storage_destroy(storage);
         return;
     }
-    if (storage->packet_list_head->db_id <= 0) {
-        DTN_TEST("FAIL: db_id not set (got %" PRId64 ")\n",
-                 storage->packet_list_head->db_id);
+
+    // Retrieve the db_id of the stored row directly from the DB.
+    sqlite3_stmt* id_stmt = NULL;
+    int64_t stored_db_id = -1;
+    sqlite3_prepare_v2(storage->db, "SELECT id FROM stored_packets LIMIT 1;", -1, &id_stmt, NULL);
+    if (sqlite3_step(id_stmt) == SQLITE_ROW)
+        stored_db_id = sqlite3_column_int64(id_stmt, 0);
+    sqlite3_finalize(id_stmt);
+
+    if (stored_db_id <= 0) {
+        DTN_TEST("FAIL: db_id not set (got %" PRId64 ")\n", stored_db_id);
         dtn_storage_destroy(storage);
         return;
     }
-    DTN_TEST("PASS: packet stored, count=1, db_id=%" PRId64 "\n",
-             storage->packet_list_head->db_id);
+    DTN_TEST("PASS: packet stored, count=1, db_id=%" PRId64 "\n", stored_db_id);
 
     // --- 3. Confirm row exists in DB ---
     sqlite3_stmt* stmt = NULL;
@@ -161,11 +167,10 @@ void test_storage_sqlite(void) {
     DTN_TEST("PASS: DB contains 1 row\n");
 
     // --- 4. Remove the entry ---
-    dtn_storage_remove_entry(storage, storage->packet_list_head);
+    dtn_storage_delete_by_id(storage, stored_db_id);
 
-    if (storage->stored_packets_count != 0) {
-        DTN_TEST("FAIL: expected stored_packets_count == 0 after remove, got %zu\n",
-                 storage->stored_packets_count);
+    if (dtn_storage_count(storage) != 0) {
+        DTN_TEST("FAIL: expected count == 0 after delete, got %d\n", dtn_storage_count(storage));
         dtn_storage_destroy(storage);
         return;
     }
@@ -208,45 +213,62 @@ void test_storage_sqlite(void) {
         return;
     }
 
-    int64_t saved_db_id = storage->packet_list_head->db_id;
+    // Get the db_id before closing.
+    sqlite3_stmt* rt_stmt = NULL;
+    int64_t saved_db_id = -1;
+    sqlite3_prepare_v2(storage->db, "SELECT id FROM stored_packets LIMIT 1;", -1, &rt_stmt, NULL);
+    if (sqlite3_step(rt_stmt) == SQLITE_ROW)
+        saved_db_id = sqlite3_column_int64(rt_stmt, 0);
+    sqlite3_finalize(rt_stmt);
+
     dtn_storage_destroy(storage);  // closes DB
 
-    // Reopen — load_packets_from_db must reconstruct the list.
+    // Reopen — data must survive across open/close.
     storage = dtn_storage_create(NULL);
     if (!storage) {
         DTN_TEST("FAIL: third dtn_storage_create returned NULL\n");
         return;
     }
 
-    if (storage->stored_packets_count != 1) {
-        DTN_TEST("FAIL: expected 1 packet after reload, got %zu\n",
-                 storage->stored_packets_count);
+    if (dtn_storage_count(storage) != 1) {
+        DTN_TEST("FAIL: expected 1 packet after reload, got %d\n", dtn_storage_count(storage));
         dtn_storage_destroy(storage);
         return;
     }
 
-    Stored_Packet_Entry* loaded = storage->packet_list_head;
-    if (loaded->db_id != saved_db_id) {
+    // Load the entry using a large now_sec so it's always "ready".
+    Stored_Packet_Entry entries[MAX_STORED_PACKETS];
+    int n = dtn_storage_get_ready_entries(storage, 1e18, entries, MAX_STORED_PACKETS);
+    if (n != 1) {
+        DTN_TEST("FAIL: expected 1 ready entry after reload, got %d\n", n);
+        dtn_storage_destroy(storage);
+        return;
+    }
+
+    Stored_Packet_Entry loaded = entries[0];
+    pbuf_free(loaded.p);  // we only need the metadata
+
+    if (loaded.db_id != saved_db_id) {
         DTN_TEST("FAIL: db_id mismatch after reload (expected %" PRId64 ", got %" PRId64 ")\n",
-                 saved_db_id, loaded->db_id);
+                 saved_db_id, loaded.db_id);
         dtn_storage_destroy(storage);
         return;
     }
-    if (loaded->delivery_time_in_sec != 77.25) {
+    if (loaded.delivery_time_in_sec != 77.25) {
         DTN_TEST("FAIL: delivery_time_in_sec not preserved (got %f)\n",
-                 loaded->delivery_time_in_sec);
+                 loaded.delivery_time_in_sec);
         dtn_storage_destroy(storage);
         return;
     }
-    if (loaded->max_delivery_time_in_sec != 200.0) {
+    if (loaded.max_delivery_time_in_sec != 200.0) {
         DTN_TEST("FAIL: max_delivery_time_in_sec not preserved (got %f)\n",
-                 loaded->max_delivery_time_in_sec);
+                 loaded.max_delivery_time_in_sec);
         dtn_storage_destroy(storage);
         return;
     }
     DTN_TEST("PASS: round-trip OK — db_id=%" PRId64
              ", delivery_time=%.2f, max_delivery_time=%.2f\n",
-             loaded->db_id, loaded->delivery_time_in_sec, loaded->max_delivery_time_in_sec);
+             loaded.db_id, loaded.delivery_time_in_sec, loaded.max_delivery_time_in_sec);
 
     // Clean up.
     dtn_storage_destroy(storage);

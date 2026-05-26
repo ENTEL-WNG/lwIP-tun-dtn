@@ -16,11 +16,10 @@
 #ifndef DTN_STORAGE_H
 #define DTN_STORAGE_H
 
+#include <sqlite3.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-
-#include <sqlite3.h>
 
 #include "dtn_module.h"
 #include "dtn_routing.h"
@@ -28,40 +27,47 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
-#define MAX_STORED_PACKETS 5
+#define MAX_STORED_PACKETS 128
 #define MAX_PATH_LENGTH 512
 
+// A single loaded packet entry returned by dtn_storage_get_ready_entries.
+// The caller owns `p` and must pbuf_free it when done.
 typedef struct Stored_Packet_Entry {
-    struct pbuf* p;
+    int64_t db_id;
+    u32_t stored_time_ms;
     double delivery_time_in_sec;
     double max_delivery_time_in_sec;
+    ip6_addr_t src_addr;
     ip6_addr_t original_dest;
-    u32_t stored_time_ms;
-    struct Stored_Packet_Entry* next;
-    int64_t db_id;  // SQLite rowid; -1 if not yet persisted
+    struct pbuf* p;  // caller-owned; pbuf_free when done
 } Stored_Packet_Entry;
 
 typedef struct Storage_Function {
     DTN_Module* parent_module;
-    size_t stored_packets_count;
     size_t max_storage_bytes;
-    Stored_Packet_Entry* packet_list_head;
-    char storage_directory[MAX_PATH_LENGTH];
     sqlite3* db;  // open DB handle; NULL until dtn_storage_create
 } Storage_Function;
 
+// Lifecycle
 Storage_Function* dtn_storage_create(DTN_Module* parent);
 void dtn_storage_destroy(Storage_Function* storage);
+
+// Write
 int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
                              const ip6_addr_t* original_dest,
                              const DtnRoutingResult* routing_result);
+
+// Query
 int dtn_storage_is_full(Storage_Function* storage);
-void dtn_storage_remove_entry(Storage_Function* storage, Stored_Packet_Entry* entry);
-Stored_Packet_Entry* dtn_storage_retrieve_packet_for_dest(Storage_Function* storage,
-                                                          const ip6_addr_t* target_dest);
-void dtn_storage_free_retrieved_entry_struct(Stored_Packet_Entry* entry);
-Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* storage,
-                                                          const ip6_addr_t* target_dest);
+int dtn_storage_count(Storage_Function* storage);
+
+// Read packets whose delivery_time_in_sec <= now_sec into out[].
+// Returns number of entries filled. Caller must pbuf_free each entry's p.
+int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,
+                                  Stored_Packet_Entry out[], int max_count);
+
+// Delete
+void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);
 void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr);
 void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pbuf* icmp_packet);
 
