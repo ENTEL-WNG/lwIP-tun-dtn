@@ -314,7 +314,7 @@ def init_dtn_node(cfg: dict) -> None:
     # ---- 9. Hand off to LwIP binary --------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
     time.sleep(2)
-    lwip_bin = Path("/repo/lwip_tun")
+    lwip_bin = Path("/usr/local/bin/lwip_tun")
     if not lwip_bin.exists():
         log.error("lwip_tun binary not found at %s", lwip_bin)
         sys.exit(1)
@@ -324,25 +324,12 @@ def init_dtn_node(cfg: dict) -> None:
     os.execv(str(lwip_bin), [str(lwip_bin)])
 
 # ---------------------------------------------------------------------------
-# Build binary
-# ---------------------------------------------------------------------------
-
-def build_binary() -> None:
-         log.info("--- Building lwip_tun ---")
-         result = run(["make", "-C", "/repo"], check=False)
-         if result.returncode != 0:
-             log.error("make failed (rc=%d):\n%s", result.returncode, result.stderr.strip())
-             sys.exit(1)
-         log.info("--- Build complete ---")
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def main() -> None:
     toml_path = sys.argv[1] if len(sys.argv) > 1 else "node.toml"
     cfg = load_config(toml_path)
-    build_binary()
 
     node = cfg.get("node", {})
     is_dtn: bool = node.get("is_dtn", False)
