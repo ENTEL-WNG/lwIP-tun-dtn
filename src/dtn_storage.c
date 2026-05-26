@@ -1,4 +1,4 @@
-// dtn_storage.c: Implementation of persistent packet storage with disk-based backup for DTN
+// dtn_storage.c: Implementation of persistent packet storage with SQLite backend for DTN
 // store-and-forward functionality Copyright (C) 2025 Michael Karpov
 //
 // This program is free software: you can redistribute it and/or modify
@@ -15,14 +15,15 @@
 
 #include "dtn_storage.h"
 
-#include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#include <sqlite3.h>
 
 #include "dtn_config.h"
 #include "dtn_custody.h"
@@ -31,17 +32,24 @@
 #include "lwip/pbuf.h"
 #include "lwip/sys.h"
 
-// File header for stored packets
-typedef struct {
-    char magic[4];             // DTN Packet
-    u32_t version;             // File format version
-    u32_t timestamp;           // When the packet was stored
-    u32_t packet_len;          // Length of the packet data
-    ip6_addr_t original_dest;  // Original destination
-} PacketFileHeader;
+static const char* CREATE_TABLE_SQL =
+    "CREATE TABLE IF NOT EXISTS stored_packets ("
+    "  id                       INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "  stored_time_ms           INTEGER NOT NULL,"
+    "  delivery_time_in_sec     REAL    NOT NULL,"
+    "  max_delivery_time_in_sec REAL    NOT NULL,"
+    "  original_dest            BLOB    NOT NULL,"
+    "  packet_data              BLOB    NOT NULL"
+    ");";
 
-// Creates storage directory if it doesn't exist
-int dtn_storage_init_directory(Storage_Function* storage) {
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+// Creates the storage directory tree and opens (or creates) the SQLite DB.
+// Returns 1 on success, 0 on failure.
+static int dtn_storage_init_db(Storage_Function* storage) {
+    // Create directory hierarchy (unchanged logic from old init_directory).
     char tmp[MAX_PATH_LENGTH];
     strncpy(tmp, storage->storage_directory, sizeof(tmp) - 1);
     tmp[sizeof(tmp) - 1] = '\0';
@@ -56,256 +64,240 @@ int dtn_storage_init_directory(Storage_Function* storage) {
             *p = '/';
         }
     }
-
     if (mkdir(tmp, 0755) == -1 && errno != EEXIST) {
         DTN_ERROR("Failed to create directory %s: %s", tmp, strerror(errno));
         return 0;
     }
-
     DTN_INFO("Directory ready: %s", storage->storage_directory);
+
+    // Build DB path and open.
+    char db_path[MAX_PATH_LENGTH];
+    if (snprintf(db_path, sizeof(db_path), "%s/packets.db", storage->storage_directory) >=
+        (int)sizeof(db_path)) {
+        DTN_ERROR("DB path too long");
+        return 0;
+    }
+
+    int rc = sqlite3_open(db_path, &storage->db);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to open SQLite DB at %s: %s", db_path, sqlite3_errmsg(storage->db));
+        sqlite3_close(storage->db);
+        storage->db = NULL;
+        return 0;
+    }
+
+    char* errmsg = NULL;
+    rc = sqlite3_exec(storage->db, CREATE_TABLE_SQL, NULL, NULL, &errmsg);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to create packets table: %s", errmsg);
+        sqlite3_free(errmsg);
+        sqlite3_close(storage->db);
+        storage->db = NULL;
+        return 0;
+    }
+
+    DTN_INFO("SQLite DB ready: %s", db_path);
     return 1;
 }
 
-int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Entry* entry) {
-    if (!storage || !entry || !entry->p)
+// Inserts a packet entry into the DB and sets entry->db_id.
+// Returns 1 on success, 0 on failure.
+static int dtn_storage_insert_packet(Storage_Function* storage, Stored_Packet_Entry* entry) {
+    if (!storage || !storage->db || !entry || !entry->p)
         return 0;
 
-    char addr_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
-
-    for (char* p = addr_str; *p; p++) {
-        if (*p == ':')
-            *p = '_';
-    }
-
-    if (snprintf(entry->filename, MAX_PATH_LENGTH, "%s/pkt_%s_%u.dat", storage->storage_directory,
-                 addr_str, entry->stored_time_ms) >= MAX_PATH_LENGTH) {
-        DTN_WARN("Filename was truncated");
-    }
-
-    FILE* file = fopen(entry->filename, "wb");
-    if (!file) {
-        DTN_ERROR("Failed to open file for writing: %s", strerror(errno));
+    u16_t pkt_len = entry->p->tot_len;
+    char* buf = malloc(pkt_len);
+    if (!buf) {
+        DTN_ERROR("Failed to allocate buffer for packet serialisation");
         return 0;
     }
 
-    PacketFileHeader header;
-    memcpy(header.magic, "DTNP", 4);
-    header.version = 1;
-    header.timestamp = entry->stored_time_ms;
-    header.packet_len = entry->p->tot_len;
-    memcpy(&header.original_dest, &entry->original_dest, sizeof(ip6_addr_t));
-
-    if (fwrite(&header, sizeof(header), 1, file) != 1) {
-        DTN_ERROR("Failed to write packet header: %s", strerror(errno));
-        fclose(file);
+    if (pbuf_copy_partial(entry->p, buf, pkt_len, 0) != pkt_len) {
+        DTN_ERROR("pbuf_copy_partial failed");
+        free(buf);
         return 0;
     }
 
-    char* buffer = malloc(entry->p->tot_len);
-    if (!buffer) {
-        DTN_ERROR("Failed to allocate buffer for packet data");
-        fclose(file);
+    const char* sql =
+        "INSERT INTO stored_packets"
+        " (stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec, original_dest, packet_data)"
+        " VALUES (?, ?, ?, ?, ?);";
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare INSERT: %s", sqlite3_errmsg(storage->db));
+        free(buf);
         return 0;
     }
 
-    if (pbuf_copy_partial(entry->p, buffer, entry->p->tot_len, 0) != entry->p->tot_len) {
-        DTN_ERROR("Failed to copy packet data to buffer");
-        free(buffer);
-        fclose(file);
-        return 0;
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)entry->stored_time_ms);
+    sqlite3_bind_double(stmt, 2, entry->delivery_time_in_sec);
+    sqlite3_bind_double(stmt, 3, entry->max_delivery_time_in_sec);
+    sqlite3_bind_blob(stmt, 4, &entry->original_dest, sizeof(ip6_addr_t), SQLITE_TRANSIENT);
+    sqlite3_bind_blob(stmt, 5, buf, pkt_len, SQLITE_TRANSIENT);
+
+    rc = sqlite3_step(stmt);
+    int ok = (rc == SQLITE_DONE);
+    if (!ok) {
+        DTN_ERROR("INSERT failed: %s", sqlite3_errmsg(storage->db));
+    } else {
+        entry->db_id = (int64_t)sqlite3_last_insert_rowid(storage->db);
+        DTN_INFO("Packet inserted into DB with rowid %" PRId64, entry->db_id);
     }
 
-    if (fwrite(buffer, 1, entry->p->tot_len, file) != entry->p->tot_len) {
-        DTN_ERROR("Failed to write packet data: %s", strerror(errno));
-        free(buffer);
-        fclose(file);
-        return 0;
-    }
-
-    free(buffer);
-    fclose(file);
-
-    DTN_INFO("Packet saved to %s", entry->filename);
-    return 1;
+    sqlite3_finalize(stmt);
+    free(buf);
+    return ok ? 1 : 0;
 }
 
-int dtn_storage_remove_packet_from_disk(Storage_Function* storage, const char* filename) {
-    if (!storage || !filename)
+// Deletes a single row by rowid.
+// Returns 1 on success, 0 on failure.
+static int dtn_storage_delete_row(Storage_Function* storage, int64_t db_id) {
+    if (!storage || !storage->db || db_id < 0)
         return 0;
 
-    if (remove(filename) != 0) {
-        DTN_ERROR("Failed to remove packet file: %s", strerror(errno));
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE id = ?;", -1, &stmt,
+                                NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare DELETE: %s", sqlite3_errmsg(storage->db));
         return 0;
     }
 
-    DTN_INFO("Removed packet file %s", filename);
-    return 1;
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)db_id);
+    rc = sqlite3_step(stmt);
+    int ok = (rc == SQLITE_DONE);
+    if (!ok) {
+        DTN_ERROR("DELETE failed: %s", sqlite3_errmsg(storage->db));
+    } else {
+        DTN_INFO("Deleted DB row %" PRId64, db_id);
+    }
+
+    sqlite3_finalize(stmt);
+    return ok ? 1 : 0;
 }
 
-static Stored_Packet_Entry* dtn_storage_load_packet_from_file(Storage_Function* storage,
-                                                              const char* filename) {
-    if (!storage || !filename)
-        return NULL;
-
-    FILE* file = fopen(filename, "rb");
-    if (!file) {
-        DTN_ERROR("Failed to open packet file for reading: %s", strerror(errno));
-        return NULL;
-    }
-
-    PacketFileHeader header;
-    if (fread(&header, sizeof(header), 1, file) != 1) {
-        DTN_ERROR("Failed to read packet header: %s", strerror(errno));
-        fclose(file);
-        return NULL;
-    }
-
-    if (memcmp(header.magic, "DTNP", 4) != 0) {
-        DTN_ERROR("Invalid packet file format");
-        fclose(file);
-        return NULL;
-    }
-
-    char* buffer = malloc(header.packet_len);
-    if (!buffer) {
-        DTN_ERROR("Failed to allocate buffer for packet data");
-        fclose(file);
-        return NULL;
-    }
-
-    if (fread(buffer, 1, header.packet_len, file) != header.packet_len) {
-        DTN_ERROR("Failed to read packet data: %s", strerror(errno));
-        free(buffer);
-        fclose(file);
-        return NULL;
-    }
-
-    fclose(file);
-
-    struct pbuf* p = pbuf_alloc(PBUF_RAW, header.packet_len, PBUF_RAM);
-    if (!p) {
-        DTN_ERROR("Failed to allocate pbuf for loaded packet");
-        free(buffer);
-        return NULL;
-    }
-
-    if (pbuf_take(p, buffer, header.packet_len) != ERR_OK) {
-        DTN_ERROR("Failed to copy data to pbuf");
-        pbuf_free(p);
-        free(buffer);
-        return NULL;
-    }
-
-    free(buffer);
-
-    Stored_Packet_Entry* entry = malloc(sizeof(Stored_Packet_Entry));
-    if (!entry) {
-        DTN_ERROR("Failed to allocate memory for packet entry");
-        pbuf_free(p);
-        return NULL;
-    }
-
-    entry->p = p;
-    memcpy(&entry->original_dest, &header.original_dest, sizeof(ip6_addr_t));
-    entry->stored_time_ms = header.timestamp;
-    entry->next = NULL;
-
-    strncpy(entry->filename, filename, MAX_PATH_LENGTH - 1);
-    entry->filename[MAX_PATH_LENGTH - 1] = '\0';
-
-    char addr_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
-    DTN_INFO("Loaded packet for %s from %s", addr_str, filename);
-
-    return entry;
-}
-
-int dtn_storage_load_packets_from_disk(Storage_Function* storage) {
-    if (!storage)
+// Reads all rows from the DB and reconstructs the in-memory linked list.
+// Returns number of packets loaded.
+static int dtn_storage_load_packets_from_db(Storage_Function* storage) {
+    if (!storage || !storage->db)
         return 0;
 
-    DIR* dir = opendir(storage->storage_directory);
-    if (!dir) {
-        DTN_ERROR("Failed to open storage directory: %s", strerror(errno));
+    const char* sql =
+        "SELECT id, stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
+        "       original_dest, packet_data"
+        " FROM stored_packets ORDER BY id ASC;";
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare SELECT for load: %s", sqlite3_errmsg(storage->db));
         return 0;
     }
 
-    int loaded_count = 0;
-    struct dirent* entry;
+    int loaded = 0;
+    Stored_Packet_Entry* tail = NULL;
 
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (storage->stored_packets_count >= MAX_STORED_PACKETS) {
+            DTN_INFO("Maximum packet count reached, stopping load");
+            break;
+        }
+
+        int64_t db_id = (int64_t)sqlite3_column_int64(stmt, 0);
+        u32_t stored_time_ms = (u32_t)sqlite3_column_int64(stmt, 1);
+        double delivery_time = sqlite3_column_double(stmt, 2);
+        double max_delivery_time = sqlite3_column_double(stmt, 3);
+
+        const void* dest_blob = sqlite3_column_blob(stmt, 4);
+        int dest_len = sqlite3_column_bytes(stmt, 4);
+        const void* pkt_blob = sqlite3_column_blob(stmt, 5);
+        int pkt_len = sqlite3_column_bytes(stmt, 5);
+
+        if (!dest_blob || dest_len != sizeof(ip6_addr_t) || !pkt_blob || pkt_len <= 0) {
+            DTN_WARN("Skipping malformed row %" PRId64, db_id);
             continue;
         }
 
-        char* ext = strrchr(entry->d_name, '.');
-        if (!ext || strcmp(ext, ".dat") != 0) {
+        struct pbuf* p = pbuf_alloc(PBUF_RAW, (u16_t)pkt_len, PBUF_RAM);
+        if (!p) {
+            DTN_ERROR("Failed to allocate pbuf for loaded packet");
+            continue;
+        }
+        if (pbuf_take(p, pkt_blob, (u16_t)pkt_len) != ERR_OK) {
+            DTN_ERROR("pbuf_take failed for row %" PRId64, db_id);
+            pbuf_free(p);
             continue;
         }
 
-        char full_path[PATH_MAX];
-
-        if (strlen(storage->storage_directory) + strlen(entry->d_name) + 2 > sizeof(full_path)) {
-            DTN_WARN("Path too long for file %s, skipping", entry->d_name);
+        Stored_Packet_Entry* entry = malloc(sizeof(Stored_Packet_Entry));
+        if (!entry) {
+            DTN_ERROR("Failed to allocate Stored_Packet_Entry");
+            pbuf_free(p);
             continue;
         }
 
-        strcpy(full_path, storage->storage_directory);
-        strcat(full_path, "/");
-        strcat(full_path, entry->d_name);
+        entry->p = p;
+        memcpy(&entry->original_dest, dest_blob, sizeof(ip6_addr_t));
+        entry->stored_time_ms = stored_time_ms;
+        entry->delivery_time_in_sec = delivery_time;
+        entry->max_delivery_time_in_sec = max_delivery_time;
+        entry->db_id = db_id;
+        entry->next = NULL;
 
-        Stored_Packet_Entry* packet_entry = dtn_storage_load_packet_from_file(storage, full_path);
-        if (packet_entry) {
-            if (storage->packet_list_head == NULL) {
-                storage->packet_list_head = packet_entry;
-            } else {
-                Stored_Packet_Entry* current = storage->packet_list_head;
-                while (current->next != NULL) {
-                    current = current->next;
-                }
-                current->next = packet_entry;
-            }
-
-            storage->stored_packets_count++;
-            loaded_count++;
-
-            if (storage->stored_packets_count >= MAX_STORED_PACKETS) {
-                DTN_INFO("Maximum packet count reached, stopping load");
-                break;
-            }
+        // Append to linked list.
+        if (storage->packet_list_head == NULL) {
+            storage->packet_list_head = entry;
+        } else {
+            tail->next = entry;
         }
+        tail = entry;
+
+        storage->stored_packets_count++;
+        loaded++;
+
+        char addr_str[IP6ADDR_STRLEN_MAX];
+        ip6addr_ntoa_r(&entry->original_dest, addr_str, sizeof(addr_str));
+        DTN_INFO("Loaded packet for %s from DB (rowid %" PRId64 ")", addr_str, db_id);
     }
 
-    closedir(dir);
-    DTN_INFO("Loaded %d packets from disk", loaded_count);
-    return loaded_count;
+    sqlite3_finalize(stmt);
+    DTN_INFO("Loaded %d packets from DB", loaded);
+    return loaded;
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 Storage_Function* dtn_storage_create(DTN_Module* parent) {
     Storage_Function* storage = (Storage_Function*)malloc(sizeof(Storage_Function));
-    if (storage) {
-        storage->parent_module = parent;
-        storage->stored_packets_count = 0;
-        storage->max_storage_bytes = 1024 * 1024;  // 1MB limit
-        storage->packet_list_head = NULL;
-
-        strncpy(storage->storage_directory, dtn_config.storage_path, MAX_PATH_LENGTH - 1);
-        storage->storage_directory[MAX_PATH_LENGTH - 1] = '\0';
-
-        DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).",
-                 storage->max_storage_bytes, MAX_STORED_PACKETS);
-
-        if (!dtn_storage_init_directory(storage)) {
-            DTN_ERROR("Failed to initialize storage directory");
-            free(storage);
-            return NULL;
-        }
-
-        dtn_storage_load_packets_from_disk(storage);
-    } else {
+    if (!storage) {
         DTN_ERROR("Failed to allocate memory for Storage_Function");
+        return NULL;
     }
+
+    storage->parent_module = parent;
+    storage->stored_packets_count = 0;
+    storage->max_storage_bytes = 1024 * 1024;  // 1 MB limit (informational)
+    storage->packet_list_head = NULL;
+    storage->db = NULL;
+
+    strncpy(storage->storage_directory, dtn_config.storage_path, MAX_PATH_LENGTH - 1);
+    storage->storage_directory[MAX_PATH_LENGTH - 1] = '\0';
+
+    DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).",
+             storage->max_storage_bytes, MAX_STORED_PACKETS);
+
+    if (!dtn_storage_init_db(storage)) {
+        DTN_ERROR("Failed to initialise storage DB");
+        free(storage);
+        return NULL;
+    }
+
+    dtn_storage_load_packets_from_db(storage);
     return storage;
 }
 
@@ -327,6 +319,11 @@ void dtn_storage_destroy(Storage_Function* storage) {
     }
     storage->packet_list_head = NULL;
     storage->stored_packets_count = 0;
+
+    if (storage->db) {
+        sqlite3_close(storage->db);
+        storage->db = NULL;
+    }
 
     free(storage);
 }
@@ -359,8 +356,8 @@ void dtn_storage_remove_entry(Storage_Function* storage, Stored_Packet_Entry* en
 
     storage->stored_packets_count--;
 
-    /* Remove disk file. */
-    dtn_storage_remove_packet_from_disk(storage, entry->filename);
+    /* Remove DB row. */
+    dtn_storage_delete_row(storage, entry->db_id);
 
     /* Free pbuf and struct. */
     if (entry->p)
@@ -383,7 +380,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
         return 0;
     }
 
-    // Create a copy of the packet to strip headers if needed
+    // Create a copy of the packet to strip headers if needed.
     struct pbuf* p_to_store = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
     if (!p_to_store) {
         DTN_ERROR("Failed to allocate pbuf for storage copy");
@@ -396,7 +393,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
         return 0;
     }
 
-    // Strip hop-by-hop header if present
+    // Strip hop-by-hop header if present.
     dtn_strip_custodian_option(&p_to_store);
 
     Stored_Packet_Entry* new_entry = (Stored_Packet_Entry*)malloc(sizeof(Stored_Packet_Entry));
@@ -406,16 +403,16 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
         return 0;
     }
 
-    new_entry->p = p_to_store;  // Store the stripped version
+    new_entry->p = p_to_store;
     memcpy(&new_entry->original_dest, original_dest, sizeof(ip6_addr_t));
     new_entry->stored_time_ms = sys_now();
     new_entry->delivery_time_in_sec = routing_result->best_delivery_time;
     new_entry->max_delivery_time_in_sec = routing_result->to_time;
     new_entry->next = NULL;
-    new_entry->filename[0] = '\0';
+    new_entry->db_id = -1;
 
-    if (!dtn_storage_save_packet_to_disk(storage, new_entry)) {
-        DTN_ERROR("Failed to save packet to disk");
+    if (!dtn_storage_insert_packet(storage, new_entry)) {
+        DTN_ERROR("Failed to persist packet to DB");
         pbuf_free(new_entry->p);
         free(new_entry);
         return 0;
@@ -451,8 +448,6 @@ Stored_Packet_Entry* dtn_storage_retrieve_packet_for_dest(Storage_Function* stor
     Stored_Packet_Entry* match = NULL;
     Stored_Packet_Entry* prev_for_match = NULL;
 
-    current = storage->packet_list_head;
-    prev = NULL;
     while (current != NULL) {
         ip6_addr_t current_dest_nozone;
         ip6_addr_t target_dest_nozone;
@@ -487,7 +482,7 @@ Stored_Packet_Entry* dtn_storage_retrieve_packet_for_dest(Storage_Function* stor
         DTN_INFO("Retrieving packet for %s (stored at %u). Total stored now: %zu", addr_str,
                  match->stored_time_ms, storage->stored_packets_count);
 
-        dtn_storage_remove_packet_from_disk(storage, match->filename);
+        dtn_storage_delete_row(storage, match->db_id);
 
         match->next = NULL;
         return match;
@@ -528,14 +523,12 @@ Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* stor
 #endif
 
         if (ip6_addr_cmp(&current_dest_nozone, &target_dest_nozone)) {
-            // Found a match, create a new entry
             Stored_Packet_Entry* copy = (Stored_Packet_Entry*)malloc(sizeof(Stored_Packet_Entry));
             if (!copy) {
                 DTN_INFO("Failed to allocate memory for packet copy");
                 return NULL;
             }
 
-            // Copy the packet itself
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, current->p->tot_len, PBUF_RAM);
             if (!p_copy) {
                 DTN_INFO("Failed to allocate pbuf for packet copy");
@@ -553,9 +546,10 @@ Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* stor
             copy->p = p_copy;
             memcpy(&copy->original_dest, &current->original_dest, sizeof(ip6_addr_t));
             copy->stored_time_ms = current->stored_time_ms;
+            copy->delivery_time_in_sec = current->delivery_time_in_sec;
+            copy->max_delivery_time_in_sec = current->max_delivery_time_in_sec;
+            copy->db_id = current->db_id;
             copy->next = NULL;
-            strncpy(copy->filename, current->filename, MAX_PATH_LENGTH - 1);
-            copy->filename[MAX_PATH_LENGTH - 1] = '\0';
 
             char addr_str[IP6ADDR_STRLEN_MAX];
             ip6addr_ntoa_r(&copy->original_dest, addr_str, sizeof(addr_str));
@@ -615,7 +609,7 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
                     "reception",
                     orig_dest_str, orig_src_str);
 
-                dtn_storage_remove_packet_from_disk(storage, current->filename);
+                dtn_storage_delete_row(storage, current->db_id);
 
                 pbuf_free(current->p);
                 free(current);
@@ -701,12 +695,11 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     Stored_Packet_Entry* prev = NULL;
     bool found = false;
 
-    // Iterate through stored packets
     while (current != NULL) {
         if (current->p && current->p->len >= IP6_HLEN) {
             struct ip6_hdr* stored_ip6hdr = (struct ip6_hdr*)current->p->payload;
 
-            // 1. Check src/dst addresses
+            // 1. Check src address
             if (memcmp(&stored_ip6hdr->src, &orig_ip6hdr->src, 16) == 0) {
                 // 2. Check next header protocol
                 u8_t stored_nexth = stored_ip6hdr->_nexth;
@@ -717,6 +710,8 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                     DTN_INFO(
                         "Warning - stored packet has hop-by-hop header "
                         "(unexpected)");
+                    prev = current;
+                    current = current->next;
                     continue;
                 }
 
@@ -742,7 +737,6 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                 if (payload_matches) {
                     found = true;
 
-                    // Remove from list
                     if (prev == NULL) {
                         storage->packet_list_head = current->next;
                     } else {
@@ -754,8 +748,7 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
                         "verification",
                         orig_dest_str, orig_src_str);
 
-                    // Remove from disk
-                    dtn_storage_remove_packet_from_disk(storage, current->filename);
+                    dtn_storage_delete_row(storage, current->db_id);
 
                     pbuf_free(current->p);
                     free(current);

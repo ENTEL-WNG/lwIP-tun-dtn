@@ -18,6 +18,9 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
+
+#include <sqlite3.h>
 
 #include "dtn_module.h"
 #include "dtn_routing.h"
@@ -35,7 +38,7 @@ typedef struct Stored_Packet_Entry {
     ip6_addr_t original_dest;
     u32_t stored_time_ms;
     struct Stored_Packet_Entry* next;
-    char filename[MAX_PATH_LENGTH];
+    int64_t db_id;  // SQLite rowid; -1 if not yet persisted
 } Stored_Packet_Entry;
 
 typedef struct Storage_Function {
@@ -44,6 +47,7 @@ typedef struct Storage_Function {
     size_t max_storage_bytes;
     Stored_Packet_Entry* packet_list_head;
     char storage_directory[MAX_PATH_LENGTH];
+    sqlite3* db;  // open DB handle; NULL until dtn_storage_create
 } Storage_Function;
 
 Storage_Function* dtn_storage_create(DTN_Module* parent);
@@ -60,9 +64,5 @@ Stored_Packet_Entry* dtn_storage_get_packet_copy_for_dest(Storage_Function* stor
                                                           const ip6_addr_t* target_dest);
 void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr);
 void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pbuf* icmp_packet);
-int dtn_storage_init_directory(Storage_Function* storage);
-int dtn_storage_save_packet_to_disk(Storage_Function* storage, Stored_Packet_Entry* entry);
-int dtn_storage_remove_packet_from_disk(Storage_Function* storage, const char* filename);
-int dtn_storage_load_packets_from_disk(Storage_Function* storage);
 
 #endif

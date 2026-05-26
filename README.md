@@ -106,6 +106,13 @@ This project is licensed under the GNU Affero General Public License Version 3 (
 - Copiright (c) 2023 Juan Fraire
 - Modifications allow IPv6 functionalities instead of BPv7
 
+#### tomlc99
+
+#### SQLite
+
+To change/update version download [sqlite-amalgamation-XXXXXXX.zip](https://www.sqlite.org/download.html).
+Replace with [](./third_party/sqlite/sqlite3.c) and sqlite3.h
+
 ## ACKNOWLEDGEMENTS
 
 This implementation is based on the paper "Leveraging IPv6 and ICMPv6 for Delay-Tolerant Networking in Deep Space" published in Technologies 2025, 13, 163. https://www.mdpi.com/2227-7080/13/4/163

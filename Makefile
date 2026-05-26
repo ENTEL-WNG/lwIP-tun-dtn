@@ -9,6 +9,7 @@ CFLAGS = -Wall \
 	-I./port/include \
 	-I./include \
 	-I./third_party/tomlc99 \
+	-I./third_party/sqlite \
 	-Ilwip/include \
 	-Ilwip/src/include \
 	-Ilwip/contrib/addons/ipv6_static_routing \
@@ -49,7 +50,8 @@ APP_SRC = \
 	src/dtn_logger.c
 
 THIRD_PARTY_SRC = \
-    third_party/tomlc99/toml.c
+    third_party/tomlc99/toml.c \
+    third_party/sqlite/sqlite3.c
 
 SOURCES = $(APP_SRC) $(THIRD_PARTY_SRC) port/sys_arch.c $(LWIP_SRC)
 OBJECTS = $(SOURCES:.c=.o)
