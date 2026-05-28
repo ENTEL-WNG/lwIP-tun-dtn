@@ -35,6 +35,7 @@
 #include "lwip/sys.h"
 #include "raw_socket.h"
 
+extern DTN_Module* global_dtn_module;
 extern void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
                                                    struct ip6_hdr* orig_ip6hdr);
 
@@ -87,7 +88,7 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
     } else {
         bool has_custodian = dtn_extract_custodian_option(p, &dest_addr);
         if (!has_custodian) {
-            DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for message");
+            DTN_ERROR("No custodian in dnt_icmpv6_send_message");
             return -1;
         }
     }
@@ -123,21 +124,22 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
         return ERR_BUF;
     }
 
-    dtn_socket_result_t socket_result = dtn_raw_socket_send(complete_pkt);
+    /* dtn_controller_send_or_store takes ownership of complete_pkt and frees it. */
+    dtn_controller_send_or_store_result_t send_result =
+        dtn_controller_send_or_store(global_dtn_module->controller, complete_pkt);
 
     char dest_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
 
-    if (socket_result == DTN_SOCKET_OK) {
+    if (send_result == DTN_CONTROLLER_SEND_OR_STORE_OK) {
         DTN_INFO("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d",
                  dtn_config.lwip_ipv6_addr, dest_str, type, code);
     } else {
         DTN_ERROR("Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error %d",
-                  dtn_config.lwip_ipv6_addr, dest_str, type, code, socket_result);
+                  dtn_config.lwip_ipv6_addr, dest_str, type, code, send_result);
     }
 
     pbuf_free(q);
-    pbuf_free(complete_pkt);
     return 0;
 }
 
@@ -163,8 +165,7 @@ void dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code, u8_t reason) {
 
 // Process incoming DTN ICMPv6 message
 u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
-    extern DTN_Module* global_dtn_module;
-
+    return 1;
     if (!p || !p->payload || !global_dtn_module || !global_dtn_module->storage ||
         !global_dtn_module->controller) {
         return 0;

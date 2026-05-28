@@ -170,6 +170,8 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
     // Check if this is ICMPv6 and process it
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_ICMP6) {
+        DTN_INFO("Received ICMPv6 message.");
+
         struct pbuf* q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
         if (!q) {
             DTN_ERROR("DTN Controller: Failed to allocate pbuf for ICMPv6 processing.");
@@ -194,6 +196,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
         // Process the ICMPv6 message
         if (dtn_controller_process_icmpv6(controller, q, &src_addr)) {
+            DTN_INFO("Processed ICMPv6 message.");
             pbuf_free(q);
             pbuf_free(p);
             return;
@@ -239,7 +242,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     }
 
     dtn_controller_send_or_store(controller, p);
-    pbuf_free(p);
+    // pbuf_free(p);
     return;
 }
 
@@ -359,7 +362,7 @@ dtn_controller_send_result_t dtn_controller_send(DTN_Controller* controller, str
     dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(p, dtn_interface);
 
     if (socket_result == DTN_SOCKET_OK) {
-        dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+        // dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
         return DTN_CONTROLLER_SEND_OK;
     }
 
