@@ -16,7 +16,7 @@ local_mac      = "00:02:00:05:00:05"
 remote_addr    = "fd00:02:05::2/64"
 remote_mac  = "00:02:00:05:00:02"
 remote_node_id = 2
-start_in_sec   = 20
+start_in_sec   = 10
 end_in_sec     = 1000
 rate           = 1
 range          = 1
@@ -78,7 +78,7 @@ bidirected = true
 from = 2
 to = 3
 start_in_sec = 0
-end_in_sec = 20
+end_in_sec = 10
 bidirected = true
 
 [[edges]]
@@ -91,7 +91,7 @@ bidirected = true
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 20
+start_in_sec = 10
 end_in_sec = 1000
 bidirected = true
 

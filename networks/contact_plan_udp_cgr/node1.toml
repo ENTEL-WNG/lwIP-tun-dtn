@@ -64,7 +64,7 @@ bidirected = true
 from = 2
 to = 3
 start_in_sec = 0
-end_in_sec = 20
+end_in_sec = 10
 bidirected = true
 
 [[edges]]
@@ -77,7 +77,7 @@ bidirected = true
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 20
+start_in_sec = 10
 end_in_sec = 1000
 bidirected = true
 

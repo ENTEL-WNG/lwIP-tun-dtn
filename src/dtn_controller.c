@@ -16,6 +16,7 @@
 
 #include "dtn_controller.h"
 
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,6 +36,8 @@
 #include "lwip/pbuf.h"
 #include "lwip/sys.h"
 #include "raw_socket.h"
+
+#define PRINT_PAYLOAD true
 
 DTN_Controller* dtn_controller_create(DTN_Module* parent) {
     DTN_Controller* controller = (DTN_Controller*)malloc(sizeof(DTN_Controller));
@@ -145,8 +148,53 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
     ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
     ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
-    DTN_INFO("Received package with Src: %s | Dest: %s | NextHdr: %u", src_str, dest_str,
-             (unsigned int)IP6H_NEXTH(ip6hdr));
+    DTN_INFO("Received package with src: %s -> dest: %s ", src_str, dest_str);
+
+    if (PRINT_PAYLOAD) {
+        uint8_t nexth = IP6H_NEXTH(ip6hdr);
+        uint16_t plen = IP6H_PLEN(ip6hdr); /* already in host order — no extra ntohs */
+        uint16_t offset = sizeof(struct ip6_hdr);
+
+        /* Walk past extension headers (Hop-by-Hop=0, Routing=43,
+         * Fragment=44, Dest Options=60) to reach the actual payload. */
+        while (nexth == 0 || nexth == 43 || nexth == 44 || nexth == 60) {
+            uint8_t ext[2];
+            if (pbuf_copy_partial(p, ext, 2, offset) < 2)
+                break;
+            /* Fragment header is always 8 bytes; others: (len+1)*8 */
+            uint16_t ext_len = (nexth == 44) ? 8 : ((uint16_t)(ext[1] + 1) * 8);
+            nexth = ext[0];
+            offset += ext_len;
+            if (offset >= p->tot_len)
+                break;
+        }
+
+        /* Skip transport header */
+        uint16_t transport_hdr_len = 0;
+        if (nexth == 17)
+            transport_hdr_len = 8; /* UDP */
+        else if (nexth == 6)
+            transport_hdr_len = 20; /* TCP */
+
+        // DTN_DEBUG("[debug] nexth=%u  plen=%u  payload_offset=%u  p->tot_len=%u\n", nexth, plen,
+        //   offset + transport_hdr_len, p->tot_len);
+
+        uint8_t buf[512];
+        uint16_t copied = pbuf_copy_partial(p, buf, sizeof(buf) - 1, offset + transport_hdr_len);
+        buf[copied] = '\0';
+
+        /* Strip trailing whitespace (\n, \r, spaces, etc.) */
+        while (copied > 0 && isspace(buf[copied - 1])) buf[--copied] = '\0';
+
+        /* Only print if every byte is printable ASCII */
+        bool is_printable = (copied > 0);
+        for (uint16_t i = 0; i < copied && is_printable; i++) {
+            if (!isprint(buf[i]) && !isspace(buf[i]))
+                is_printable = false;
+        }
+        if (is_printable)
+            DTN_INFO("[payload] %s", (char*)buf);
+    }
 
     if (!dtn_extract_custodian_option(p, &temp_dest_sender)) {
         memcpy(&temp_dest_sender, &src_addr, sizeof(ip6_addr_t));
@@ -195,20 +243,20 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     bool is_local = false;
     for (int i = 0; i < dtn_config.interface_count; i++) {
         if (is_local_address(&dest_addr, dtn_config.interfaces[i].local_addr)) {
-            DTN_DEBUG("Destination is interface %s with address %s.", dtn_config.interfaces[i].name,
-                      dtn_config.interfaces[i].local_addr);
+            DTN_INFO("Destination is local interface %s with address %s.",
+                     dtn_config.interfaces[i].name, dtn_config.interfaces[i].local_addr);
             is_local = true;
             break;
         }
     }
 
     if (is_local_address(&dest_addr, dtn_config.lwip_ipv6_addr)) {
-        DTN_DEBUG("Destination is local lwIP addresse %s", dtn_config.lwip_ipv6_addr);
+        DTN_INFO("Destination is local lwIP addresse %s", dtn_config.lwip_ipv6_addr);
         is_local = true;
     }
 
     if (is_local_address(&dest_addr, dtn_config.tun_ipv6_addr)) {
-        DTN_DEBUG("Destination is local TUN addresse %s", dtn_config.tun_ipv6_addr);
+        DTN_INFO("Destination is local TUN addresse %s", dtn_config.tun_ipv6_addr);
         is_local = true;
     }
 
@@ -240,11 +288,17 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         routing->base_time_in_ms, sys_now(), ip6hdr, &routing_result);
 
     if (get_next_hop_node_id_result == DTN_ROUTING_OK) {
+        DTN_INFO("Next hop node id %d | best_delivery_time %f | max_delivery_time %f",
+                 routing_result.next_hop_node_id, routing_result.best_delivery_time,
+                 routing_result.to_time);
+
         bool is_next_hop_active;
         int is_next_hop_active_contact_result = dtn_routing_is_next_hop_active(
             sys_now(), routing_result.next_hop_node_id, &is_next_hop_active);
 
         if (is_next_hop_active_contact_result == DTN_ROUTING_OK && is_next_hop_active) {
+            DTN_INFO("Next hop node id %d is active", routing_result.next_hop_node_id);
+
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
             if (p_copy != NULL) {
                 if (pbuf_copy(p_copy, p) == ERR_OK) {
@@ -263,8 +317,8 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
                 dtn_raw_socket_send_to_node_id(p, routing_result.next_hop_node_id, &dest_addr);
 
             if (socket_result == DTN_SOCKET_OK) {
-                DTN_DEBUG("Successfully send package src: %s -> dest: %s used node id %d", src_str,
-                          dest_str, routing_result.next_hop_node_id);
+                DTN_INFO("Successfully send package src: %s -> dest: %s used node id %d", src_str,
+                         dest_str, routing_result.next_hop_node_id);
             } else {
                 DTN_ERROR("Failed to send package src: %s -> dest: %s used node id %d, error: %d",
                           src_str, dest_str, routing_result.next_hop_node_id, socket_result);
@@ -275,8 +329,8 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         }
 
         if (dtn_storage_store_packet(storage, p, &dest_addr, &routing_result)) {
-            DTN_DEBUG("Successfully stored package src: %s -> dest: %s with next hope node id %d",
-                      src_str, dest_str, routing_result.next_hop_node_id);
+            DTN_INFO("Successfully stored package src: %s -> dest: %s with next hope node id %d",
+                     src_str, dest_str, routing_result.next_hop_node_id);
             // Create a copy for DTN-PCK-RECEIVED
             struct pbuf* p_copy = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
             if (p_copy != NULL) {
@@ -308,11 +362,12 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    // if (get_next_hop_node_id_result == DTN_ROUTING_NO_ROUTE) {
-    //     DTN_ERROR("No route found for package src: %s -> dest: %s", src_str, dest_str);
-    //     pbuf_free(p);
-    //     return;
-    // }
+    if (get_next_hop_node_id_result == DTN_ROUTING_NO_ROUTE) {
+        DTN_WARN("No route found for package src: %s -> dest: %s", src_str, dest_str);
+    } else {
+        DTN_ERROR("DTN routing error code %d for package src: %s -> dest: %s",
+                  get_next_hop_node_id_result, src_str, dest_str);
+    }
 
     dtn_socket_result_t socket_result = dtn_raw_socket_send_to_ipv6_address(p, &dest_addr);
     if (socket_result == DTN_SOCKET_OK) {
@@ -336,10 +391,18 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
     Routing_Function* routing = controller->parent_module->routing;
 
     double now_sec = sys_now() / 1000.0;
+    int number_of_stored_packages = dtn_storage_count(storage);
+
+    if (number_of_stored_packages == 0) {
+        return;
+    }
 
     // Query only the packets whose contact window has arrived.
     Stored_Packet_Entry entries[MAX_STORED_PACKETS];
     int n = dtn_storage_get_ready_entries(storage, now_sec, entries, MAX_STORED_PACKETS);
+
+    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f",
+             number_of_stored_packages, n, now_sec);
 
     for (int i = 0; i < n; i++) {
         Stored_Packet_Entry* entry = &entries[i];

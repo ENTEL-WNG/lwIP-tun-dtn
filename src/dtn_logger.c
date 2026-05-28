@@ -11,7 +11,8 @@
 #include "lwip/sys.h"
 
 // Internal state
-static dtn_level_t global_log_level = DTN_LEVEL_DEBUG;
+// static dtn_level_t global_log_level = DTN_LEVEL_DEBUG;
+static dtn_level_t global_log_level = DTN_LEVEL_INFO;
 static dtn_time_t global_time_format = SYS_TIME;
 
 // Map enum values to strings for printing

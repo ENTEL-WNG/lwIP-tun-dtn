@@ -225,7 +225,7 @@ class ipv6_packet:
         self.sender = sender
         #self.evc = max(size*1.03, 100)
         
-        print(f"[PYDBG] ipv6_paquet created: dst={self.dst} size={self.size} deadline={self.deadline} priority={self.priority}", flush=True, file=sys.stderr)
+        # print(f"[PYDBG] ipv6_paquet created: dst={self.dst} size={self.size} deadline={self.deadline} priority={self.priority}", flush=True, file=sys.stderr)
 
 
 # load contact plan file with the format:
