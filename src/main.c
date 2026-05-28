@@ -188,15 +188,6 @@ int main() {
     dtn_config_print(&dtn_config);
     dtn_log_init();
 
-    // struct stat st = {0};
-    // if (stat(dtn_config.storage_path, &st) == -1) {
-    //     DTN_INFO("Creating DTN storage directory: %s", dtn_config.storage_path);
-    //     if (mkdir(dtn_config.storage_path, 0755) != 0) {
-    //         DTN_ERROR("Failed to create DTN storage directory: %s", strerror(errno));
-    //         exit(EXIT_FAILURE);
-    //     }
-    // }
-
     global_dtn_module = dtn_module_init();
     if (!global_dtn_module) {
         DTN_ERROR("Failed to initialize DTN Module");

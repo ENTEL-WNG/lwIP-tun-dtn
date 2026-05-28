@@ -35,14 +35,12 @@ typedef enum {
 } dtn_socket_result_t;
 
 dtn_socket_result_t dtn_init_raw_socket(void);
-
-dtn_socket_result_t dtn_raw_socket_send_to_node_id(struct pbuf* p, int node_id,
-                                                   const ip6_addr_t* dest_addr);
-dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
-                                                        const ip6_addr_t* dest_addr);
-dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_addr_t* dest_addr,
-                                                      const DtnInterface* dtn_interface);
-
 void dtn_raw_socket_cleanup(void);
+
+const DtnInterface* dtn_raw_socket_get_interface_for_node(int node_id);
+dtn_socket_result_t dtn_raw_socket_send_to_node_id(struct pbuf* p, int node_id);
+dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p);
+dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
+                                                      const DtnInterface* dtn_interface);
 
 #endif

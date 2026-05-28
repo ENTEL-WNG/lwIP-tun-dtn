@@ -126,7 +126,7 @@ static int py_get_double_attr(PyObject* obj, const char* attr, double* out) {
     return 0;
 }
 
-int dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node) {
+dtn_routing_result_t dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node) {
     if (!is_dtn_node) {
         DTN_ERROR("Invalid arguments to is_node_id_dtn_node.");
         return DTN_ROUTING_ERR;
@@ -142,8 +142,8 @@ int dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node) {
     return DTN_ROUTING_ERR;
 }
 
-int dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id,
-                                   bool* is_next_hop_active) {
+dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id,
+                                                    bool* is_next_hop_active) {
     if (current_time_in_ms < 0 || !is_next_hop_active) {
         DTN_ERROR("Invalid arguments to is_next_hop_active.");
         return DTN_ROUTING_ERR;
@@ -178,8 +178,10 @@ long _ipv6_to_nodeid(const char* ip6) {
     return -1;
 }
 
-int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms,
-                                     struct ip6_hdr* ip6h, DtnRoutingResult* result) {
+dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms,
+                                                      double current_time_in_ms,
+                                                      struct ip6_hdr* ip6h,
+                                                      DtnRoutingResult* result) {
     if (start_time_in_ms < 0 || current_time_in_ms < 0 || !ip6h || !result) {
         DTN_ERROR("Invalid arguments to get_next_dnt_hop.");
         return DTN_ROUTING_ERR;
@@ -227,10 +229,10 @@ int dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_tim
                                              dest_node_id, deadline, package_length, dscp, result);
 }
 
-int _dtn_routing_get_next_hop_node_id(char* contact_plan_path, double start_time_in_sec,
-                                      double current_time_in_sec, long current_node_id,
-                                      long src_node_id, long dest_node_id, long deadline,
-                                      long package_length, long dscp, DtnRoutingResult* result) {
+dtn_routing_result_t _dtn_routing_get_next_hop_node_id(
+    char* contact_plan_path, double start_time_in_sec, double current_time_in_sec,
+    long current_node_id, long src_node_id, long dest_node_id, long deadline, long package_length,
+    long dscp, DtnRoutingResult* result) {
     Py_Initialize();
     if (!Py_IsInitialized()) {
         DTN_ERROR("Python not initialized");

@@ -22,30 +22,43 @@
 #include "dtn_routing.h"
 #include "lwip/netif.h"
 
-#define MAX_DESTINATIONS 10
-#define FORWARDING_RETRY_DELAY_MS 30000  // 30 seconds delay between retransmissions
-#define MAX_FORWARDING_RETRIES 10        // Max retries
+// #define MAX_DESTINATIONS 10
+// #define FORWARDING_RETRY_DELAY_MS 30000  // 30 seconds delay between retransmissions
+// #define MAX_FORWARDING_RETRIES 10        // Max retries
 
-typedef struct {
-    ip6_addr_t destination;
-    u32_t last_attempt_time;
-    int retry_count;
-    bool is_valid;
-} ForwardingAttempt;
+// typedef struct {
+//     ip6_addr_t destination;
+//     u32_t last_attempt_time;
+//     int retry_count;
+//     bool is_valid;
+// } ForwardingAttempt;
 
 typedef struct DTN_Controller {
     DTN_Module* parent_module;
-    ForwardingAttempt forwarding_attempts[MAX_DESTINATIONS];
 } DTN_Controller;
+
+typedef enum {
+    DTN_CONTROLLER_SEND_OR_STORE_OK = 0,
+    DTN_CONTROLLER_SEND_OR_STORE_ERR = -1,
+} dtn_controller_send_or_store_result_t;
+
+typedef enum {
+    DTN_CONTROLLER_SEND_OK = 0,
+    DTN_CONTROLLER_SEND_NOT_ACTIVE = 1,
+    DTN_CONTROLLER_SEND_NO_ROUTE = 2,
+    DTN_CONTROLLER_SEND_ERR = -1,
+} dtn_controller_send_result_t;
 
 DTN_Controller* dtn_controller_create(DTN_Module* parent);
 void dtn_controller_destroy(DTN_Controller* controller);
 void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
                                      struct netif* inp_netif);
 void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct netif* netif_out);
-void dtn_controller_remove_tracking(DTN_Controller* controller, const ip6_addr_t* dest_addr);
-
-// static bool is_next_hop_active_contact(Routing_Function* routing, ip6_addr_t* next_hop_ip);
 int dtn_controller_process_icmpv6(DTN_Controller* controller, struct pbuf* p, ip6_addr_t* src_addr);
+
+dtn_controller_send_or_store_result_t dtn_controller_send_or_store(DTN_Controller* controller,
+                                                                   struct pbuf* p);
+dtn_controller_send_result_t dtn_controller_send(DTN_Controller* controller, struct pbuf* p,
+                                                 DtnRoutingResult* routing_result);
 
 #endif

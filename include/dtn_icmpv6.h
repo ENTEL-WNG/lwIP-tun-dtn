@@ -19,7 +19,6 @@
 #include "dtn_module.h"
 #include "lwip/icmp6.h"
 #include "lwip/ip6_addr.h"
-#include "lwip/netif.h"
 #include "lwip/pbuf.h"
 
 // DTN ICMPv6 message types
@@ -40,10 +39,10 @@
 #define ICMP6_CODE_DTN_HOP_LIMIT 9
 #define ICMP6_CODE_DTN_TRAFFIC_PARED 10
 
-void dtn_icmpv6_send_pck_received(struct netif* netif, struct pbuf* p, u8_t code);
-void dtn_icmpv6_send_pck_forwarded(struct netif* netif, struct pbuf* p, u8_t code);
-void dtn_icmpv6_send_pck_delivered(struct netif* netif, struct pbuf* p, u8_t code);
-void dtn_icmpv6_send_pck_deleted(struct netif* netif, struct pbuf* p, u8_t code, u8_t reason);
+void dtn_icmpv6_send_pck_received(const struct pbuf* p, u8_t code);
+void dtn_icmpv6_send_pck_forwarded(const struct pbuf* p, u8_t code);
+void dtn_icmpv6_send_pck_delivered(const struct pbuf* p, u8_t code);
+void dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code, u8_t reason);
 
 u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr);
 

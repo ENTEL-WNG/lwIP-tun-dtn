@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "dtn_config.h"
 #include "dtn_controller.h"
 #include "dtn_custody.h"
 #include "dtn_logger.h"
@@ -47,9 +48,9 @@ typedef struct {
 } dtn_icmpv6_payload_t;
 #pragma pack()
 
-static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t type, u8_t code,
-                                     u8_t reason) {
-    struct ip6_hdr* orig_ip6hdr = (struct ip6_hdr*)p->payload;
+static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code, u8_t reason) {
+    const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)p->payload;
+
     struct pbuf* q;
     struct icmp6_hdr* icmp6hdr;
     dtn_icmpv6_payload_t* dtn_payload;
@@ -80,12 +81,15 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
     pbuf_copy_partial(p, (u8_t*)(dtn_payload + 1), IP6_HLEN + 8, 0);
 
     ip6_addr_t src_addr, dest_addr;
-
-    ip6_addr_copy(src_addr, netif->ip6_addr[1]);
-
-    if (!dtn_extract_custodian_option(p, &dest_addr)) {
-        IP6_ADDR(&dest_addr, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1],
-                 orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
+    ip6addr_aton(dtn_config.lwip_ipv6_addr, &src_addr);
+    if (type == ICMP6_TYPE_DTN_PCK_DELIVERED) {
+        ip6_addr_copy_from_packed(dest_addr, orig_ip6hdr->src);
+    } else {
+        bool has_custodian = dtn_extract_custodian_option(p, &dest_addr);
+        if (!has_custodian) {
+            DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for message");
+            return -1;
+        }
     }
 
     // Calculate checksum
@@ -119,57 +123,42 @@ static err_t dtn_icmpv6_send_message(struct netif* netif, struct pbuf* p, u8_t t
         return ERR_BUF;
     }
 
-    pbuf_free(q);
+    dtn_socket_result_t socket_result = dtn_raw_socket_send(complete_pkt);
 
-    err_t err =
-        dtn_raw_socket_send_to_ipv6_address(complete_pkt, &dest_addr) == 0 ? ERR_OK : ERR_IF;
+    char dest_str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
 
-    char dst_str[IP6ADDR_STRLEN_MAX];
-    char src_addr_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&dest_addr, dst_str, sizeof(dst_str));
-    ip6addr_ntoa_r(&src_addr, src_addr_str, sizeof(src_addr_str));
-
-    if (err != ERR_OK) {
-        DTN_ERROR("DTN ICMPv6: Failed to send message to %s via raw socket, err=%d", dst_str, err);
+    if (socket_result == DTN_SOCKET_OK) {
+        DTN_INFO("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d",
+                 dtn_config.lwip_ipv6_addr, dest_str, type, code);
     } else {
-        DTN_INFO("DTN ICMPv6: Sent type %d code %d from %s to %s via raw socket", type, code,
-                 src_addr_str, dst_str);
+        DTN_ERROR("Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error %d",
+                  dtn_config.lwip_ipv6_addr, dest_str, type, code, socket_result);
     }
 
+    pbuf_free(q);
     pbuf_free(complete_pkt);
-    return err;
+    return 0;
 }
 
 // Send DTN-PCK-RECEIVED message
-void dtn_icmpv6_send_pck_received(struct netif* netif, struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(netif, p, ICMP6_TYPE_DTN_PCK_RECEIVED, code, 0);
+void dtn_icmpv6_send_pck_received(const struct pbuf* p, u8_t code) {
+    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_RECEIVED, code, 0);
 }
 
 // Send DTN-PCK-FORWARDED message
-void dtn_icmpv6_send_pck_forwarded(struct netif* netif, struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(netif, p, ICMP6_TYPE_DTN_PCK_FORWARDED, code, 0);
+void dtn_icmpv6_send_pck_forwarded(const struct pbuf* p, u8_t code) {
+    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_FORWARDED, code, 0);
 }
 
 // Send DTN-PCK-DELIVERED message
-void dtn_icmpv6_send_pck_delivered(struct netif* netif, struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(netif, p, ICMP6_TYPE_DTN_PCK_DELIVERED, code, 0);
+void dtn_icmpv6_send_pck_delivered(const struct pbuf* p, u8_t code) {
+    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELIVERED, code, 0);
 }
 
 // Send DTN-PCK-DELETED message with additional reason
-void dtn_icmpv6_send_pck_deleted(struct netif* netif, struct pbuf* p, u8_t code, u8_t reason) {
-    dtn_icmpv6_send_message(netif, p, ICMP6_TYPE_DTN_PCK_DELETED, code, reason);
-}
-
-// Extract original IPv6 header from an ICMPv6 message
-static struct ip6_hdr* extract_original_header(struct icmp6_hdr* icmp6hdr) {
-    // Skip ICMP header and DTN payload to get to the original IPv6 header
-    dtn_icmpv6_payload_t* dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
-    return (struct ip6_hdr*)((u8_t*)dtn_payload + sizeof(dtn_icmpv6_payload_t));
-}
-
-// Convert a packed IPv6 address to an ip6_addr_t structure
-static void packed_ip6_addr_to_ip6_addr_t(const u32_t packed_addr[4], ip6_addr_t* ip6_addr) {
-    IP6_ADDR(ip6_addr, packed_addr[0], packed_addr[1], packed_addr[2], packed_addr[3]);
+void dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code, u8_t reason) {
+    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELETED, code, reason);
 }
 
 // Process incoming DTN ICMPv6 message
@@ -190,7 +179,7 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
 
             char src_addr_str[IP6ADDR_STRLEN_MAX];
-            ip6addr_ntoa_r(&src_addr, src_addr_str, sizeof(src_addr_str));
+            ip6addr_ntoa_r(src_addr, src_addr_str, sizeof(src_addr_str));
 
             DTN_INFO(
                 "DTN ICMPv6: Received PCK-RECEIVED type %d code %d from %s, timestamp %u, reason "
@@ -199,44 +188,45 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
                 dtn_payload->reason_code);
 
             // Extract original IPv6 header
-            struct ip6_hdr* orig_ip6hdr = extract_original_header(icmp6hdr);
+            // struct ip6_hdr* orig_ip6hdr = extract_original_header(icmp6hdr);
 
             // Delete the stored packet
-            struct pbuf* icmp_with_ipv6 = pbuf_alloc(PBUF_RAW, IP6_HLEN + p->tot_len, PBUF_RAM);
-            if (icmp_with_ipv6 != NULL) {
-                // Copy the outer IPv6 header
-                struct ip6_hdr* outer_ipv6 = (struct ip6_hdr*)icmp_with_ipv6->payload;
-                // Set basic IPv6 header fields
-                IP6H_VTCFL_SET(outer_ipv6, 6, 0, 0);
-                IP6H_PLEN_SET(outer_ipv6, p->tot_len);
-                IP6H_NEXTH_SET(outer_ipv6, IP6_NEXTH_ICMP6);
-                IP6H_HOPLIM_SET(outer_ipv6, 255);
-                // Copy source and destination from current IP context
-                memcpy(&outer_ipv6->src, ip6_current_src_addr(), sizeof(ip6_addr_p_t));
-                memcpy(&outer_ipv6->dest, ip6_current_dest_addr(), sizeof(ip6_addr_p_t));
+            // struct pbuf* icmp_with_ipv6 = pbuf_alloc(PBUF_RAW, IP6_HLEN + p->tot_len, PBUF_RAM);
+            // if (icmp_with_ipv6 != NULL) {
+            //     // Copy the outer IPv6 header
+            //     struct ip6_hdr* outer_ipv6 = (struct ip6_hdr*)icmp_with_ipv6->payload;
+            //     // Set basic IPv6 header fields
+            //     IP6H_VTCFL_SET(outer_ipv6, 6, 0, 0);
+            //     IP6H_PLEN_SET(outer_ipv6, p->tot_len);
+            //     IP6H_NEXTH_SET(outer_ipv6, IP6_NEXTH_ICMP6);
+            //     IP6H_HOPLIM_SET(outer_ipv6, 255);
+            //     // Copy source and destination from current IP context
+            //     memcpy(&outer_ipv6->src, ip6_current_src_addr(), sizeof(ip6_addr_p_t));
+            //     memcpy(&outer_ipv6->dest, ip6_current_dest_addr(), sizeof(ip6_addr_p_t));
 
-                // Copy the ICMP payload
-                if (pbuf_copy_partial(p, (u8_t*)icmp_with_ipv6->payload + IP6_HLEN, p->tot_len,
-                                      0) == p->tot_len) {
-                    dtn_storage_delete_packet_by_icmp_data(global_dtn_module->storage,
-                                                           icmp_with_ipv6);
-                } else {
-                    dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage, orig_ip6hdr);
-                }
-                pbuf_free(icmp_with_ipv6);
-            } else {
-                dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage, orig_ip6hdr);
-            }
+            //     // Copy the ICMP payload
+            //     if (pbuf_copy_partial(p, (u8_t*)icmp_with_ipv6->payload + IP6_HLEN, p->tot_len,
+            //                           0) == p->tot_len) {
+            //         dtn_storage_delete_packet_by_icmp_data(global_dtn_module->storage,
+            //                                                icmp_with_ipv6);
+            //     } else {
+            //         dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage,
+            //         orig_ip6hdr);
+            //     }
+            //     pbuf_free(icmp_with_ipv6);
+            // } else {
+            //     dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage, orig_ip6hdr);
+            // }
 
-            // Remove tracking for this destination
-            ip6_addr_t dest_addr;
+            // // Remove tracking for this destination
+            // ip6_addr_t dest_addr;
 
-            u32_t temp_addr[4];
-            memcpy(temp_addr, orig_ip6hdr->dest.addr, sizeof(temp_addr));
-            packed_ip6_addr_to_ip6_addr_t(temp_addr, &dest_addr);
+            // u32_t temp_addr[4];
+            // memcpy(temp_addr, orig_ip6hdr->dest.addr, sizeof(temp_addr));
+            // packed_ip6_addr_to_ip6_addr_t(temp_addr, &dest_addr);
 
             // Remove destination from forwarding tracking list
-            dtn_controller_remove_tracking(global_dtn_module->controller, &dest_addr);
+            // dtn_controller_remove_tracking(global_dtn_module->controller, &dest_addr);
 
             return 1;
         }

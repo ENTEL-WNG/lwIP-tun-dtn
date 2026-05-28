@@ -21,7 +21,7 @@
 #include <linux/if_packet.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include <netinet/ip6.h>
+#include "lwip/prot/ip6.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -130,23 +130,31 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
 }
 #endif
 
-dtn_socket_result_t dtn_raw_socket_send_to_node_id(struct pbuf* p, int node_id,
-                                                   const ip6_addr_t* dest_addr) {
+const DtnInterface* dtn_raw_socket_get_interface_for_node(int node_id) {
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        const DtnInterface* iface = &dtn_config.interfaces[i];
-        if (iface->remote_node_id != node_id) {
-            continue;
+        if (dtn_config.interfaces[i].remote_node_id == node_id) {
+            return &dtn_config.interfaces[i];
         }
-
-        DTN_DEBUG("Raw Socket: sending to node %d via interface %s", node_id, iface->name);
-        return dtn_raw_socket_send_via_interface(p, dest_addr, iface);
     }
     DTN_WARN("Raw Socket: no interface configured for node id %d", node_id);
-    return DTN_SOCKET_ERR_SEND;
+    return NULL;
 }
 
-dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
-                                                        const ip6_addr_t* dest_addr) {
+dtn_socket_result_t dtn_raw_socket_send_to_node_id(struct pbuf* p, int node_id) {
+    const DtnInterface* iface = dtn_raw_socket_get_interface_for_node(node_id);
+    if (iface == NULL) {
+        return DTN_SOCKET_ERR_SEND;
+    }
+
+    DTN_DEBUG("Raw Socket: sending to node %d via interface %s", node_id, iface->name);
+    return dtn_raw_socket_send_via_interface(p, iface);
+}
+
+dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p) {
+    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
+    ip6_addr_t dest_addr;
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+
     int interface_to_use = -1;
     for (int i = 0; i < dtn_config.interface_count; i++) {
         const DtnInterface* iface = &dtn_config.interfaces[i];
@@ -154,7 +162,7 @@ dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
 
         for (int j = 0; j < iface->dtn_address_count; j++) {
             if (ip6addr_aton(iface->dtn_addresses[j], &candidate) &&
-                ip6_addr_zoneless_eq(dest_addr, &candidate)) {
+                ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
                 interface_to_use = i;
                 break;
             }
@@ -165,7 +173,7 @@ dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
 
         for (int j = 0; j < iface->address_count; j++) {
             if (ip6addr_aton(iface->addresses[j], &candidate) &&
-                ip6_addr_zoneless_eq(dest_addr, &candidate)) {
+                ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
                 interface_to_use = i;
                 break;
             }
@@ -176,7 +184,7 @@ dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
     }
 
     char dest_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
+    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
     if (interface_to_use == -1) {
         DTN_WARN("No route/interface defined for destination %s, using 0", dest_str);
         interface_to_use = 0;
@@ -186,11 +194,11 @@ dtn_socket_result_t dtn_raw_socket_send_to_ipv6_address(struct pbuf* p,
     DTN_INFO("Sending packet to dest: %s using interface %s (fd=%d)", dest_str, iface->name,
              iface->socket);
 
-    return dtn_raw_socket_send_via_interface(p, dest_addr, iface);
+    return dtn_raw_socket_send_via_interface(p, iface);
 }
 
 #ifdef USE_AF_INET6
-dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_addr_t* dest_addr,
+dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
                                                       const DtnInterface* dtn_interface) {
     if (p->tot_len > 2048) {
         DTN_ERROR("Packet too large for raw socket buffer.");
@@ -203,10 +211,14 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_
         return DTN_SOCKET_ERR_COPY;
     }
 
+    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
+    ip6_addr_t dest_addr;
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+
     struct sockaddr_in6 sa6 = {0};
     sa6.sin6_family = AF_INET6;
     /* lwIP stores addr[4] in network byte order — same layout as in6_addr. */
-    memcpy(&sa6.sin6_addr, dest_addr->addr, sizeof(sa6.sin6_addr));
+    memcpy(&sa6.sin6_addr, dest_addr.addr, sizeof(sa6.sin6_addr));
     /* Link-local destinations need a scope id to select the outgoing interface. */
     if (IN6_IS_ADDR_LINKLOCAL(&sa6.sin6_addr)) {
         sa6.sin6_scope_id = if_nametoindex(dtn_interface->name);
@@ -234,7 +246,7 @@ static int parse_mac(const char* mac_str, uint8_t mac[6]) {
                : -1;
 }
 
-dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const ip6_addr_t* dest_addr,
+dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
                                                       const DtnInterface* dtn_interface) {
     uint8_t buf[ETH_HDR_LEN + 2048];
 
