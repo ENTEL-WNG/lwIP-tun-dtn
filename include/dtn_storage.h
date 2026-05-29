@@ -52,10 +52,16 @@ typedef struct Storage_Function {
 Storage_Function* dtn_storage_create(DTN_Module* parent);
 void dtn_storage_destroy(Storage_Function* storage);
 
+typedef enum {
+    DTN_STORAGE_STORE_OK = 0,
+    DTN_STORAGE_STORE_FULL = 1,
+    DTN_STORAGE_STORE_ERR = -1,
+} dtn_storage_store_packet_result_t;
+
 // Write
-int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
-                             const ip6_addr_t* original_dest,
-                             const DtnRoutingResult* routing_result);
+dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage,
+                                                           struct pbuf* p,
+                                                           const DtnRoutingResult* routing_result);
 
 // Query
 int dtn_storage_is_full(Storage_Function* storage);

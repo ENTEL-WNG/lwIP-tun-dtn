@@ -144,23 +144,84 @@ bool dtn_strip_custodian_option(struct pbuf** p) {
     return true;
 }
 
-bool dtn_update_or_add_custodian_option(struct pbuf** p, const ip6_addr_t* custodian) {
-    if (!p || !*p || !custodian)
-        return false;
-    struct pbuf* orig = *p;
-    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)orig->payload;
+struct pbuf* dtn_update_or_add_custodian_option(const struct pbuf* orig,
+                                                const ip6_addr_t* custodian) {
+    if (!orig || !custodian)
+        return NULL;
+
+    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)orig->payload;
 
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_HOPOPTS) {
-        struct hbh_hdr* hbh = (struct hbh_hdr*)((uint8_t*)orig->payload + IP6_HLEN);
+        const struct hbh_hdr* hbh =
+            (const struct hbh_hdr*)((const uint8_t*)orig->payload + IP6_HLEN);
+
         if (hbh->opt_type == CUSTODY_OPTION_TYPE && hbh->opt_data_len == 16) {
-            memcpy(hbh->addr, custodian->addr, 16);
-            return true;
-        } else {
-            if (!dtn_strip_custodian_option(p))
-                return false;
-            return dtn_add_custodian_option(p, custodian);
+            // Already has our custody option — copy the packet and update the address.
+            struct pbuf* newp = pbuf_alloc(PBUF_RAW, orig->tot_len, PBUF_RAM);
+            if (!newp)
+                return NULL;
+            memcpy(newp->payload, orig->payload, orig->tot_len);
+            struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+            memcpy(new_hbh->addr, custodian->addr, 16);
+            return newp;
         }
-    } else {
-        return dtn_add_custodian_option(p, custodian);
+
+        // Has a different HBH option — replace it with a fresh custody HBH.
+        // The existing HBH is assumed to be exactly HBH_OPT_HDR_LEN bytes (our format),
+        // so the new packet is the same total size.
+        uint8_t next_nexth = hbh->next_header;
+        uint16_t orig_plen = IP6H_PLEN(ip6hdr);
+
+        struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + orig_plen, PBUF_RAM);
+        if (!newp)
+            return NULL;
+
+        memcpy(newp->payload, ip6hdr, IP6_HLEN);
+        struct ip6_hdr* new_ip6 = newp->payload;
+        IP6H_NEXTH_SET(new_ip6, IP6_NEXTH_HOPOPTS);
+        IP6H_PLEN_SET(new_ip6, orig_plen);
+
+        struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+        new_hbh->next_header = next_nexth;
+        new_hbh->hdr_ext_len = (HBH_OPT_HDR_LEN / 8) - 1;
+        new_hbh->opt_type = CUSTODY_OPTION_TYPE;
+        new_hbh->opt_data_len = 16;
+        memcpy(new_hbh->addr, custodian->addr, 16);
+        memset(new_hbh->pad, 0, sizeof(new_hbh->pad));
+
+        // Copy payload that came after the old HBH header.
+        uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+        const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+        memcpy(dst, src, orig->tot_len - IP6_HLEN - HBH_OPT_HDR_LEN);
+
+        return newp;
     }
+
+    // No HBH header — add one.
+    uint8_t old_nexth = IP6H_NEXTH(ip6hdr);
+    uint16_t orig_plen = IP6H_PLEN(ip6hdr);
+    uint16_t new_plen = orig_plen + HBH_OPT_HDR_LEN;
+
+    struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_plen, PBUF_RAM);
+    if (!newp)
+        return NULL;
+
+    memcpy(newp->payload, ip6hdr, IP6_HLEN);
+    struct ip6_hdr* new_ip6 = newp->payload;
+    IP6H_NEXTH_SET(new_ip6, IP6_NEXTH_HOPOPTS);
+    IP6H_PLEN_SET(new_ip6, new_plen);
+
+    struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+    new_hbh->next_header = old_nexth;
+    new_hbh->hdr_ext_len = (HBH_OPT_HDR_LEN / 8) - 1;
+    new_hbh->opt_type = CUSTODY_OPTION_TYPE;
+    new_hbh->opt_data_len = 16;
+    memcpy(new_hbh->addr, custodian->addr, 16);
+    memset(new_hbh->pad, 0, sizeof(new_hbh->pad));
+
+    uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+    const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN;
+    memcpy(dst, src, orig->tot_len - IP6_HLEN);
+
+    return newp;
 }

@@ -215,31 +215,29 @@ int dtn_storage_is_full(Storage_Function* storage) {
     return dtn_storage_count(storage) >= MAX_STORED_PACKETS;
 }
 
-int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
-                             const ip6_addr_t* original_dest,
-                             const DtnRoutingResult* routing_result) {
-    if (!storage || !p || !original_dest || !routing_result) {
+dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage,
+                                                           struct pbuf* p,
+                                                           const DtnRoutingResult* routing_result) {
+    if (!storage || !p || !routing_result) {
         DTN_ERROR("Invalid arguments to store_packet.");
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
 
     if (dtn_storage_is_full(storage)) {
-        char addr_str[IP6ADDR_STRLEN_MAX];
-        ip6addr_ntoa_r(original_dest, addr_str, sizeof(addr_str));
-        DTN_INFO("Storage is full. Cannot store packet for %s.", addr_str);
-        return 0;
+        DTN_INFO("Storage is full. Cannot store packet.");
+        return DTN_STORAGE_STORE_FULL;
     }
 
     // Copy the packet so we can strip headers without touching the caller's pbuf.
     struct pbuf* p_to_store = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
     if (!p_to_store) {
         DTN_ERROR("Failed to allocate pbuf for storage copy");
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
     if (pbuf_copy(p_to_store, p) != ERR_OK) {
         DTN_ERROR("Failed to copy packet for storage");
         pbuf_free(p_to_store);
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
     dtn_strip_custodian_option(&p_to_store);
 
@@ -247,7 +245,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     if (p_to_store->len < IP6_HLEN) {
         DTN_ERROR("Packet too short to extract src address");
         pbuf_free(p_to_store);
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p_to_store->payload;
     ip6_addr_t src_addr;
@@ -256,8 +254,8 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     ip6_addr_set_zone(&src_addr, IP6_NO_ZONE);
 #endif
 
-    // Normalise dest zone too.
-    ip6_addr_t dest_nozone = *original_dest;
+    ip6_addr_t dest_nozone;
+    ip6_addr_copy_from_packed(dest_nozone, ip6hdr->dest);
 #if LWIP_IPV6_SCOPES
     ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
 #endif
@@ -267,13 +265,13 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     if (!buf) {
         DTN_ERROR("Failed to allocate serialisation buffer");
         pbuf_free(p_to_store);
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
     if (pbuf_copy_partial(p_to_store, buf, pkt_len, 0) != pkt_len) {
         DTN_ERROR("pbuf_copy_partial failed");
         free(buf);
         pbuf_free(p_to_store);
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
     pbuf_free(p_to_store);
 
@@ -288,7 +286,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
     if (rc != SQLITE_OK) {
         DTN_ERROR("Failed to prepare INSERT: %s", sqlite3_errmsg(storage->db));
         free(buf);
-        return 0;
+        return DTN_STORAGE_STORE_ERR;
     }
 
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)sys_now());
@@ -304,7 +302,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
         DTN_ERROR("INSERT failed: %s", sqlite3_errmsg(storage->db));
     } else {
         char addr_str[IP6ADDR_STRLEN_MAX];
-        ip6addr_ntoa_r(original_dest, addr_str, sizeof(addr_str));
+        ip6addr_ntoa_r(&dest_nozone, addr_str, sizeof(addr_str));
         DTN_INFO("Packet for %s stored (rowid %" PRId64 ", delivery_time=%.2f). Total stored: %d",
                  addr_str, (int64_t)sqlite3_last_insert_rowid(storage->db),
                  routing_result->best_delivery_time, dtn_storage_count(storage));
@@ -312,7 +310,7 @@ int dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
 
     sqlite3_finalize(stmt);
     free(buf);
-    return ok ? 1 : 0;
+    return ok ? DTN_STORAGE_STORE_OK : DTN_STORAGE_STORE_ERR;
 }
 
 int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,

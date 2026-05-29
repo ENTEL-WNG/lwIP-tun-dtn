@@ -207,6 +207,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     }
 
     if (has_custodian) {
+        // src: me. - dest: old custodian
         dtn_icmpv6_send_pck_received(p, ICMP6_CODE_DTN_NO_INFO);
     }
 
@@ -241,13 +242,29 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    dtn_controller_send_or_store(controller, p);
+    DtnRoutingResult routing_result;
+    dtn_controller_process_outgoing_result_t result =
+        dtn_controller_process_outgoing(controller, p, &routing_result);
+
+    switch (result) {
+        case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+            dtn_controller_send(p, routing_result);
+            dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+            return;
+        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
+            dtn_controller_store(controller->parent_module->storage, p, &routing_result);
+            return;
+        default:
+            break;
+    }
+
     // pbuf_free(p);
     return;
 }
 
-dtn_controller_send_or_store_result_t dtn_controller_send_or_store(DTN_Controller* controller,
-                                                                   struct pbuf* p) {
+dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(
+    DTN_Controller* controller, struct pbuf* p, DtnRoutingResult* out_routing_result) {
+    Routing_Function* routing = controller->parent_module->routing;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
 
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX],
@@ -264,109 +281,80 @@ dtn_controller_send_or_store_result_t dtn_controller_send_or_store(DTN_Controlle
         strncpy(custodian_str, "NONE", sizeof(custodian_str));
     }
 
-    DTN_INFO("Attempting to send or store package with src: %s -> dest: %s | custodian: %s",
-             src_str, dest_str, custodian_str);
-
-    DtnRoutingResult routing_result;
-    dtn_controller_send_result_t send_status = dtn_controller_send(controller, p, &routing_result);
-
-    if (send_status == DTN_CONTROLLER_SEND_ERR) {
-        return DTN_CONTROLLER_SEND_OR_STORE_ERR;
-    }
-
-    if (send_status == DTN_CONTROLLER_SEND_OK) {
-        DTN_INFO("Successfully send package src: %s -> dest: %s", src_str, dest_str);
-        return DTN_CONTROLLER_SEND_OR_STORE_OK;
-    }
-
-    if (send_status == DTN_CONTROLLER_SEND_NOT_ACTIVE) {
-        Storage_Function* storage = controller->parent_module->storage;
-        if (dtn_storage_store_packet(storage, p, &dest_addr, &routing_result)) {
-            DTN_INFO("Successfully stored package src: %s -> dest: %s for later forwarding",
-                     src_str, dest_str);
-            return DTN_CONTROLLER_SEND_OR_STORE_OK;
-        }
-
-        DTN_ERROR("Failed to store package src: %s -> dest: %s for later forwarding", src_str,
-                  dest_str);
-        return DTN_CONTROLLER_SEND_OR_STORE_ERR;
-    }
-
-    DTN_WARN("No route for package src: %s -> dest: %s, falling back to direct send", src_str,
-             dest_str);
-    dtn_socket_result_t socket_result = dtn_raw_socket_send(p);
-    if (socket_result == DTN_SOCKET_OK) {
-        return DTN_CONTROLLER_SEND_OR_STORE_OK;
-    }
-
-    return DTN_CONTROLLER_SEND_OR_STORE_ERR;
-}
-
-dtn_controller_send_result_t dtn_controller_send(DTN_Controller* controller, struct pbuf* p,
-                                                 DtnRoutingResult* routing_result) {
-    if (!controller || !controller->parent_module || !p || !routing_result) {
-        return DTN_CONTROLLER_SEND_ERR;
-    }
-
-    Routing_Function* routing = controller->parent_module->routing;
-
-    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
-
-    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX],
-        custodian_str[IP6ADDR_STRLEN_MAX];
-    ip6_addr_t src_addr, dest_addr, custodian_addr;
-    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
-    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
-    ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
-    bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
-    if (has_custodian) {
-        ip6addr_ntoa_r(&custodian_addr, custodian_str, sizeof(custodian_str));
-    } else {
-        strncpy(custodian_str, "NONE", sizeof(custodian_str));
-    }
-
-    DTN_INFO("Attempting to send package with src: %s -> dest: %s | custodian: %s", src_str,
+    DTN_INFO("Processing outgoing package with src: %s -> dest: %s | custodian: %s", src_str,
              dest_str, custodian_str);
 
+    DtnRoutingResult routing_result;
     dtn_routing_result_t routing_status = dtn_routing_get_next_hop_node_id(
-        routing->base_time_in_ms, sys_now(), (struct ip6_hdr*)ip6hdr, routing_result);
+        routing->base_time_in_ms, sys_now(), (struct ip6_hdr*)ip6hdr, &routing_result);
+    if (out_routing_result)
+        *out_routing_result = routing_result;
 
-    if (routing_status == DTN_ROUTING_NO_ROUTE) {
-        return DTN_CONTROLLER_SEND_NO_ROUTE;
-    }
-
+    // No route found
     if (routing_status != DTN_ROUTING_OK) {
-        return DTN_CONTROLLER_SEND_ERR;
+        if (routing_status == DTN_ROUTING_NO_ROUTE) {
+            DTN_ERROR("No route found for package with src: %s -> dest: %s", src_str, dest_str);
+        }
+
+        dtn_socket_result_t socket_result = dtn_raw_socket_send(p);
+        if (socket_result != DTN_SOCKET_OK) {
+            return DTN_CONTROLLER_PROCESS_OUTGOING_SEND;
+        }
+
+        return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
     }
 
     bool is_next_hop_active;
-    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result->next_hop_node_id,
+    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result.next_hop_node_id,
                                                        &is_next_hop_active);
 
+    // Store
     if (active_result == DTN_ROUTING_OK && !is_next_hop_active) {
-        return DTN_CONTROLLER_SEND_NOT_ACTIVE;
+        return DTN_CONTROLLER_PROCESS_OUTGOING_STORE;
     }
 
+    return DTN_CONTROLLER_PROCESS_OUTGOING_OK;
+}
+
+dtn_storage_store_packet_result_t dtn_controller_store(Storage_Function* storage, struct pbuf* p,
+                                                       const DtnRoutingResult* routing_result) {
+    dtn_storage_store_packet_result_t result = dtn_storage_store_packet(storage, p, routing_result);
+    if (result == DTN_STORAGE_STORE_OK) {
+        DTN_DEBUG("Succssfull stored message");
+    } else {
+        DTN_ERROR("Failed to stored message");
+    }
+
+    return result;
+}
+
+dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result) {
     const DtnInterface* dtn_interface =
-        dtn_raw_socket_get_interface_for_node(routing_result->next_hop_node_id);
+        dtn_raw_socket_get_interface_for_node(routing_result.next_hop_node_id);
 
     if (!dtn_interface) {
-        return DTN_CONTROLLER_SEND_ERR;
+        return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
     }
 
+    struct pbuf* send_p = p;
     ip6_addr_t local_addr;
     ip6addr_aton(dtn_interface->local_addr, &local_addr);
-    dtn_update_or_add_custodian_option(&p, &local_addr);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
+    if (p_custodian)
+        send_p = p_custodian;
 
-    dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(p, dtn_interface);
+    dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(send_p, dtn_interface);
+
+    if (send_p != p)
+        pbuf_free(send_p);
 
     if (socket_result == DTN_SOCKET_OK) {
-        // dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
-        return DTN_CONTROLLER_SEND_OK;
+        DTN_DEBUG("Succssfull send message");
+    } else {
+        DTN_ERROR("Failed to send message");
     }
 
-    return DTN_CONTROLLER_SEND_ERR;
+    return socket_result;
 }
 
 void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct netif* netif_out) {
@@ -414,24 +402,27 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
                  src_str, dest_str, custodian_str);
 
         DtnRoutingResult routing_result;
-        dtn_controller_send_result_t send_result =
-            dtn_controller_send(controller, p, &routing_result);
-        switch (send_result) {
-            case DTN_CONTROLLER_SEND_OK:
-                DTN_INFO("Successfully send stored package src: %s -> dest: %s", src_str, dest_str);
+        dtn_controller_process_outgoing_result_t result =
+            dtn_controller_process_outgoing(controller, p, &routing_result);
+        switch (result) {
+            case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+                dtn_controller_send(p, routing_result);
+                dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
                 break;
-            case DTN_CONTROLLER_SEND_NOT_ACTIVE:
-                DTN_ERROR("No route for stored package src: %s -> dest: %s", src_str, dest_str);
+            case DTN_CONTROLLER_PROCESS_OUTGOING_SEND:
+                DTN_INFO("Successfully sent stored package src: %s -> dest: %s", src_str, dest_str);
                 break;
-            case DTN_CONTROLLER_SEND_NO_ROUTE:
-                DTN_ERROR("No route for stored package src: %s -> dest: %s", src_str, dest_str);
+            case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
+                DTN_INFO("Re-stored package src: %s -> dest: %s (contact not yet active)", src_str,
+                         dest_str);
                 break;
-            case DTN_CONTROLLER_SEND_ERR:
+            case DTN_CONTROLLER_PROCESS_OUTGOING_ERR:
                 DTN_ERROR("Failed to send stored package src: %s -> dest: %s", src_str, dest_str);
                 break;
         }
 
-        // Free the pbuf if it wasn't consumed by dtn_update_or_add_custodian_option.
+        // dtn_controller_send never frees entry->p; the custodian-stamped copy
+        // (if any) is freed inside that function, so this is always safe.
         if (entry->p != NULL) {
             pbuf_free(entry->p);
             entry->p = NULL;

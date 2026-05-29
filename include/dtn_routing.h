@@ -80,7 +80,7 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(
 
 // int ip6_addr_to_str(const ip6_addr_t* a, char* buf, size_t buflen);
 
-// long ipv6_to_nodeid(const char* ip6);
+long dtn_routing_ipv6_to_nodeid(const char* ip6);
 
 // int nodeid_to_ipv6(long node_id, ip6_addr_t* out);
 

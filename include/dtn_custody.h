@@ -32,6 +32,9 @@ bool dtn_extract_custodian_option(const struct pbuf* p, ip6_addr_t* custodian_ou
 
 bool dtn_strip_custodian_option(struct pbuf** p);
 
-bool dtn_update_or_add_custodian_option(struct pbuf** p, const ip6_addr_t* custodian);
+// Returns a newly-allocated pbuf with the custodian option added or updated.
+// The original pbuf is left untouched. Returns NULL on allocation failure.
+struct pbuf* dtn_update_or_add_custodian_option(const struct pbuf* orig,
+                                                const ip6_addr_t* custodian);
 
 #endif

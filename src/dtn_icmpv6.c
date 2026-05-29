@@ -36,9 +36,8 @@
 #include "raw_socket.h"
 
 extern DTN_Module* global_dtn_module;
-extern void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
-                                                   struct ip6_hdr* orig_ip6hdr);
-
+// extern void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
+//                                                    struct ip6_hdr* orig_ip6hdr);
 // Structure for DTN custom ICMPv6 message payload
 #pragma pack(1)
 typedef struct {
@@ -49,9 +48,12 @@ typedef struct {
 } dtn_icmpv6_payload_t;
 #pragma pack()
 
-static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code, u8_t reason) {
+static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_t* src_addr,
+                                                                 ip6_addr_t* dest_addr,
+                                                                 DtnInterface* dtn_interface,
+                                                                 const struct pbuf* p, u8_t type,
+                                                                 u8_t code, u8_t reason) {
     const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)p->payload;
-
     struct pbuf* q;
     struct icmp6_hdr* icmp6hdr;
     dtn_icmpv6_payload_t* dtn_payload;
@@ -62,7 +64,7 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
     q = pbuf_alloc(PBUF_IP, sizeof(struct icmp6_hdr) + datalen, PBUF_RAM);
     if (q == NULL) {
         DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for message");
-        return ERR_MEM;
+        return DTN_ICMPV6_SEND_MESSAGE_ERR;
     }
 
     // Set up ICMP header
@@ -81,28 +83,16 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
     // Copy IPv6 header + first 8 bytes of payload from original packet
     pbuf_copy_partial(p, (u8_t*)(dtn_payload + 1), IP6_HLEN + 8, 0);
 
-    ip6_addr_t src_addr, dest_addr;
-    ip6addr_aton(dtn_config.lwip_ipv6_addr, &src_addr);
-    if (type == ICMP6_TYPE_DTN_PCK_DELIVERED) {
-        ip6_addr_copy_from_packed(dest_addr, orig_ip6hdr->src);
-    } else {
-        bool has_custodian = dtn_extract_custodian_option(p, &dest_addr);
-        if (!has_custodian) {
-            DTN_ERROR("No custodian in dnt_icmpv6_send_message");
-            return -1;
-        }
-    }
-
     // Calculate checksum
     icmp6hdr->chksum = 0;
-    icmp6hdr->chksum = ip6_chksum_pseudo(q, IP6_NEXTH_ICMP6, q->tot_len, &src_addr, &dest_addr);
+    icmp6hdr->chksum = ip6_chksum_pseudo(q, IP6_NEXTH_ICMP6, q->tot_len, src_addr, dest_addr);
 
     // New Header
     struct pbuf* complete_pkt = pbuf_alloc(PBUF_IP, IP6_HLEN + q->tot_len, PBUF_RAM);
     if (complete_pkt == NULL) {
         DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for complete packet");
         pbuf_free(q);
-        return ERR_MEM;
+        return DTN_ICMPV6_SEND_MESSAGE_ERR;
     }
 
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)complete_pkt->payload;
@@ -112,8 +102,8 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
     IP6H_HOPLIM_SET(ip6hdr, 255);
 
     // Set source and destination
-    ip6_addr_copy_to_packed(ip6hdr->src, src_addr);
-    ip6_addr_copy_to_packed(ip6hdr->dest, dest_addr);
+    ip6_addr_copy_to_packed(ip6hdr->src, *src_addr);
+    ip6_addr_copy_to_packed(ip6hdr->dest, *dest_addr);
 
     // Copy ICMPv6 message after IPv6 header
     if (pbuf_copy_partial(q, (u8_t*)complete_pkt->payload + IP6_HLEN, q->tot_len, 0) !=
@@ -121,46 +111,105 @@ static err_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type, u8_t code,
         DTN_ERROR("DTN ICMPv6: Failed to copy ICMPv6 message to complete packet");
         pbuf_free(q);
         pbuf_free(complete_pkt);
-        return ERR_BUF;
+        return DTN_ICMPV6_SEND_MESSAGE_ERR;
     }
 
-    /* dtn_controller_send_or_store takes ownership of complete_pkt and frees it. */
-    dtn_controller_send_or_store_result_t send_result =
-        dtn_controller_send_or_store(global_dtn_module->controller, complete_pkt);
+    DtnRoutingResult routing_result;
+    dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(
+        global_dtn_module->controller, complete_pkt, &routing_result);
 
-    char dest_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
+    dtn_icmpv6_send_message_result_t result;
+    switch (outgoing_result) {
+        case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
+            dtn_socket_result_t socket_result =
+                dtn_raw_socket_send_via_interface(complete_pkt, dtn_interface);
 
-    if (send_result == DTN_CONTROLLER_SEND_OR_STORE_OK) {
-        DTN_INFO("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d",
-                 dtn_config.lwip_ipv6_addr, dest_str, type, code);
-    } else {
-        DTN_ERROR("Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error %d",
-                  dtn_config.lwip_ipv6_addr, dest_str, type, code, send_result);
+            char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
+            ip6addr_ntoa_r(src_addr, src_str, sizeof(src_str));
+            ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
+            if (socket_result == DTN_SOCKET_OK) {
+                DTN_INFO("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d",
+                         src_str, dest_str, type, code);
+                result = DTN_ICMPV6_SEND_MESSAGE_OK;
+            } else {
+                DTN_ERROR(
+                    "Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error "
+                    "%d",
+                    src_str, dest_str, type, code, socket_result);
+                result = DTN_ICMPV6_SEND_MESSAGE_ERR;
+            }
+            break;
+        }
+        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
+            dtn_controller_store(global_dtn_module->storage, complete_pkt, &routing_result);
+            result = DTN_ICMPV6_SEND_MESSAGE_STORED;
+            break;
+        default:
+            result = DTN_ICMPV6_SEND_MESSAGE_ERR;
+            break;
     }
 
+    pbuf_free(complete_pkt);
     pbuf_free(q);
-    return 0;
+    return result;
+}
+
+static dtn_icmpv6_send_message_result_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type,
+                                                                u8_t code, u8_t reason) {
+    ip6_addr_t src_addr, dest_addr, custodian_addr;
+
+    bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
+    // We are assuming if no custodian than the previoys hop is not a dtn node and the we set
+    // the src of the package as the custodian
+    if (!has_custodian) {
+        DTN_WARN("No custodian in dnt_icmpv6_send_pck_received");
+        const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+        ip6_addr_copy_from_packed(custodian_addr, ip6hdr->src);
+    }
+
+    // Send to source of package
+    if (type == ICMP6_TYPE_DTN_PCK_DELIVERED) {
+        const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+        ip6_addr_copy_from_packed(dest_addr, ip6hdr->src);
+    } else {
+        ip6_addr_copy(dest_addr, custodian_addr);
+    }
+
+    // We are assuming that the destination node will be the one who send the message
+    // so the id of the custodian address
+    char custodian_addr_str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(&custodian_addr, custodian_addr_str, sizeof(custodian_addr_str));
+    long dest_node_id = dtn_routing_ipv6_to_nodeid(custodian_addr_str);
+    const DtnInterface* dtn_interface = dtn_raw_socket_get_interface_for_node((int)dest_node_id);
+    if (!dtn_interface) {
+        DTN_ERROR("No interface for custodian address %s", custodian_addr_str);
+        return DTN_ICMPV6_SEND_MESSAGE_ERR;
+    }
+
+    ip6addr_aton(dtn_interface->local_addr, &src_addr);
+
+    return _dtn_icmpv6_send_message(&src_addr, &dest_addr, dtn_interface, p, type, code, reason);
 }
 
 // Send DTN-PCK-RECEIVED message
-void dtn_icmpv6_send_pck_received(const struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_RECEIVED, code, 0);
+dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_received(const struct pbuf* p, u8_t code) {
+    return dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_RECEIVED, code, 0);
 }
 
 // Send DTN-PCK-FORWARDED message
-void dtn_icmpv6_send_pck_forwarded(const struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_FORWARDED, code, 0);
+dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_forwarded(const struct pbuf* p, u8_t code) {
+    return dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_FORWARDED, code, 0);
 }
 
 // Send DTN-PCK-DELIVERED message
-void dtn_icmpv6_send_pck_delivered(const struct pbuf* p, u8_t code) {
-    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELIVERED, code, 0);
+dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_delivered(const struct pbuf* p, u8_t code) {
+    return dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELIVERED, code, 0);
 }
 
 // Send DTN-PCK-DELETED message with additional reason
-void dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code, u8_t reason) {
-    dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELETED, code, reason);
+dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code,
+                                                             u8_t reason) {
+    return dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELETED, code, reason);
 }
 
 // Process incoming DTN ICMPv6 message

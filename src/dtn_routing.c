@@ -167,7 +167,7 @@ dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, i
 // TODO:: Add to config
 // The Last number in the address currently defines the node id
 // fd00:2:3::3 -> node_id == 3
-long _ipv6_to_nodeid(const char* ip6) {
+long dtn_routing_ipv6_to_nodeid(const char* ip6) {
     int length = strlen(ip6);
     if (length > 0) {
         char node_id = ip6[length - 1];
@@ -218,8 +218,8 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms,
 
     long deadline = hoplim * 1000;
     long curr_node_id = (long)dtn_config.id;
-    long src_node_id = _ipv6_to_nodeid(src_string);
-    long dest_node_id = _ipv6_to_nodeid(dest_string);
+    long src_node_id = dtn_routing_ipv6_to_nodeid(src_string);
+    long dest_node_id = dtn_routing_ipv6_to_nodeid(dest_string);
 
     DTN_DEBUG("src_node_id: %ld -> curr_node_id: %ld -> dest_node_id: %ld - deadline: %ld",
               src_node_id, curr_node_id, dest_node_id, deadline);

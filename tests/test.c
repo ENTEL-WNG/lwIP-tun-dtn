@@ -101,10 +101,11 @@ static struct pbuf* add_custodian(struct pbuf* p, const char* custodian_addr) {
     if (!ip6addr_aton(custodian_addr, &custodian))
         return NULL;
 
-    if (!dtn_update_or_add_custodian_option(&p, &custodian))
+    struct pbuf* result = dtn_update_or_add_custodian_option(p, &custodian);
+    if (!result)
         return NULL;
 
-    return p;
+    return result;
 }
 
 void test_storage_sqlite(void) {
@@ -139,11 +140,11 @@ void test_storage_sqlite(void) {
     ip6addr_aton("fd00:2:3::3", &dest);
     DtnRoutingResult rr = make_routing_result(42.5, 100.0);
 
-    int stored = dtn_storage_store_packet(storage, p, &dest, &rr);
+    dtn_storage_store_packet_result_t stored = dtn_storage_store_packet(storage, p, &rr);
     pbuf_free(p);  // storage keeps its own copy
 
-    if (!stored) {
-        DTN_TEST("FAIL: dtn_storage_store_packet returned 0");
+    if (stored != DTN_STORAGE_STORE_OK) {
+        DTN_TEST("FAIL: dtn_storage_store_packet returned error");
         dtn_storage_destroy(storage);
         return;
     }
@@ -221,11 +222,11 @@ void test_storage_sqlite(void) {
 
     p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
     rr = make_routing_result(77.25, 200.0);
-    stored = dtn_storage_store_packet(storage, p, &dest, &rr);
+    stored = dtn_storage_store_packet(storage, p, &rr);
     pbuf_free(p);
 
-    if (!stored) {
-        DTN_TEST("FAIL: store in round-trip phase returned 0");
+    if (stored != DTN_STORAGE_STORE_OK) {
+        DTN_TEST("FAIL: store in round-trip phase returned error");
         dtn_storage_destroy(storage);
         return;
     }
