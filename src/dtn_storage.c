@@ -31,10 +31,6 @@
 #include "lwip/pbuf.h"
 #include "lwip/sys.h"
 
-// Addresses are stored as their raw 16-byte wire representation (no zone field)
-// to make blob comparisons zone-independent.
-#define IPV6_ADDR_BYTES 16
-
 // Bump this whenever the schema changes. On mismatch the table is dropped and
 // recreated so old DBs don't cause INSERT/SELECT failures.
 #define SCHEMA_VERSION 1
@@ -45,8 +41,9 @@ static const char* CREATE_TABLE_SQL =
     "  stored_time_ms           INTEGER NOT NULL,"
     "  delivery_time_in_sec     REAL    NOT NULL,"
     "  max_delivery_time_in_sec REAL    NOT NULL,"
-    "  src_addr                 BLOB    NOT NULL,"
-    "  original_dest            BLOB    NOT NULL,"
+    "  src_addr                 TEXT    NOT NULL,"
+    "  dest_addr                TEXT    NOT NULL,"
+    "  custodian_addr           TEXT,"
     "  packet_data              BLOB    NOT NULL"
     ");"
     "CREATE INDEX IF NOT EXISTS idx_delivery_time"
@@ -58,15 +55,11 @@ static const char* DROP_TABLE_SQL = "DROP TABLE IF EXISTS stored_packets;";
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-// Bind the 16-byte wire address of an ip6_addr_t to a statement parameter.
-static void bind_ip6_addr(sqlite3_stmt* stmt, int col, const ip6_addr_t* addr) {
-    sqlite3_bind_blob(stmt, col, addr->addr, IPV6_ADDR_BYTES, SQLITE_TRANSIENT);
-}
-
-// Copy a 16-byte blob from a SELECT result into an ip6_addr_t (zone set to 0).
-static void load_ip6_addr(const void* blob, ip6_addr_t* out) {
-    memset(out, 0, sizeof(ip6_addr_t));
-    memcpy(out->addr, blob, IPV6_ADDR_BYTES);
+// Bind a human-readable IPv6 address string to a statement parameter.
+static void bind_ip6_addr_text(sqlite3_stmt* stmt, int col, const ip6_addr_t* addr) {
+    char str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(addr, str, sizeof(str));
+    sqlite3_bind_text(stmt, col, str, -1, SQLITE_TRANSIENT);
 }
 
 // Create the directory hierarchy and open (or create) the SQLite DB.
@@ -95,8 +88,7 @@ static int dtn_storage_init_db(Storage_Function* storage) {
 
     // Open the DB.
     char db_path[MAX_PATH_LENGTH];
-    if (snprintf(db_path, sizeof(db_path), "%s/%s_dtn_packets.db", dtn_config.storage_path,
-                 dtn_config.name) >= (int)sizeof(db_path)) {
+    if (snprintf(db_path, sizeof(db_path), "%s/%s_dtn_packets.db", dtn_config.storage_path, dtn_config.name) >= (int)sizeof(db_path)) {
         DTN_ERROR("DB path too long");
         return 0;
     }
@@ -167,8 +159,7 @@ Storage_Function* dtn_storage_create(DTN_Module* parent) {
     storage->max_storage_bytes = 1024 * 1024;  // 1 MB limit (informational)
     storage->db = NULL;
 
-    DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).",
-             storage->max_storage_bytes, MAX_STORED_PACKETS);
+    DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).", storage->max_storage_bytes, MAX_STORED_PACKETS);
 
     if (!dtn_storage_init_db(storage)) {
         DTN_ERROR("Failed to initialise storage DB");
@@ -197,8 +188,7 @@ int dtn_storage_count(Storage_Function* storage) {
         return 0;
 
     sqlite3_stmt* stmt = NULL;
-    int rc =
-        sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &stmt, NULL);
+    int rc = sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         DTN_ERROR("Failed to prepare COUNT: %s", sqlite3_errmsg(storage->db));
         return 0;
@@ -211,12 +201,9 @@ int dtn_storage_count(Storage_Function* storage) {
     return count;
 }
 
-int dtn_storage_is_full(Storage_Function* storage) {
-    return dtn_storage_count(storage) >= MAX_STORED_PACKETS;
-}
+int dtn_storage_is_full(Storage_Function* storage) { return dtn_storage_count(storage) >= MAX_STORED_PACKETS; }
 
-dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage,
-                                                           struct pbuf* p,
+dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
                                                            const DtnRoutingResult* routing_result) {
     if (!storage || !p || !routing_result) {
         DTN_ERROR("Invalid arguments to store_packet.");
@@ -239,7 +226,7 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         pbuf_free(p_to_store);
         return DTN_STORAGE_STORE_ERR;
     }
-    dtn_strip_custodian_option(&p_to_store);
+    // dtn_strip_custodian_option(&p_to_store);
 
     // Extract source address from the IPv6 header.
     if (p_to_store->len < IP6_HLEN) {
@@ -248,17 +235,19 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         return DTN_STORAGE_STORE_ERR;
     }
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p_to_store->payload;
-    ip6_addr_t src_addr;
+    ip6_addr_t src_addr, dest_addr;
     ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
 #if LWIP_IPV6_SCOPES
     ip6_addr_set_zone(&src_addr, IP6_NO_ZONE);
+    ip6_addr_set_zone(&dest_addr, IP6_NO_ZONE);
 #endif
 
-    ip6_addr_t dest_nozone;
-    ip6_addr_copy_from_packed(dest_nozone, ip6hdr->dest);
-#if LWIP_IPV6_SCOPES
-    ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
-#endif
+    ip6_addr_t custodian_addr;
+    bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
+    char custodian_str[IP6ADDR_STRLEN_MAX];
+    if (has_custodian)
+        ip6addr_ntoa_r(&custodian_addr, custodian_str, sizeof(custodian_str));
 
     u16_t pkt_len = p_to_store->tot_len;
     char* buf = malloc(pkt_len);
@@ -278,8 +267,8 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     const char* sql =
         "INSERT INTO stored_packets"
         " (stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
-        "  src_addr, original_dest, packet_data)"
-        " VALUES (?, ?, ?, ?, ?, ?);";
+        "  src_addr, dest_addr, custodian_addr, packet_data)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?);";
 
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
@@ -292,9 +281,13 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)sys_now());
     sqlite3_bind_double(stmt, 2, routing_result->best_delivery_time);
     sqlite3_bind_double(stmt, 3, routing_result->to_time);
-    bind_ip6_addr(stmt, 4, &src_addr);
-    bind_ip6_addr(stmt, 5, &dest_nozone);
-    sqlite3_bind_blob(stmt, 6, buf, pkt_len, SQLITE_TRANSIENT);
+    bind_ip6_addr_text(stmt, 4, &src_addr);
+    bind_ip6_addr_text(stmt, 5, &dest_addr);
+    if (has_custodian)
+        sqlite3_bind_text(stmt, 6, custodian_str, -1, SQLITE_TRANSIENT);
+    else
+        sqlite3_bind_null(stmt, 6);
+    sqlite3_bind_blob(stmt, 7, buf, pkt_len, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     int ok = (rc == SQLITE_DONE);
@@ -302,10 +295,9 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         DTN_ERROR("INSERT failed: %s", sqlite3_errmsg(storage->db));
     } else {
         char addr_str[IP6ADDR_STRLEN_MAX];
-        ip6addr_ntoa_r(&dest_nozone, addr_str, sizeof(addr_str));
-        DTN_INFO("Packet for %s stored (rowid %" PRId64 ", delivery_time=%.2f). Total stored: %d",
-                 addr_str, (int64_t)sqlite3_last_insert_rowid(storage->db),
-                 routing_result->best_delivery_time, dtn_storage_count(storage));
+        ip6addr_ntoa_r(&dest_addr, addr_str, sizeof(addr_str));
+        DTN_INFO("Packet for %s stored (rowid %" PRId64 ", delivery_time=%.2f). Total stored: %d", addr_str,
+                 (int64_t)sqlite3_last_insert_rowid(storage->db), routing_result->best_delivery_time, dtn_storage_count(storage));
     }
 
     sqlite3_finalize(stmt);
@@ -313,14 +305,13 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     return ok ? DTN_STORAGE_STORE_OK : DTN_STORAGE_STORE_ERR;
 }
 
-int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,
-                                  Stored_Packet_Entry out[], int max_count) {
+int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count) {
     if (!storage || !storage->db || !out || max_count <= 0)
         return 0;
 
     const char* sql =
         "SELECT id, stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
-        "       src_addr, original_dest, packet_data"
+        "       src_addr, dest_addr, custodian_addr, packet_data"
         " FROM stored_packets"
         " WHERE delivery_time_in_sec <= ?"
         " ORDER BY delivery_time_in_sec ASC;";
@@ -341,15 +332,13 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,
         double deliv = sqlite3_column_double(stmt, 2);
         double max_deliv = sqlite3_column_double(stmt, 3);
 
-        const void* src_blob = sqlite3_column_blob(stmt, 4);
-        int src_len = sqlite3_column_bytes(stmt, 4);
-        const void* dest_blob = sqlite3_column_blob(stmt, 5);
-        int dest_len = sqlite3_column_bytes(stmt, 5);
-        const void* pkt_blob = sqlite3_column_blob(stmt, 6);
-        int pkt_len = sqlite3_column_bytes(stmt, 6);
+        const char* src_text = (const char*)sqlite3_column_text(stmt, 4);
+        const char* dest_text = (const char*)sqlite3_column_text(stmt, 5);
+        const char* cust_text = (const char*)sqlite3_column_text(stmt, 6);  // NULL if no custodian
+        const void* pkt_blob = sqlite3_column_blob(stmt, 7);
+        int pkt_len = sqlite3_column_bytes(stmt, 7);
 
-        if (!src_blob || src_len != IPV6_ADDR_BYTES || !dest_blob || dest_len != IPV6_ADDR_BYTES ||
-            !pkt_blob || pkt_len <= 0) {
+        if (!src_text || !dest_text || !pkt_blob || pkt_len <= 0) {
             DTN_WARN("Skipping malformed row %" PRId64, db_id);
             continue;
         }
@@ -371,13 +360,21 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,
         e->delivery_time_in_sec = deliv;
         e->max_delivery_time_in_sec = max_deliv;
         e->p = p;
-        load_ip6_addr(src_blob, &e->src_addr);
-        load_ip6_addr(dest_blob, &e->original_dest);
+        strncpy(e->src_addr, src_text, sizeof(e->src_addr) - 1);
+        e->src_addr[sizeof(e->src_addr) - 1] = '\0';
+        strncpy(e->dest_addr, dest_text, sizeof(e->dest_addr) - 1);
+        e->dest_addr[sizeof(e->dest_addr) - 1] = '\0';
+        if (cust_text) {
+            strncpy(e->custodian_addr, cust_text, sizeof(e->custodian_addr) - 1);
+            e->custodian_addr[sizeof(e->custodian_addr) - 1] = '\0';
+            e->has_custodian = true;
+        } else {
+            e->custodian_addr[0] = '\0';
+            e->has_custodian = false;
+        }
 
-        char addr_str[IP6ADDR_STRLEN_MAX];
-        ip6addr_ntoa_r(&e->original_dest, addr_str, sizeof(addr_str));
-        DTN_INFO("Ready entry: dest=%s delivery_time=%.2f (rowid %" PRId64 ")", addr_str, deliv,
-                 db_id);
+        DTN_INFO("Ready entry: dest=%s custodian=%s delivery_time=%.2f (rowid %" PRId64 ")", e->dest_addr,
+                 e->has_custodian ? e->custodian_addr : "NONE", deliv, db_id);
         n++;
     }
 
@@ -390,8 +387,7 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
         return;
 
     sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE id = ?;", -1, &stmt,
-                                NULL);
+    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE id = ?;", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         DTN_ERROR("Failed to prepare DELETE by id: %s", sqlite3_errmsg(storage->db));
         return;
@@ -407,16 +403,13 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     sqlite3_finalize(stmt);
 }
 
-void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
-                                            struct ip6_hdr* orig_ip6hdr) {
+void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr) {
     if (!storage || !storage->db || !orig_ip6hdr)
         return;
 
     ip6_addr_t src, dest;
-    IP6_ADDR(&src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1], orig_ip6hdr->src.addr[2],
-             orig_ip6hdr->src.addr[3]);
-    IP6_ADDR(&dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1], orig_ip6hdr->dest.addr[2],
-             orig_ip6hdr->dest.addr[3]);
+    IP6_ADDR(&src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1], orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
+    IP6_ADDR(&dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1], orig_ip6hdr->dest.addr[2], orig_ip6hdr->dest.addr[3]);
 
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&src, src_str, sizeof(src_str));
@@ -424,16 +417,14 @@ void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage,
     DTN_INFO("Deleting stored packet matching src=%s dest=%s", src_str, dest_str);
 
     sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(
-        storage->db, "DELETE FROM stored_packets WHERE src_addr = ? AND original_dest = ?;", -1,
-        &stmt, NULL);
+    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE src_addr = ? AND dest_addr = ?;", -1, &stmt, NULL);
     if (rc != SQLITE_OK) {
         DTN_ERROR("Failed to prepare DELETE by ip header: %s", sqlite3_errmsg(storage->db));
         return;
     }
 
-    bind_ip6_addr(stmt, 1, &src);
-    bind_ip6_addr(stmt, 2, &dest);
+    sqlite3_bind_text(stmt, 1, src_str, -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, dest_str, -1, SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         DTN_ERROR("DELETE by ip header failed: %s", sqlite3_errmsg(storage->db));
@@ -461,10 +452,8 @@ void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pb
     const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)orig_ip6_raw;
 
     ip6_addr_t orig_src, orig_dest;
-    IP6_ADDR(&orig_src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1],
-             orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
-    IP6_ADDR(&orig_dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1],
-             orig_ip6hdr->dest.addr[2], orig_ip6hdr->dest.addr[3]);
+    IP6_ADDR(&orig_src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1], orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
+    IP6_ADDR(&orig_dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1], orig_ip6hdr->dest.addr[2], orig_ip6hdr->dest.addr[3]);
 
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&orig_src, src_str, sizeof(src_str));

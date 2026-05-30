@@ -18,7 +18,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "dtn_controller.h"
 #include "dtn_logger.h"
 #include "dtn_routing.h"
 #include "dtn_storage.h"
@@ -31,15 +30,13 @@ DTN_Module* dtn_module_init(void) {
         return NULL;
     }
 
-    module->controller = NULL;
     module->routing = NULL;
     module->storage = NULL;
 
-    module->controller = dtn_controller_create(module);
     module->routing = dtn_routing_create(module);
     module->storage = dtn_storage_create(module);
 
-    if (!module->controller || !module->routing || !module->storage) {
+    if (!module->routing || !module->storage) {
         DTN_ERROR("Failed to create one or more DTN components.");
         dtn_module_cleanup(module);
         return NULL;
@@ -54,7 +51,6 @@ void dtn_module_cleanup(DTN_Module* module) {
         return;
     DTN_INFO("Cleaning up DTN Module...");
 
-    dtn_controller_destroy(module->controller);
     dtn_routing_destroy(module->routing);
     dtn_storage_destroy(module->storage);
 

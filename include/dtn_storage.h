@@ -37,8 +37,10 @@ typedef struct Stored_Packet_Entry {
     u32_t stored_time_ms;
     double delivery_time_in_sec;
     double max_delivery_time_in_sec;
-    ip6_addr_t src_addr;
-    ip6_addr_t original_dest;
+    char src_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
+    char dest_addr[IP6ADDR_STRLEN_MAX];      // human-readable IPv6 string
+    char custodian_addr[IP6ADDR_STRLEN_MAX]; // valid only when has_custodian is true
+    bool has_custodian;
     struct pbuf* p;  // caller-owned; pbuf_free when done
 } Stored_Packet_Entry;
 

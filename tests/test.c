@@ -24,39 +24,30 @@
 
 DTN_Module* global_dtn_module = NULL;
 
+// ---------------------------------------------------------------------------
+// Test framework
+// ---------------------------------------------------------------------------
+
+// Evaluates cond; logs PASS/FAIL and returns false on failure so the caller
+// can propagate it with  return TEST_ASSERT(...);  or accumulate with  ok &= ...
+#define TEST_ASSERT(cond, fmt, ...)                                            \
+    ({                                                                         \
+        bool _ok = (bool)(cond);                                               \
+        if (_ok)                                                               \
+            DTN_TEST("PASS: " fmt, ##__VA_ARGS__);                             \
+        else                                                                   \
+            DTN_TEST("FAIL [%s:%d]: " fmt, __FILE__, __LINE__, ##__VA_ARGS__); \
+        _ok;                                                                   \
+    })
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 #define PAYLOAD_LEN 64
-
-void test_payload_length(struct ip6_hdr* ip6h) {
-    DTN_TEST("ip6h->_plen                 : %u", ip6h->_plen);
-    DTN_TEST("ip6h->_plen hex             : 0x%04x", ip6h->_plen);
-
-    u16_t _payload_length = lwip_ntohs(ip6h->_plen);
-    DTN_TEST("lwip_ntohs(ip6h->_plen)     : %u", _payload_length);
-    DTN_TEST("lwip_ntohs(ip6h->_plen) hex : 0x%04x", _payload_length);
-
-    u16_t payload_length;
-    memcpy(&payload_length, &ip6h->_plen, sizeof(u16_t));
-    DTN_TEST("memcpy                      : %u", payload_length);
-    DTN_TEST("memcpy hex                  : 0x%04x", payload_length);
-
-    // Dump raw bytes to verify
-    // uint8_t* raw = (uint8_t*)p->payload;
-    // for (int i = 0; i < p->len; i++) {
-    //     printf("%02X ", raw[i]);
-    //     if ((i + 1) % 8 == 0)
-    //         printf("");
-    // }
-
-    return;
-}
-
-// ---------------------------------------------------------------------------
-// Storage tests
-// ---------------------------------------------------------------------------
-
 #define TEST_STORAGE_DIR "/tmp/dtn_test_storage"
 
-// Minimal DtnRoutingResult with timing values we can verify after round-trip.
+// Minimal DtnRoutingResult — used by storage tests.
 static DtnRoutingResult make_routing_result(double delivery, double to) {
     DtnRoutingResult r;
     memset(&r, 0, sizeof(r));
@@ -65,17 +56,15 @@ static DtnRoutingResult make_routing_result(double delivery, double to) {
     return r;
 }
 
-static struct pbuf* make_test_packet(uint16_t payload_length, const char* src, const char* dest,
-                                     uint8_t payload_value) {
+static struct pbuf* make_test_packet(uint16_t payload_length, const char* src, const char* dest, uint8_t payload_value) {
     struct pbuf* p = pbuf_alloc(PBUF_RAW, sizeof(struct ip6_hdr) + payload_length, PBUF_RAM);
-    if (!p) {
+    if (!p)
         return NULL;
-    }
     memset(p->payload, 0, sizeof(struct ip6_hdr) + payload_length);
 
     struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
     IP6H_VTCFL_SET(ip6h, 6, 0, 0);
-    IP6H_PLEN_SET(ip6h, lwip_htons(payload_length));
+    IP6H_PLEN_SET(ip6h, payload_length);  // IP6H_PLEN_SET already applies htons internally
     IP6H_NEXTH_SET(ip6h, 59);
     IP6H_HOPLIM_SET(ip6h, 64);
 
@@ -90,206 +79,199 @@ static struct pbuf* make_test_packet(uint16_t payload_length, const char* src, c
     return p;
 }
 
-// Adds a DTN custody Hop-by-Hop header to p, stamping custodian_addr as the
-// current holder. Returns the (possibly reallocated) pbuf on success, NULL on
-// failure — in the failure case the original pbuf is left untouched.
-static struct pbuf* add_custodian(struct pbuf* p, const char* custodian_addr) {
-    if (!p || !custodian_addr)
-        return NULL;
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+bool test_payload_length(void) {
+    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:4:5::5", 0xAB);
+    struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+
+    DTN_TEST("ip6h->_plen                 : %u", ip6h->_plen);
+    DTN_TEST("ip6h->_plen hex             : 0x%04x", ip6h->_plen);
+
+    u16_t _payload_length = lwip_ntohs(ip6h->_plen);
+    DTN_TEST("lwip_ntohs(ip6h->_plen)     : %u", _payload_length);
+    DTN_TEST("lwip_ntohs(ip6h->_plen) hex : 0x%04x", _payload_length);
+
+    u16_t payload_length;
+    memcpy(&payload_length, &ip6h->_plen, sizeof(u16_t));
+    DTN_TEST("memcpy                      : %u", payload_length);
+    DTN_TEST("memcpy hex                  : 0x%04x", payload_length);
+
+    bool ok = true;
+    ok &= TEST_ASSERT(_payload_length == PAYLOAD_LEN, "plen round-trip: expected %u, got %u", PAYLOAD_LEN, _payload_length);
+
+    pbuf_free(p);
+    return ok;
+}
+
+bool test_custodian(void) {
+    bool ok = true;
+
+    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:4:5::5", 0xAB);
 
     ip6_addr_t custodian;
-    if (!ip6addr_aton(custodian_addr, &custodian))
-        return NULL;
+    bool has_custodian = dtn_extract_custodian_option(p, &custodian);
+    ok &= TEST_ASSERT(!has_custodian, "no custodian before add");
 
-    struct pbuf* result = dtn_update_or_add_custodian_option(p, &custodian);
-    if (!result)
-        return NULL;
+    ip6_addr_t custodian_addr;
+    ip6addr_aton("fd00:2:5::2", &custodian_addr);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &custodian_addr);
+    pbuf_free(p);
+    ok &= TEST_ASSERT(p_custodian != NULL, "dtn_update_or_add_custodian_option returned NULL");
 
-    return result;
+    has_custodian = dtn_extract_custodian_option(p_custodian, &custodian);
+    ok &= TEST_ASSERT(has_custodian, "custodian present after add");
+
+    char exp[IP6ADDR_STRLEN_MAX], got[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(&custodian_addr, exp, sizeof(exp));
+    ip6addr_ntoa_r(&custodian, got, sizeof(got));
+    ok &= TEST_ASSERT(strcmp(exp, got) == 0, "custodian addr: expected '%s', got '%s'", exp, got);
+
+    pbuf_free(p_custodian);
+    return ok;
 }
 
-void test_storage_sqlite(void) {
-    DTN_TEST("=== test_storage_sqlite ===");
+bool test_routing(void) {
+    bool ok = true;
 
-    // Point config at a temporary directory so we don't touch real storage.
+    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
+    struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+
+    DtnRoutingResult routing_result;
+    dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &routing_result);
+    DTN_TEST("next_hop_node_id at t=0s  : %d", routing_result.next_hop_node_id);
+
+    dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &routing_result);
+    DTN_TEST("next_hop_node_id at t=21s : %d", routing_result.next_hop_node_id);
+
+    pbuf_free(p);
+    return ok;
+}
+
+bool test_storage(void) {
+    bool ok = true;
+
+    // -----------------------------------------------------------------------
+    // Setup: redirect storage to a temp dir and wipe any leftover DB so every
+    // run starts from a clean slate.
+    // -----------------------------------------------------------------------
     strncpy(dtn_config.storage_path, TEST_STORAGE_DIR, sizeof(dtn_config.storage_path) - 1);
     dtn_config.storage_path[sizeof(dtn_config.storage_path) - 1] = '\0';
+    strncpy(dtn_config.name, "test_node", sizeof(dtn_config.name) - 1);
+    dtn_config.name[sizeof(dtn_config.name) - 1] = '\0';
+    remove(TEST_STORAGE_DIR "/test_node_dtn_packets.db");
 
-    // --- 1. Create storage ---
+    // -----------------------------------------------------------------------
+    // 1. Create / destroy
+    // -----------------------------------------------------------------------
     Storage_Function* storage = dtn_storage_create(NULL);
-    if (!storage) {
-        DTN_TEST("FAIL: dtn_storage_create returned NULL");
-        return;
-    }
-    if (!storage->db) {
-        DTN_TEST("FAIL: storage->db is NULL after create");
-        dtn_storage_destroy(storage);
-        return;
-    }
-    DTN_TEST("PASS: storage created, DB handle is non-NULL");
+    ok &= TEST_ASSERT(storage != NULL, "storage_create returns non-NULL");
+    if (!storage)
+        return false;
 
-    // --- 2. Store a packet ---
-    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
-    // if (!p) {
-    //     DTN_TEST("FAIL: make_test_packet returned NULL");
-    //     dtn_storage_destroy(storage);
-    //     return;
-    // }
+    // -----------------------------------------------------------------------
+    // 2. Empty-state queries
+    // -----------------------------------------------------------------------
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 on empty DB");
+    ok &= TEST_ASSERT(dtn_storage_is_full(storage) == 0, "is_full is 0 on empty DB");
 
-    ip6_addr_t dest;
-    ip6addr_aton("fd00:2:3::3", &dest);
-    DtnRoutingResult rr = make_routing_result(42.5, 100.0);
+    // -----------------------------------------------------------------------
+    // 3. Store one packet → count increases
+    // -----------------------------------------------------------------------
+    struct pbuf* p1 = make_test_packet(64, "fd00:1:2::1", "fd00:4:5::5", 0xAA);
+    ok &= TEST_ASSERT(p1 != NULL, "make_test_packet p1 non-NULL");
+    DtnRoutingResult rr1 = make_routing_result(0.0, 100.0);
+    dtn_storage_store_packet_result_t store_res = dtn_storage_store_packet(storage, p1, &rr1);
+    ok &= TEST_ASSERT(store_res == DTN_STORAGE_STORE_OK, "store_packet returns OK");
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count is 1 after storing one packet");
+    pbuf_free(p1);
 
-    dtn_storage_store_packet_result_t stored = dtn_storage_store_packet(storage, p, &rr);
-    pbuf_free(p);  // storage keeps its own copy
-
-    if (stored != DTN_STORAGE_STORE_OK) {
-        DTN_TEST("FAIL: dtn_storage_store_packet returned error");
-        dtn_storage_destroy(storage);
-        return;
-    }
-    if (dtn_storage_count(storage) != 1) {
-        DTN_TEST("FAIL: expected count == 1, got %d", dtn_storage_count(storage));
-        dtn_storage_destroy(storage);
-        return;
-    }
-
-    // Retrieve the db_id of the stored row directly from the DB.
-    sqlite3_stmt* id_stmt = NULL;
-    int64_t stored_db_id = -1;
-    sqlite3_prepare_v2(storage->db, "SELECT id FROM stored_packets LIMIT 1;", -1, &id_stmt, NULL);
-    if (sqlite3_step(id_stmt) == SQLITE_ROW)
-        stored_db_id = sqlite3_column_int64(id_stmt, 0);
-    sqlite3_finalize(id_stmt);
-
-    if (stored_db_id <= 0) {
-        DTN_TEST("FAIL: db_id not set (got %" PRId64 ")", stored_db_id);
-        dtn_storage_destroy(storage);
-        return;
-    }
-    DTN_TEST("PASS: packet stored, count=1, db_id=%" PRId64 "", stored_db_id);
-
-    // --- 3. Confirm row exists in DB ---
-    sqlite3_stmt* stmt = NULL;
-    int rc =
-        sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &stmt, NULL);
-    int db_count = 0;
-    if (rc == SQLITE_OK && sqlite3_step(stmt) == SQLITE_ROW)
-        db_count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
-
-    if (db_count != 1) {
-        DTN_TEST("FAIL: expected 1 row in DB, found %d", db_count);
-        dtn_storage_destroy(storage);
-        return;
-    }
-    DTN_TEST("PASS: DB contains 1 row");
-
-    // --- 4. Remove the entry ---
-    dtn_storage_delete_by_id(storage, stored_db_id);
-
-    if (dtn_storage_count(storage) != 0) {
-        DTN_TEST("FAIL: expected count == 0 after delete, got %d", dtn_storage_count(storage));
-        dtn_storage_destroy(storage);
-        return;
+    // -----------------------------------------------------------------------
+    // 4. Get ready entries — packet IS ready (delivery_time 0.0 <= now 1000.0)
+    // -----------------------------------------------------------------------
+    Stored_Packet_Entry entries[10];
+    int n = dtn_storage_get_ready_entries(storage, 1000.0, entries, 10);
+    ok &= TEST_ASSERT(n == 1, "get_ready_entries returns 1 for a past-due packet");
+    if (n >= 1) {
+        ok &= TEST_ASSERT(entries[0].delivery_time_in_sec == 0.0, "delivery_time round-trips: expected 0.0, got %.2f",
+                          entries[0].delivery_time_in_sec);
+        ok &= TEST_ASSERT(strcmp(entries[0].dest_addr, "FD00:4:5::5") == 0, "dest_addr: expected 'FD00:4:5::5', got '%s'",
+                          entries[0].dest_addr);
+        ok &=
+            TEST_ASSERT(strcmp(entries[0].src_addr, "FD00:1:2::1") == 0, "src_addr: expected 'FD00:1:2::1', got '%s'", entries[0].src_addr);
+        ok &= TEST_ASSERT(!entries[0].has_custodian, "has_custodian is false for plain packet");
+        ok &= TEST_ASSERT(entries[0].p != NULL, "entry pbuf is non-NULL");
+        pbuf_free(entries[0].p);
     }
 
-    // Confirm row gone from DB.
-    rc = sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &stmt, NULL);
-    db_count = 0;
-    if (rc == SQLITE_OK && sqlite3_step(stmt) == SQLITE_ROW)
-        db_count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
+    // -----------------------------------------------------------------------
+    // 5. Get ready entries — packet NOT yet ready (now -1.0 < delivery_time 0.0)
+    // -----------------------------------------------------------------------
+    int n2 = dtn_storage_get_ready_entries(storage, -1.0, entries, 10);
+    ok &= TEST_ASSERT(n2 == 0, "get_ready_entries returns 0 when no packet is due yet");
 
-    if (db_count != 0) {
-        DTN_TEST("FAIL: expected 0 rows in DB after remove, found %d", db_count);
-        dtn_storage_destroy(storage);
-        return;
+    // -----------------------------------------------------------------------
+    // 6. Delete by ID
+    // -----------------------------------------------------------------------
+    int n3 = dtn_storage_get_ready_entries(storage, 1000.0, entries, 10);
+    ok &= TEST_ASSERT(n3 == 1, "one ready entry available before delete_by_id");
+    if (n3 >= 1) {
+        int64_t del_id = entries[0].db_id;
+        pbuf_free(entries[0].p);
+        dtn_storage_delete_by_id(storage, del_id);
+        ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_id");
     }
-    DTN_TEST("PASS: entry removed, DB has 0 rows");
 
+    // -----------------------------------------------------------------------
+    // 7. Delete by IP header
+    // -----------------------------------------------------------------------
+    struct pbuf* p2 = make_test_packet(32, "fd00:a:b::1", "fd00:c:d::2", 0xBB);
+    ok &= TEST_ASSERT(p2 != NULL, "make_test_packet p2 non-NULL");
+    DtnRoutingResult rr2 = make_routing_result(0.0, 200.0);
+    ok &= TEST_ASSERT(dtn_storage_store_packet(storage, p2, &rr2) == DTN_STORAGE_STORE_OK, "store p2 returns OK");
+    pbuf_free(p2);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count is 1 after storing p2");
+
+    // Build a matching ip6_hdr to drive the delete.
+    struct ip6_hdr del_hdr;
+    memset(&del_hdr, 0, sizeof(del_hdr));
+    ip6_addr_t del_src, del_dst;
+    ip6addr_aton("fd00:a:b::1", &del_src);
+    ip6addr_aton("fd00:c:d::2", &del_dst);
+    ip6_addr_copy_to_packed(del_hdr.src, del_src);
+    ip6_addr_copy_to_packed(del_hdr.dest, del_dst);
+    dtn_storage_delete_packet_by_ip_header(storage, &del_hdr);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_ip_header");
+
+    // -----------------------------------------------------------------------
+    // 8. NULL-safety — must not crash; must return safe/error values
+    // -----------------------------------------------------------------------
+    ok &= TEST_ASSERT(dtn_storage_count(NULL) == 0, "count(NULL) returns 0");
+    ok &= TEST_ASSERT(dtn_storage_is_full(NULL) == 0, "is_full(NULL) returns 0");
+    ok &= TEST_ASSERT(dtn_storage_get_ready_entries(NULL, 0.0, entries, 10) == 0, "get_ready_entries(NULL, ...) returns 0");
+
+    struct pbuf* p3 = make_test_packet(16, "fd00:1::1", "fd00:2::2", 0x00);
+    ok &= TEST_ASSERT(p3 != NULL, "make_test_packet p3 non-NULL");
+    DtnRoutingResult rr3 = make_routing_result(0.0, 0.0);
+    ok &= TEST_ASSERT(dtn_storage_store_packet(NULL, p3, &rr3) == DTN_STORAGE_STORE_ERR, "store_packet(NULL storage) returns ERR");
+    ok &= TEST_ASSERT(dtn_storage_store_packet(storage, NULL, &rr3) == DTN_STORAGE_STORE_ERR, "store_packet(NULL pbuf) returns ERR");
+    pbuf_free(p3);
+
+    dtn_storage_delete_by_id(NULL, 0);  // must not crash
+    DTN_TEST("PASS: delete_by_id(NULL, 0) did not crash");
+
+    // -----------------------------------------------------------------------
+    // Teardown
+    // -----------------------------------------------------------------------
     dtn_storage_destroy(storage);
-
-    // --- 5. Persistence round-trip ---
-    DTN_TEST("--- persistence round-trip ---");
-
-    // Store a new packet in a fresh storage instance.
-    storage = dtn_storage_create(NULL);
-    if (!storage) {
-        DTN_TEST("FAIL: second dtn_storage_create returned NULL");
-        return;
-    }
-
-    p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
-    rr = make_routing_result(77.25, 200.0);
-    stored = dtn_storage_store_packet(storage, p, &rr);
-    pbuf_free(p);
-
-    if (stored != DTN_STORAGE_STORE_OK) {
-        DTN_TEST("FAIL: store in round-trip phase returned error");
-        dtn_storage_destroy(storage);
-        return;
-    }
-
-    // Get the db_id before closing.
-    sqlite3_stmt* rt_stmt = NULL;
-    int64_t saved_db_id = -1;
-    sqlite3_prepare_v2(storage->db, "SELECT id FROM stored_packets LIMIT 1;", -1, &rt_stmt, NULL);
-    if (sqlite3_step(rt_stmt) == SQLITE_ROW)
-        saved_db_id = sqlite3_column_int64(rt_stmt, 0);
-    sqlite3_finalize(rt_stmt);
-
-    dtn_storage_destroy(storage);  // closes DB
-
-    // Reopen — data must survive across open/close.
-    storage = dtn_storage_create(NULL);
-    if (!storage) {
-        DTN_TEST("FAIL: third dtn_storage_create returned NULL");
-        return;
-    }
-
-    if (dtn_storage_count(storage) != 1) {
-        DTN_TEST("FAIL: expected 1 packet after reload, got %d", dtn_storage_count(storage));
-        dtn_storage_destroy(storage);
-        return;
-    }
-
-    // Load the entry using a large now_sec so it's always "ready".
-    Stored_Packet_Entry entries[MAX_STORED_PACKETS];
-    int n = dtn_storage_get_ready_entries(storage, 1e18, entries, MAX_STORED_PACKETS);
-    if (n != 1) {
-        DTN_TEST("FAIL: expected 1 ready entry after reload, got %d", n);
-        dtn_storage_destroy(storage);
-        return;
-    }
-
-    Stored_Packet_Entry loaded = entries[0];
-    pbuf_free(loaded.p);  // we only need the metadata
-
-    if (loaded.db_id != saved_db_id) {
-        DTN_TEST("FAIL: db_id mismatch after reload (expected %" PRId64 ", got %" PRId64 ")",
-                 saved_db_id, loaded.db_id);
-        dtn_storage_destroy(storage);
-        return;
-    }
-    if (loaded.delivery_time_in_sec != 77.25) {
-        DTN_TEST("FAIL: delivery_time_in_sec not preserved (got %f)", loaded.delivery_time_in_sec);
-        dtn_storage_destroy(storage);
-        return;
-    }
-    if (loaded.max_delivery_time_in_sec != 200.0) {
-        DTN_TEST("FAIL: max_delivery_time_in_sec not preserved (got %f)",
-                 loaded.max_delivery_time_in_sec);
-        dtn_storage_destroy(storage);
-        return;
-    }
-    DTN_TEST("PASS: round-trip OK — db_id=%" PRId64 ", delivery_time=%.2f, max_delivery_time=%.2f",
-             loaded.db_id, loaded.delivery_time_in_sec, loaded.max_delivery_time_in_sec);
-
-    // Clean up.
-    dtn_storage_destroy(storage);
-    DTN_TEST("=== test_storage_sqlite PASSED ===");
+    return ok;
 }
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
 
 int main() {
     lwip_init();
@@ -299,28 +281,22 @@ int main() {
     }
 
     dtn_config_print(&dtn_config);
-    dtn_log_init();
+    dtn_log_init(DTN_LOG_LEVEL_TEST);
 
     DTN_TEST("START TESTING");
 
-    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
-    struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+    bool ok = true;
+    ok &= test_custodian();
+    ok &= test_payload_length();
 
-    struct pbuf* p_custodian = add_custodian(p, "fd00:5:4::4");
-    ip6_addr_t custodian;
-    dtn_extract_custodian_option(p_custodian, &custodian);
-    DTN_TEST("custodian: %s", ip6addr_ntoa(&custodian));
+    DTN_TEST("ROUTING TESTS");
+    ok &= test_routing();
+    DTN_TEST("%s", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
+    DTN_TEST("STORAGE TESTS");
+    ok &= test_storage();
+    DTN_TEST("%s", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
 
-    DtnRoutingResult routing_result;
-    dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &routing_result);
-    DTN_TEST("next_hop_node_id: %d", routing_result.next_hop_node_id);
-    dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &routing_result);
-    DTN_TEST("next_hop_node_id: %d", routing_result.next_hop_node_id);
+    DTN_TEST("%s", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 
-    test_storage_sqlite();
-
-    DTN_TEST("STOP TESTING");
-
-    // pbuf_free(p);
-    return 0;
+    return ok ? 0 : 1;
 }

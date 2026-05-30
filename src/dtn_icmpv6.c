@@ -48,20 +48,18 @@ typedef struct {
 } dtn_icmpv6_payload_t;
 #pragma pack()
 
-static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_t* src_addr,
-                                                                 ip6_addr_t* dest_addr,
-                                                                 DtnInterface* dtn_interface,
-                                                                 const struct pbuf* p, u8_t type,
-                                                                 u8_t code, u8_t reason) {
+static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_t* src_addr, ip6_addr_t* dest_addr,
+                                                                 DtnInterface* dtn_interface, const struct pbuf* p,
+                                                                 dtn_icmpv6_msg_type_t type, u8_t code, u8_t reason) {
     const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)p->payload;
     struct pbuf* q;
     struct icmp6_hdr* icmp6hdr;
     dtn_icmpv6_payload_t* dtn_payload;
-    u16_t datalen;
+    u16_t data_length;
 
-    datalen = sizeof(dtn_icmpv6_payload_t) + IP6_HLEN + 8;
+    data_length = sizeof(dtn_icmpv6_payload_t) + IP6_HLEN + 8;
 
-    q = pbuf_alloc(PBUF_IP, sizeof(struct icmp6_hdr) + datalen, PBUF_RAM);
+    q = pbuf_alloc(PBUF_IP, sizeof(struct icmp6_hdr) + data_length, PBUF_RAM);
     if (q == NULL) {
         DTN_ERROR("DTN ICMPv6: Failed to allocate pbuf for message");
         return DTN_ICMPV6_SEND_MESSAGE_ERR;
@@ -106,8 +104,7 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
     ip6_addr_copy_to_packed(ip6hdr->dest, *dest_addr);
 
     // Copy ICMPv6 message after IPv6 header
-    if (pbuf_copy_partial(q, (u8_t*)complete_pkt->payload + IP6_HLEN, q->tot_len, 0) !=
-        q->tot_len) {
+    if (pbuf_copy_partial(q, (u8_t*)complete_pkt->payload + IP6_HLEN, q->tot_len, 0) != q->tot_len) {
         DTN_ERROR("DTN ICMPv6: Failed to copy ICMPv6 message to complete packet");
         pbuf_free(q);
         pbuf_free(complete_pkt);
@@ -115,34 +112,36 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
     }
 
     DtnRoutingResult routing_result;
-    dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(
-        global_dtn_module->controller, complete_pkt, &routing_result);
+    dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(complete_pkt, &routing_result);
 
     dtn_icmpv6_send_message_result_t result;
+    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(src_addr, src_str, sizeof(src_str));
+    ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
     switch (outgoing_result) {
-        case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
-            dtn_socket_result_t socket_result =
-                dtn_raw_socket_send_via_interface(complete_pkt, dtn_interface);
+        case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+            dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(complete_pkt, dtn_interface);
 
-            char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
-            ip6addr_ntoa_r(src_addr, src_str, sizeof(src_str));
-            ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
             if (socket_result == DTN_SOCKET_OK) {
-                DTN_INFO("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d",
-                         src_str, dest_str, type, code);
+                DTN_DEBUG("Successfully send ICMP6 message src: %s -> dest: %s | type %d | code %d", src_str, dest_str, type, code);
                 result = DTN_ICMPV6_SEND_MESSAGE_OK;
-            } else {
-                DTN_ERROR(
-                    "Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error "
-                    "%d",
-                    src_str, dest_str, type, code, socket_result);
-                result = DTN_ICMPV6_SEND_MESSAGE_ERR;
+                break;
             }
+            DTN_ERROR(
+                "Failed to send ICMP6 message src: %s -> dest: %s | type %d | code %d, error "
+                "%d",
+                src_str, dest_str, type, code, socket_result);
+            result = DTN_ICMPV6_SEND_MESSAGE_ERR;
             break;
-        }
         case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-            dtn_controller_store(global_dtn_module->storage, complete_pkt, &routing_result);
-            result = DTN_ICMPV6_SEND_MESSAGE_STORED;
+            dtn_storage_store_packet_result_t result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
+            if (result == DTN_STORAGE_STORE_OK) {
+                DTN_INFO("Successfully stored ICMP6 message src: %s -> dest: %s | type %d | code %d", src_str, dest_str, type, code);
+                result = DTN_ICMPV6_SEND_MESSAGE_STORED;
+                break;
+            }
+            DTN_ERROR("Failed stored ICMP6 message src: %s -> dest: %s | type %d | code %d", src_str, dest_str, type, code);
+            result = DTN_ICMPV6_SEND_MESSAGE_STORED_ERR;
             break;
         default:
             result = DTN_ICMPV6_SEND_MESSAGE_ERR;
@@ -154,8 +153,7 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
     return result;
 }
 
-static dtn_icmpv6_send_message_result_t dtn_icmpv6_send_message(const struct pbuf* p, u8_t type,
-                                                                u8_t code, u8_t reason) {
+static dtn_icmpv6_send_message_result_t dtn_icmpv6_send_message(const struct pbuf* p, dtn_icmpv6_msg_type_t type, u8_t code, u8_t reason) {
     ip6_addr_t src_addr, dest_addr, custodian_addr;
 
     bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
@@ -207,35 +205,33 @@ dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_delivered(const struct pbuf
 }
 
 // Send DTN-PCK-DELETED message with additional reason
-dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code,
-                                                             u8_t reason) {
+dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_deleted(const struct pbuf* p, u8_t code, u8_t reason) {
     return dtn_icmpv6_send_message(p, ICMP6_TYPE_DTN_PCK_DELETED, code, reason);
 }
 
 // Process incoming DTN ICMPv6 message
-u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
-    return 1;
-    if (!p || !p->payload || !global_dtn_module || !global_dtn_module->storage ||
-        !global_dtn_module->controller) {
-        return 0;
+dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
+    if (!p || !p->payload || p->tot_len < IP6_HLEN || !global_dtn_module || !global_dtn_module->storage) {
+        return DTN_ICMPV6_PROCESS_ERR;
     }
 
-    struct icmp6_hdr* icmp6hdr = (struct icmp6_hdr*)p->payload;
+    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+    ip6_addr_t src_addr, dest_addr;
+    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+    char src_addr_str[IP6ADDR_STRLEN_MAX], dest_addr_str[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(&src_addr, src_addr_str, sizeof(src_addr_str));
+    ip6addr_ntoa_r(&dest_addr, dest_addr_str, sizeof(dest_addr_str));
+
+    struct icmp6_hdr* icmp6hdr = (struct icmp6_hdr*)((u8_t*)p->payload + IP6_HLEN);
     dtn_icmpv6_payload_t* dtn_payload;
 
     // Check if this is a DTN ICMPv6 message
-    switch (icmp6hdr->type) {
+    switch ((dtn_icmpv6_msg_type_t)icmp6hdr->type) {
         case ICMP6_TYPE_DTN_PCK_RECEIVED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
-
-            char src_addr_str[IP6ADDR_STRLEN_MAX];
-            ip6addr_ntoa_r(src_addr, src_addr_str, sizeof(src_addr_str));
-
-            DTN_INFO(
-                "DTN ICMPv6: Received PCK-RECEIVED type %d code %d from %s, timestamp %u, reason "
-                "%d",
-                icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
-                dtn_payload->reason_code);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process PCK_RECEIVED", src_addr_str, dest_addr_str,
+                     icmp6hdr->type, icmp6hdr->code);
 
             // Extract original IPv6 header
             // struct ip6_hdr* orig_ip6hdr = extract_original_header(icmp6hdr);
@@ -278,54 +274,36 @@ u8_t dtn_icmpv6_process(struct pbuf* p, ip6_addr_t* src_addr) {
             // Remove destination from forwarding tracking list
             // dtn_controller_remove_tracking(global_dtn_module->controller, &dest_addr);
 
-            return 1;
+            return DTN_ICMPV6_PROCESS_OK;
         }
 
         case ICMP6_TYPE_DTN_PCK_FORWARDED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process PCK_FORWARDED", src_addr_str, dest_addr_str,
+                     icmp6hdr->type, icmp6hdr->code);
 
-            char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
-            ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
-
-            DTN_INFO(
-                "DTN ICMPv6: Received PCK-FORWARDED type %d code %d from %s, timestamp %u, reason "
-                "%d",
-                icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
-                dtn_payload->reason_code);
-
-            return 1;
+            return DTN_ICMPV6_PROCESS_OK;
         }
 
         case ICMP6_TYPE_DTN_PCK_DELIVERED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process PCK_DELIVERED", src_addr_str, dest_addr_str,
+                     icmp6hdr->type, icmp6hdr->code);
 
-            char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
-            ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
-
-            DTN_INFO(
-                "DTN ICMPv6: Received PCK-DELIVERED type %d code %d from %s, timestamp %u, reason "
-                "%d",
-                icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
-                dtn_payload->reason_code);
-
-            return 1;
+            return DTN_ICMPV6_PROCESS_OK;
         }
 
         case ICMP6_TYPE_DTN_PCK_DELETED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process PCK_DELETED", src_addr_str, dest_addr_str, icmp6hdr->type,
+                     icmp6hdr->code);
 
-            char src_addr_str[IP6ADDR_STRLEN_MAX] = {0};
-            ip6addr_ntoa_r(ip6_current_src_addr(), src_addr_str, sizeof(src_addr_str));
-
-            DTN_INFO(
-                "DTN ICMPv6: Received PCK-DELETED type %d code %d from %s, timestamp %u, reason "
-                "%d",
-                icmp6hdr->type, icmp6hdr->code, src_addr_str, dtn_payload->timestamp,
-                dtn_payload->reason_code);
-
-            return 1;
+            return DTN_ICMPV6_PROCESS_OK;
         }
+
+        default:
+            return DTN_ICMPV6_PROCESS_NOT_SUPPORTED;
     }
 
-    return 0;
+    return DTN_ICMPV6_PROCESS_ERR;
 }

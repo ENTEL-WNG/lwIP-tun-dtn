@@ -16,12 +16,10 @@
 #ifndef DTN_MODULE_H
 #define DTN_MODULE_H
 
-struct DTN_Controller;
 struct Routing_Function;
 struct Storage_Function;
 
 typedef struct DTN_Module {
-    struct DTN_Controller* controller;
     struct Routing_Function* routing;
     struct Storage_Function* storage;
 } DTN_Module;

@@ -37,32 +37,7 @@
 #include "lwip/sys.h"
 #include "raw_socket.h"
 
-DTN_Controller* dtn_controller_create(DTN_Module* parent) {
-    DTN_Controller* controller = (DTN_Controller*)malloc(sizeof(DTN_Controller));
-    if (controller) {
-        controller->parent_module = parent;
-        DTN_INFO("Cratead DTN_Controller.");
-    } else {
-        DTN_ERROR("Failed to allocate memory for DTN_Controller");
-    }
-    return controller;
-}
-
-void dtn_controller_destroy(DTN_Controller* controller) {
-    if (!controller)
-        return;
-    DTN_INFO("Destroying DTN Controller");
-    free(controller);
-}
-
-int dtn_controller_process_icmpv6(DTN_Controller* controller, struct pbuf* p,
-                                  ip6_addr_t* dest_addr) {
-    if (!p || !controller || !controller->parent_module) {
-        return 0;
-    }
-
-    return dtn_icmpv6_process(p, dest_addr);
-}
+extern DTN_Module* global_dtn_module;
 
 bool is_local_address(const ip6_addr_t* dest_addr, const char* addr) {
     ip6_addr_t local_addr;
@@ -81,10 +56,32 @@ bool is_local_address(const ip6_addr_t* dest_addr, const char* addr) {
     return false;
 }
 
-void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
-                                     struct netif* inp_netif) {
-    if (!p || !controller || !controller->parent_module || !controller->parent_module->routing ||
-        !controller->parent_module->storage) {
+static dtn_icmpv6_process_result_t dtn_controller_process_icmpv6(struct pbuf* p) { return dtn_icmpv6_process(p); }
+
+static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result) {
+    const DtnInterface* dtn_interface = dtn_raw_socket_get_interface_for_node(routing_result.next_hop_node_id);
+
+    if (!dtn_interface) {
+        return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
+    }
+
+    struct pbuf* send_p = p;
+    ip6_addr_t local_addr;
+    ip6addr_aton(dtn_interface->local_addr, &local_addr);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
+    if (p_custodian)
+        send_p = p_custodian;
+
+    dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(send_p, dtn_interface);
+
+    if (send_p != p)
+        pbuf_free(send_p);
+
+    return socket_result;
+}
+
+void dtn_controller_process_incoming(struct pbuf* p, struct netif* inp_netif) {
+    if (!p || !global_dtn_module || !global_dtn_module->routing || !global_dtn_module->storage) {
         DTN_ERROR("DTN Controller: Invalid arguments or uninitialized components for incoming.");
         if (p) {
             pbuf_free(p);
@@ -105,8 +102,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         return;
     }
 
-    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX],
-        custodian_str[IP6ADDR_STRLEN_MAX];
+    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX], custodian_str[IP6ADDR_STRLEN_MAX];
     ip6_addr_t src_addr, dest_addr, custodian_addr;
     ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
     ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
@@ -120,8 +116,7 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
         strncpy(custodian_str, "NONE", sizeof(custodian_str));
     }
 
-    DTN_INFO("Received package with src: %s -> dest: %s | custodian: %s", src_str, dest_str,
-             custodian_str);
+    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY process incoming.", src_str, dest_str, custodian_str);
 
     if (PRINT_PAYLOAD) {
         uint8_t nexth = IP6H_NEXTH(ip6hdr);
@@ -170,90 +165,92 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
 
     // Check if this is ICMPv6 and process it
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_ICMP6) {
-        DTN_INFO("Received ICMPv6 message.");
-
-        struct pbuf* q = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
-        if (!q) {
-            DTN_ERROR("DTN Controller: Failed to allocate pbuf for ICMPv6 processing.");
+        dtn_icmpv6_process_result_t result = dtn_controller_process_icmpv6(p);
+        if (result == DTN_ICMPV6_PROCESS_OK) {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL processed as ICMPv6.", src_str, dest_str, custodian_str);
             pbuf_free(p);
             return;
         }
-
-        if (pbuf_copy(q, p) != ERR_OK) {
-            DTN_ERROR("DTN Controller: Failed to copy pbuf for ICMPv6 processing.");
-            pbuf_free(q);
-            pbuf_free(p);
-            return;
-        }
-
-        // Skip IPv6 header to get to ICMPv6 header
-        if (pbuf_header(q, -IP6_HLEN) != 0) {
-            DTN_ERROR("DTN Controller: Failed to adjust pbuf header for ICMPv6 processing.");
-            pbuf_free(q);
-            pbuf_free(p);
-            return;
-        }
-
-        // Process the ICMPv6 message
-        if (dtn_controller_process_icmpv6(controller, q, &src_addr)) {
-            DTN_INFO("Processed ICMPv6 message.");
-            pbuf_free(q);
-            pbuf_free(p);
-            return;
-        }
-
-        // Not a DTN ICMPv6 message, continue normal processing
-        pbuf_free(q);
     }
 
     if (has_custodian) {
-        // src: me. - dest: old custodian
         dtn_icmpv6_send_pck_received(p, ICMP6_CODE_DTN_NO_INFO);
     }
 
     bool is_local = false;
     for (int i = 0; i < dtn_config.interface_count; i++) {
         if (is_local_address(&dest_addr, dtn_config.interfaces[i].local_addr)) {
-            DTN_INFO("Destination is local interface %s with address %s.",
-                     dtn_config.interfaces[i].name, dtn_config.interfaces[i].local_addr);
             is_local = true;
             break;
         }
     }
 
-    if (is_local_address(&dest_addr, dtn_config.lwip_ipv6_addr)) {
-        DTN_INFO("Destination is local lwIP addresse %s", dtn_config.lwip_ipv6_addr);
-        is_local = true;
-    }
-
-    if (is_local_address(&dest_addr, dtn_config.tun_ipv6_addr)) {
-        DTN_INFO("Destination is local TUN addresse %s", dtn_config.tun_ipv6_addr);
+    if (is_local_address(&dest_addr, dtn_config.lwip_ipv6_addr) || is_local_address(&dest_addr, dtn_config.tun_ipv6_addr)) {
         is_local = true;
     }
 
     if (is_local) {
-        // dtn_icmpv6_send_pck_delivered(p, ICMP6_CODE_DTN_NO_INFO, src_addr);
+        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process as local.", src_str, dest_str, custodian_str);
+        dtn_icmpv6_send_pck_delivered(p, ICMP6_CODE_DTN_NO_INFO);
 
         // ip6_input takes ownership of p and frees it internally.
         err_t err = ip6_input(p, inp_netif);
-        if (err != ERR_OK) {
-            DTN_ERROR("ip6_input returned error %d for local stack packet.", err);
+
+        if (err == ERR_OK) {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL to process as local.", src_str, dest_str, custodian_str);
+            return;
         }
+        DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to process as local, error: %d.", src_str, dest_str,
+                  custodian_str, err);
         return;
     }
 
     DtnRoutingResult routing_result;
-    dtn_controller_process_outgoing_result_t result =
-        dtn_controller_process_outgoing(controller, p, &routing_result);
+    dtn_controller_process_outgoing_result_t result = dtn_controller_process_outgoing(p, &routing_result);
 
     switch (result) {
-        case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
-            dtn_controller_send(p, routing_result);
-            dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+        case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward.", src_str, dest_str, custodian_str);
+            dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
+            if (socket_result == DTN_SOCKET_OK) {
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded.", src_str, dest_str, custodian_str);
+                if (!has_custodian) {
+                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED.", src_str, dest_str,
+                             custodian_str);
+                    return;
+                }
+                dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+                if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
+                    DTN_INFO(
+                        "Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send "
+                        "ICMPV6_PCK_FORWARDED",
+                        src_str, dest_str, custodian_str);
+                }
+                return;
+            }
+            DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward", src_str, dest_str, custodian_str);
             return;
-        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-            dtn_controller_store(controller->parent_module->storage, p, &routing_result);
+        }
+        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE: {
+            dtn_storage_store_packet_result_t storage_result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
+            if (result == DTN_STORAGE_STORE_OK) {
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL stored.", src_str, dest_str, custodian_str);
+            } else {
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || FAILED storing %d.", src_str, dest_str, custodian_str,
+                         storage_result);
+            }
             return;
+        }
+        case DTN_CONTROLLER_PROCESS_OUTGOING_ERR: {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to send without CGR", src_str, dest_str, custodian_str);
+            dtn_socket_result_t socket_result = dtn_raw_socket_send(p);
+            if (socket_result != DTN_SOCKET_OK) {
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send without CGR", src_str, dest_str, custodian_str);
+                return;
+            }
+            DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to send without CGR", src_str, dest_str, custodian_str);
+            return;
+        }
         default:
             break;
     }
@@ -262,13 +259,11 @@ void dtn_controller_process_incoming(DTN_Controller* controller, struct pbuf* p,
     return;
 }
 
-dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(
-    DTN_Controller* controller, struct pbuf* p, DtnRoutingResult* out_routing_result) {
-    Routing_Function* routing = controller->parent_module->routing;
+dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct pbuf* p, DtnRoutingResult* out_routing_result) {
+    Routing_Function* routing = global_dtn_module->routing;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
 
-    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX],
-        custodian_str[IP6ADDR_STRLEN_MAX];
+    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX], custodian_str[IP6ADDR_STRLEN_MAX];
     ip6_addr_t src_addr, dest_addr, custodian_addr;
     ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
     ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
@@ -281,32 +276,24 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(
         strncpy(custodian_str, "NONE", sizeof(custodian_str));
     }
 
-    DTN_INFO("Processing outgoing package with src: %s -> dest: %s | custodian: %s", src_str,
-             dest_str, custodian_str);
+    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process outgoing.", src_str, dest_str, custodian_str);
 
     DtnRoutingResult routing_result;
-    dtn_routing_result_t routing_status = dtn_routing_get_next_hop_node_id(
-        routing->base_time_in_ms, sys_now(), (struct ip6_hdr*)ip6hdr, &routing_result);
+    dtn_routing_result_t routing_status =
+        dtn_routing_get_next_hop_node_id(routing->base_time_in_ms, sys_now(), (struct ip6_hdr*)ip6hdr, &routing_result);
     if (out_routing_result)
         *out_routing_result = routing_result;
 
     // No route found
     if (routing_status != DTN_ROUTING_OK) {
         if (routing_status == DTN_ROUTING_NO_ROUTE) {
-            DTN_ERROR("No route found for package with src: %s -> dest: %s", src_str, dest_str);
+            DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || not route found.", src_str, dest_str, custodian_str);
         }
-
-        dtn_socket_result_t socket_result = dtn_raw_socket_send(p);
-        if (socket_result != DTN_SOCKET_OK) {
-            return DTN_CONTROLLER_PROCESS_OUTGOING_SEND;
-        }
-
         return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
     }
 
     bool is_next_hop_active;
-    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result.next_hop_node_id,
-                                                       &is_next_hop_active);
+    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result.next_hop_node_id, &is_next_hop_active);
 
     // Store
     if (active_result == DTN_ROUTING_OK && !is_next_hop_active) {
@@ -316,54 +303,12 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(
     return DTN_CONTROLLER_PROCESS_OUTGOING_OK;
 }
 
-dtn_storage_store_packet_result_t dtn_controller_store(Storage_Function* storage, struct pbuf* p,
-                                                       const DtnRoutingResult* routing_result) {
-    dtn_storage_store_packet_result_t result = dtn_storage_store_packet(storage, p, routing_result);
-    if (result == DTN_STORAGE_STORE_OK) {
-        DTN_DEBUG("Succssfull stored message");
-    } else {
-        DTN_ERROR("Failed to stored message");
-    }
-
-    return result;
-}
-
-dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result) {
-    const DtnInterface* dtn_interface =
-        dtn_raw_socket_get_interface_for_node(routing_result.next_hop_node_id);
-
-    if (!dtn_interface) {
-        return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
-    }
-
-    struct pbuf* send_p = p;
-    ip6_addr_t local_addr;
-    ip6addr_aton(dtn_interface->local_addr, &local_addr);
-    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
-    if (p_custodian)
-        send_p = p_custodian;
-
-    dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(send_p, dtn_interface);
-
-    if (send_p != p)
-        pbuf_free(send_p);
-
-    if (socket_result == DTN_SOCKET_OK) {
-        DTN_DEBUG("Succssfull send message");
-    } else {
-        DTN_ERROR("Failed to send message");
-    }
-
-    return socket_result;
-}
-
-void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct netif* netif_out) {
-    if (!controller || !controller->parent_module || !controller->parent_module->storage ||
-        !controller->parent_module->routing || !netif_out) {
+void dtn_controller_attempt_forward_stored(struct netif* netif_out) {
+    if (!global_dtn_module || !global_dtn_module->storage || !global_dtn_module->routing || !netif_out) {
         return;
     }
 
-    Storage_Function* storage = controller->parent_module->storage;
+    Storage_Function* storage = global_dtn_module->storage;
 
     double now_sec = sys_now() / 1000.0;
     int number_of_stored_packages = dtn_storage_count(storage);
@@ -375,8 +320,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
     Stored_Packet_Entry entries[MAX_STORED_PACKETS];
     int n = dtn_storage_get_ready_entries(storage, now_sec, entries, MAX_STORED_PACKETS);
 
-    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f",
-             number_of_stored_packages, n, now_sec);
+    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f", number_of_stored_packages, n, now_sec);
 
     for (int i = 0; i < n; i++) {
         Stored_Packet_Entry* entry = &entries[i];
@@ -384,8 +328,7 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
 
         struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
 
-        char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX],
-            custodian_str[IP6ADDR_STRLEN_MAX];
+        char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX], custodian_str[IP6ADDR_STRLEN_MAX];
         ip6_addr_t src_addr, dest_addr, custodian_addr;
         ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
         ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
@@ -398,26 +341,41 @@ void dtn_controller_attempt_forward_stored(DTN_Controller* controller, struct ne
         } else {
             strncpy(custodian_str, "NONE", sizeof(custodian_str));
         }
-        DTN_INFO("Attempting to send stored package with src: %s -> dest: %s | custodian: %s",
-                 src_str, dest_str, custodian_str);
+
+        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
         DtnRoutingResult routing_result;
-        dtn_controller_process_outgoing_result_t result =
-            dtn_controller_process_outgoing(controller, p, &routing_result);
+        dtn_controller_process_outgoing_result_t result = dtn_controller_process_outgoing(p, &routing_result);
         switch (result) {
             case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
-                dtn_controller_send(p, routing_result);
-                dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
-                break;
-            case DTN_CONTROLLER_PROCESS_OUTGOING_SEND:
-                DTN_INFO("Successfully sent stored package src: %s -> dest: %s", src_str, dest_str);
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
+                dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
+                if (socket_result == DTN_SOCKET_OK) {
+                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
+                             custodian_str);
+                    if (!has_custodian) {
+                        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.",
+                                 src_str, dest_str, custodian_str);
+                        break;
+                    }
+                    dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+                    if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
+                        DTN_INFO(
+                            "Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send "
+                            "ICMPV6_PCK_FORWARDED for STORED",
+                            src_str, dest_str, custodian_str);
+                    }
+                    break;
+                }
+                DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
                 break;
             case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-                DTN_INFO("Re-stored package src: %s -> dest: %s (contact not yet active)", src_str,
-                         dest_str);
+                DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || NEEDS to updated STORED", src_str, dest_str, custodian_str);
                 break;
             case DTN_CONTROLLER_PROCESS_OUTGOING_ERR:
-                DTN_ERROR("Failed to send stored package src: %s -> dest: %s", src_str, dest_str);
+                DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
+                break;
+            default:
                 break;
         }
 
