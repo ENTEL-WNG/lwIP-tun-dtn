@@ -403,63 +403,9 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     sqlite3_finalize(stmt);
 }
 
-void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr) {
-    if (!storage || !storage->db || !orig_ip6hdr)
+void dtn_storage_delete_by_packet_id(Storage_Function* storage, u32_t packet_id) {
+    if (packet_id == 0)
         return;
-
-    ip6_addr_t src, dest;
-    IP6_ADDR(&src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1], orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
-    IP6_ADDR(&dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1], orig_ip6hdr->dest.addr[2], orig_ip6hdr->dest.addr[3]);
-
-    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&src, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(&dest, dest_str, sizeof(dest_str));
-    DTN_INFO("Deleting stored packet matching src=%s dest=%s", src_str, dest_str);
-
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE src_addr = ? AND dest_addr = ?;", -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare DELETE by ip header: %s", sqlite3_errmsg(storage->db));
-        return;
-    }
-
-    sqlite3_bind_text(stmt, 1, src_str, -1, SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, dest_str, -1, SQLITE_TRANSIENT);
-    rc = sqlite3_step(stmt);
-    if (rc != SQLITE_DONE) {
-        DTN_ERROR("DELETE by ip header failed: %s", sqlite3_errmsg(storage->db));
-    } else {
-        int deleted = sqlite3_changes(storage->db);
-        DTN_INFO("Deleted %d row(s) matching src=%s dest=%s", deleted, src_str, dest_str);
-    }
-    sqlite3_finalize(stmt);
-}
-
-void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pbuf* icmp_packet) {
-    if (!storage || !storage->db || !icmp_packet)
-        return;
-
-    // ICMP packet layout:
-    //   IPv6 Header (40 bytes) + ICMPv6 Header (8 bytes) + DTN payload (9 bytes)
-    //   + Original IPv6 Header + 8 bytes of original payload
-    if (icmp_packet->len < IP6_HLEN + 8 + 9 + IP6_HLEN) {
-        DTN_WARN("ICMP packet too small to parse original IPv6 header");
-        return;
-    }
-
-    // Skip outer IPv6 (40) + ICMPv6 (8) + DTN payload struct (9).
-    const u8_t* orig_ip6_raw = (const u8_t*)icmp_packet->payload + IP6_HLEN + 8 + 9;
-    const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)orig_ip6_raw;
-
-    ip6_addr_t orig_src, orig_dest;
-    IP6_ADDR(&orig_src, orig_ip6hdr->src.addr[0], orig_ip6hdr->src.addr[1], orig_ip6hdr->src.addr[2], orig_ip6hdr->src.addr[3]);
-    IP6_ADDR(&orig_dest, orig_ip6hdr->dest.addr[0], orig_ip6hdr->dest.addr[1], orig_ip6hdr->dest.addr[2], orig_ip6hdr->dest.addr[3]);
-
-    char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
-    ip6addr_ntoa_r(&orig_src, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(&orig_dest, dest_str, sizeof(dest_str));
-    DTN_INFO("Deleting stored packet via ICMP data: src=%s dest=%s", src_str, dest_str);
-
-    // Delegate to the ip-header path — we have what we need.
-    dtn_storage_delete_packet_by_ip_header(storage, (struct ip6_hdr*)orig_ip6hdr);
+    DTN_INFO("Deleting stored packet with packet_id (row id) %u", packet_id);
+    dtn_storage_delete_by_id(storage, (int64_t)packet_id);
 }

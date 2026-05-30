@@ -1,4 +1,5 @@
 
+#include <inttypes.h>
 #include <sqlite3.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -115,9 +116,12 @@ bool test_custodian(void) {
     bool has_custodian = dtn_extract_custodian_option(p, &custodian);
     ok &= TEST_ASSERT(!has_custodian, "no custodian before add");
 
+    // -----------------------------------------------------------------
+    // 1. Add custodian with packet_id = 0 (fresh packet, not stored)
+    // -----------------------------------------------------------------
     ip6_addr_t custodian_addr;
     ip6addr_aton("fd00:2:5::2", &custodian_addr);
-    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &custodian_addr);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &custodian_addr, 0);
     pbuf_free(p);
     ok &= TEST_ASSERT(p_custodian != NULL, "dtn_update_or_add_custodian_option returned NULL");
 
@@ -129,22 +133,123 @@ bool test_custodian(void) {
     ip6addr_ntoa_r(&custodian, got, sizeof(got));
     ok &= TEST_ASSERT(strcmp(exp, got) == 0, "custodian addr: expected '%s', got '%s'", exp, got);
 
+    // packet_id = 0 → extract should return false and 0
+    u32_t extracted_id = 99;
+    bool has_id = dtn_extract_packet_id_from_hbh(p_custodian, &extracted_id);
+    ok &= TEST_ASSERT(!has_id, "packet_id not present when set to 0");
+    ok &= TEST_ASSERT(extracted_id == 0, "extracted packet_id is 0 when not set");
+
+    // -----------------------------------------------------------------
+    // 2. Update custodian with a real packet_id (simulates forwarding a
+    //    stored packet whose DB row id is e.g. 42)
+    // -----------------------------------------------------------------
+    const u32_t TEST_PACKET_ID = 42;
+    ip6_addr_t custodian_addr2;
+    ip6addr_aton("fd00:3:6::3", &custodian_addr2);
+    struct pbuf* p_with_id = dtn_update_or_add_custodian_option(p_custodian, &custodian_addr2, TEST_PACKET_ID);
     pbuf_free(p_custodian);
+    ok &= TEST_ASSERT(p_with_id != NULL, "dtn_update_or_add_custodian_option (with packet_id) returned NULL");
+
+    u32_t round_trip_id = 0;
+    has_id = dtn_extract_packet_id_from_hbh(p_with_id, &round_trip_id);
+    ok &= TEST_ASSERT(has_id, "packet_id present after setting to 42");
+    ok &= TEST_ASSERT(round_trip_id == TEST_PACKET_ID, "packet_id round-trip: expected %u, got %u", TEST_PACKET_ID, round_trip_id);
+
+    // custodian address must also survive the update
+    ip6_addr_t custodian2;
+    dtn_extract_custodian_option(p_with_id, &custodian2);
+    char exp2[IP6ADDR_STRLEN_MAX], got2[IP6ADDR_STRLEN_MAX];
+    ip6addr_ntoa_r(&custodian_addr2, exp2, sizeof(exp2));
+    ip6addr_ntoa_r(&custodian2, got2, sizeof(got2));
+    ok &= TEST_ASSERT(strcmp(exp2, got2) == 0, "custodian addr preserved after packet_id update: expected '%s', got '%s'", exp2, got2);
+
+    // -----------------------------------------------------------------
+    // 3. Packet with no HBH → extract returns false
+    // -----------------------------------------------------------------
+    struct pbuf* p_plain = make_test_packet(PAYLOAD_LEN, "fd00:1::1", "fd00:2::2", 0x00);
+    u32_t no_id = 99;
+    ok &= TEST_ASSERT(!dtn_extract_packet_id_from_hbh(p_plain, &no_id), "no packet_id on plain packet");
+    ok &= TEST_ASSERT(no_id == 0, "extracted id is 0 on plain packet");
+    pbuf_free(p_plain);
+
+    pbuf_free(p_with_id);
     return ok;
 }
 
+bool test_delete_by_packet_id(void) {
+    bool ok = true;
+
+    strncpy(dtn_config.storage_path, TEST_STORAGE_DIR, sizeof(dtn_config.storage_path) - 1);
+    dtn_config.storage_path[sizeof(dtn_config.storage_path) - 1] = '\0';
+    strncpy(dtn_config.name, "test_del_pid", sizeof(dtn_config.name) - 1);
+    dtn_config.name[sizeof(dtn_config.name) - 1] = '\0';
+    remove(TEST_STORAGE_DIR "/test_del_pid_dtn_packets.db");
+
+    Storage_Function* storage = dtn_storage_create(NULL);
+    ok &= TEST_ASSERT(storage != NULL, "storage created for delete_by_packet_id test");
+    if (!storage)
+        return false;
+
+    // Store two packets with the same src/dest — this is the problematic case
+    // that delete-by-src/dest cannot handle correctly.
+    struct pbuf* pa = make_test_packet(32, "fd00:a::1", "fd00:b::2", 0x11);
+    struct pbuf* pb = make_test_packet(32, "fd00:a::1", "fd00:b::2", 0x22);
+    DtnRoutingResult rr = make_routing_result(0.0, 100.0);
+
+    ok &= TEST_ASSERT(dtn_storage_store_packet(storage, pa, &rr) == DTN_STORAGE_STORE_OK, "store pa");
+    ok &= TEST_ASSERT(dtn_storage_store_packet(storage, pb, &rr) == DTN_STORAGE_STORE_OK, "store pb");
+    pbuf_free(pa);
+    pbuf_free(pb);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 2, "two packets stored");
+
+    // Read back entries; the row IDs are the packet_ids used for deletion.
+    Stored_Packet_Entry entries[4];
+    int n = dtn_storage_get_ready_entries(storage, 1000.0, entries, 4);
+    ok &= TEST_ASSERT(n == 2, "two entries ready");
+    if (n < 2) {
+        dtn_storage_destroy(storage);
+        return false;
+    }
+
+    int64_t id_a = entries[0].db_id;
+    int64_t id_b = entries[1].db_id;
+    pbuf_free(entries[0].p);
+    pbuf_free(entries[1].p);
+
+    // Delete only the first by its row-id-as-packet_id
+    dtn_storage_delete_by_packet_id(storage, (u32_t)id_a);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "one packet left after delete_by_packet_id");
+
+    // Remaining packet must be the second one
+    Stored_Packet_Entry remaining[2];
+    int nr = dtn_storage_get_ready_entries(storage, 1000.0, remaining, 2);
+    ok &= TEST_ASSERT(nr == 1, "one ready entry remains");
+    if (nr == 1) {
+        ok &= TEST_ASSERT(remaining[0].db_id == id_b, "surviving packet is id_b (%" PRId64 "), got %" PRId64, id_b, remaining[0].db_id);
+        pbuf_free(remaining[0].p);
+    }
+
+    // Deleting with packet_id = 0 must be a no-op
+    dtn_storage_delete_by_packet_id(storage, 0);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count unchanged after delete_by_packet_id(0)");
+
+    dtn_storage_destroy(storage);
+    return ok;
+}
+
+// Own node_id is defined in node_test.toml which is 2
 bool test_routing(void) {
     bool ok = true;
 
-    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:2:3::3", 0xAB);
+    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
     struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
 
     DtnRoutingResult routing_result;
     dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &routing_result);
-    DTN_TEST("next_hop_node_id at t=0s  : %d", routing_result.next_hop_node_id);
+    DTN_TEST("t=0 | next_hop_node_id: %d | %f", routing_result.next_hop_node_id, routing_result.best_delivery_time);
 
     dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &routing_result);
-    DTN_TEST("next_hop_node_id at t=21s : %d", routing_result.next_hop_node_id);
+    DTN_TEST("t=21 | next_hop_node_id: %d | %f", routing_result.next_hop_node_id, routing_result.best_delivery_time);
 
     pbuf_free(p);
     return ok;
@@ -286,15 +391,23 @@ int main() {
     DTN_TEST("START TESTING");
 
     bool ok = true;
+
+    DTN_TEST("CUSTODIAN / PACKET-ID TESTS");
     ok &= test_custodian();
     ok &= test_payload_length();
+    DTN_TEST("%s", ok ? "CUSTODIAN / PACKET-ID TESTS PASSED" : "CUSTODIAN / PACKET-ID TESTS FAILED");
 
     DTN_TEST("ROUTING TESTS");
     ok &= test_routing();
     DTN_TEST("%s", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
+
     DTN_TEST("STORAGE TESTS");
     ok &= test_storage();
     DTN_TEST("%s", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
+
+    DTN_TEST("DELETE-BY-PACKET-ID TESTS");
+    ok &= test_delete_by_packet_id();
+    DTN_TEST("%s", ok ? "DELETE-BY-PACKET-ID TESTS PASSED" : "DELETE-BY-PACKET-ID TESTS FAILED");
 
     DTN_TEST("%s", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 

@@ -37,9 +37,9 @@ typedef struct Stored_Packet_Entry {
     u32_t stored_time_ms;
     double delivery_time_in_sec;
     double max_delivery_time_in_sec;
-    char src_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
-    char dest_addr[IP6ADDR_STRLEN_MAX];      // human-readable IPv6 string
-    char custodian_addr[IP6ADDR_STRLEN_MAX]; // valid only when has_custodian is true
+    char src_addr[IP6ADDR_STRLEN_MAX];        // human-readable IPv6 string
+    char dest_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
+    char custodian_addr[IP6ADDR_STRLEN_MAX];  // valid only when has_custodian is true
     bool has_custodian;
     struct pbuf* p;  // caller-owned; pbuf_free when done
 } Stored_Packet_Entry;
@@ -61,8 +61,7 @@ typedef enum {
 } dtn_storage_store_packet_result_t;
 
 // Write
-dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage,
-                                                           struct pbuf* p,
+dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* storage, struct pbuf* p,
                                                            const DtnRoutingResult* routing_result);
 
 // Query
@@ -71,12 +70,10 @@ int dtn_storage_count(Storage_Function* storage);
 
 // Read packets whose delivery_time_in_sec <= now_sec into out[].
 // Returns number of entries filled. Caller must pbuf_free each entry's p.
-int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec,
-                                  Stored_Packet_Entry out[], int max_count);
+int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count);
 
 // Delete
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);
-void dtn_storage_delete_packet_by_ip_header(Storage_Function* storage, struct ip6_hdr* orig_ip6hdr);
-void dtn_storage_delete_packet_by_icmp_data(Storage_Function* storage, struct pbuf* icmp_packet);
+void dtn_storage_delete_by_packet_id(Storage_Function* storage, u32_t packet_id);
 
 #endif

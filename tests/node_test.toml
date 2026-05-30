@@ -112,6 +112,6 @@ bidirected = true
 [[edges]]
 from = 4
 to = 5
-start_in_sec = 0
+start_in_sec = 30
 end_in_sec = 1000
 bidirected = true

@@ -186,8 +186,8 @@ int main() {
         sys_now_reset_base();
     }
     dtn_config_print(&dtn_config);
-    // dtn_log_init(dtn_config.env == DTN_ENV_PRODUCTION ? DTN_LOG_LEVEL_INFO : DTN_LOG_LEVEL_DEBUG);
-    dtn_log_init(DTN_LOG_LEVEL_INFO);
+    dtn_log_init(dtn_config.env == DTN_ENV_PRODUCTION ? DTN_LOG_LEVEL_INFO : DTN_LOG_LEVEL_DEBUG);
+    // dtn_log_init(DTN_LOG_LEVEL_INFO);
 
     global_dtn_module = dtn_module_init();
     if (!global_dtn_module) {

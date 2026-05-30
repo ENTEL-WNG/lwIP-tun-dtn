@@ -41,10 +41,10 @@ extern DTN_Module* global_dtn_module;
 // Structure for DTN custom ICMPv6 message payload
 #pragma pack(1)
 typedef struct {
-    u32_t timestamp;
-    u16_t fragment_offset;
-    u16_t payload_length;
-    u8_t reason_code;
+    u32_t packet_id;       // per-hop storage ID echoed back for deletion; 0 = not stored
+    u32_t timestamp;       // when this ICMPv6 message was created (ms)
+    u16_t payload_length;  // original packet payload length
+    u8_t reason_code;      // reason code (DELETED messages only)
 } dtn_icmpv6_payload_t;
 #pragma pack()
 
@@ -73,8 +73,10 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 
     // Set up DTN payload
     dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
+    u32_t pkt_id = 0;
+    dtn_extract_packet_id_from_hbh(p, &pkt_id);
+    dtn_payload->packet_id = lwip_htonl(pkt_id);
     dtn_payload->timestamp = sys_now();
-    dtn_payload->fragment_offset = 0;
     dtn_payload->payload_length = lwip_ntohs(IP6H_PLEN(orig_ip6hdr));
     dtn_payload->reason_code = reason;
 
@@ -134,7 +136,7 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
             result = DTN_ICMPV6_SEND_MESSAGE_ERR;
             break;
         case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-            dtn_storage_store_packet_result_t result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
+            dtn_storage_store_packet_result_t result = dtn_storage_store_packet(global_dtn_module->storage, complete_pkt, &routing_result);
             if (result == DTN_STORAGE_STORE_OK) {
                 DTN_INFO("Successfully stored ICMP6 message src: %s -> dest: %s | type %d | code %d", src_str, dest_str, type, code);
                 result = DTN_ICMPV6_SEND_MESSAGE_STORED;
@@ -230,50 +232,11 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
     switch ((dtn_icmpv6_msg_type_t)icmp6hdr->type) {
         case ICMP6_TYPE_DTN_PCK_RECEIVED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
-            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process PCK_RECEIVED", src_addr_str, dest_addr_str,
-                     icmp6hdr->type, icmp6hdr->code);
-
-            // Extract original IPv6 header
-            // struct ip6_hdr* orig_ip6hdr = extract_original_header(icmp6hdr);
-
-            // Delete the stored packet
-            // struct pbuf* icmp_with_ipv6 = pbuf_alloc(PBUF_RAW, IP6_HLEN + p->tot_len, PBUF_RAM);
-            // if (icmp_with_ipv6 != NULL) {
-            //     // Copy the outer IPv6 header
-            //     struct ip6_hdr* outer_ipv6 = (struct ip6_hdr*)icmp_with_ipv6->payload;
-            //     // Set basic IPv6 header fields
-            //     IP6H_VTCFL_SET(outer_ipv6, 6, 0, 0);
-            //     IP6H_PLEN_SET(outer_ipv6, p->tot_len);
-            //     IP6H_NEXTH_SET(outer_ipv6, IP6_NEXTH_ICMP6);
-            //     IP6H_HOPLIM_SET(outer_ipv6, 255);
-            //     // Copy source and destination from current IP context
-            //     memcpy(&outer_ipv6->src, ip6_current_src_addr(), sizeof(ip6_addr_p_t));
-            //     memcpy(&outer_ipv6->dest, ip6_current_dest_addr(), sizeof(ip6_addr_p_t));
-
-            //     // Copy the ICMP payload
-            //     if (pbuf_copy_partial(p, (u8_t*)icmp_with_ipv6->payload + IP6_HLEN, p->tot_len,
-            //                           0) == p->tot_len) {
-            //         dtn_storage_delete_packet_by_icmp_data(global_dtn_module->storage,
-            //                                                icmp_with_ipv6);
-            //     } else {
-            //         dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage,
-            //         orig_ip6hdr);
-            //     }
-            //     pbuf_free(icmp_with_ipv6);
-            // } else {
-            //     dtn_storage_delete_packet_by_ip_header(global_dtn_module->storage, orig_ip6hdr);
-            // }
-
-            // // Remove tracking for this destination
-            // ip6_addr_t dest_addr;
-
-            // u32_t temp_addr[4];
-            // memcpy(temp_addr, orig_ip6hdr->dest.addr, sizeof(temp_addr));
-            // packed_ip6_addr_to_ip6_addr_t(temp_addr, &dest_addr);
-
-            // Remove destination from forwarding tracking list
-            // dtn_controller_remove_tracking(global_dtn_module->controller, &dest_addr);
-
+            u32_t packet_id = lwip_ntohl(dtn_payload->packet_id);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d | packet_id: %u || process PCK_RECEIVED", src_addr_str,
+                     dest_addr_str, icmp6hdr->type, icmp6hdr->code, packet_id);
+            // if (packet_id != 0)
+            // dtn_storage_delete_by_packet_id(global_dtn_module->storage, packet_id);
             return DTN_ICMPV6_PROCESS_OK;
         }
 
