@@ -9,6 +9,7 @@
 #include "dtn_config.h"
 #include "dtn_controller.h"
 #include "dtn_custody.h"
+#include "dtn_utils.h"
 #include "dtn_icmpv6.h"
 #include "dtn_logger.h"
 #include "dtn_routing.h"
@@ -117,11 +118,19 @@ bool test_custodian(void) {
     ok &= TEST_ASSERT(!has_custodian, "no custodian before add");
 
     // -----------------------------------------------------------------
-    // 1. Add custodian with packet_id = 0 (fresh packet, not stored)
+    // 1. Hash of plain packet (no HBH) — must be non-zero and consistent
+    // -----------------------------------------------------------------
+    u32_t hash1 = dtn_compute_packet_hash(p);
+    ok &= TEST_ASSERT(hash1 != 0, "hash of plain packet is non-zero");
+    u32_t hash1b = dtn_compute_packet_hash(p);
+    ok &= TEST_ASSERT(hash1 == hash1b, "hash is deterministic");
+
+    // -----------------------------------------------------------------
+    // 2. Add custodian option; hash must be the SAME (HBH is skipped)
     // -----------------------------------------------------------------
     ip6_addr_t custodian_addr;
     ip6addr_aton("fd00:2:5::2", &custodian_addr);
-    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &custodian_addr, 0);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &custodian_addr);
     pbuf_free(p);
     ok &= TEST_ASSERT(p_custodian != NULL, "dtn_update_or_add_custodian_option returned NULL");
 
@@ -133,68 +142,71 @@ bool test_custodian(void) {
     ip6addr_ntoa_r(&custodian, got, sizeof(got));
     ok &= TEST_ASSERT(strcmp(exp, got) == 0, "custodian addr: expected '%s', got '%s'", exp, got);
 
-    // packet_id = 0 → extract should return false and 0
-    u32_t extracted_id = 99;
-    bool has_id = dtn_extract_packet_id_from_hbh(p_custodian, &extracted_id);
-    ok &= TEST_ASSERT(!has_id, "packet_id not present when set to 0");
-    ok &= TEST_ASSERT(extracted_id == 0, "extracted packet_id is 0 when not set");
+    u32_t hash2 = dtn_compute_packet_hash(p_custodian);
+    ok &= TEST_ASSERT(hash2 == hash1, "hash with HBH equals hash without HBH (HBH skipped)");
 
     // -----------------------------------------------------------------
-    // 2. Update custodian with a real packet_id (simulates forwarding a
-    //    stored packet whose DB row id is e.g. 42)
+    // 3. Update custodian to a different address; hash must remain the same
     // -----------------------------------------------------------------
-    const u32_t TEST_PACKET_ID = 42;
     ip6_addr_t custodian_addr2;
     ip6addr_aton("fd00:3:6::3", &custodian_addr2);
-    struct pbuf* p_with_id = dtn_update_or_add_custodian_option(p_custodian, &custodian_addr2, TEST_PACKET_ID);
+    struct pbuf* p_updated = dtn_update_or_add_custodian_option(p_custodian, &custodian_addr2);
     pbuf_free(p_custodian);
-    ok &= TEST_ASSERT(p_with_id != NULL, "dtn_update_or_add_custodian_option (with packet_id) returned NULL");
+    ok &= TEST_ASSERT(p_updated != NULL, "dtn_update_or_add_custodian_option (update) returned NULL");
 
-    u32_t round_trip_id = 0;
-    has_id = dtn_extract_packet_id_from_hbh(p_with_id, &round_trip_id);
-    ok &= TEST_ASSERT(has_id, "packet_id present after setting to 42");
-    ok &= TEST_ASSERT(round_trip_id == TEST_PACKET_ID, "packet_id round-trip: expected %u, got %u", TEST_PACKET_ID, round_trip_id);
+    u32_t hash3 = dtn_compute_packet_hash(p_updated);
+    ok &= TEST_ASSERT(hash3 == hash1, "hash unchanged after custodian address update");
 
-    // custodian address must also survive the update
+    // custodian address must reflect the new value
     ip6_addr_t custodian2;
-    dtn_extract_custodian_option(p_with_id, &custodian2);
+    dtn_extract_custodian_option(p_updated, &custodian2);
     char exp2[IP6ADDR_STRLEN_MAX], got2[IP6ADDR_STRLEN_MAX];
     ip6addr_ntoa_r(&custodian_addr2, exp2, sizeof(exp2));
     ip6addr_ntoa_r(&custodian2, got2, sizeof(got2));
-    ok &= TEST_ASSERT(strcmp(exp2, got2) == 0, "custodian addr preserved after packet_id update: expected '%s', got '%s'", exp2, got2);
+    ok &= TEST_ASSERT(strcmp(exp2, got2) == 0, "custodian addr updated: expected '%s', got '%s'", exp2, got2);
 
     // -----------------------------------------------------------------
-    // 3. Packet with no HBH → extract returns false
+    // 4. Different payload → different hash
     // -----------------------------------------------------------------
-    struct pbuf* p_plain = make_test_packet(PAYLOAD_LEN, "fd00:1::1", "fd00:2::2", 0x00);
-    u32_t no_id = 99;
-    ok &= TEST_ASSERT(!dtn_extract_packet_id_from_hbh(p_plain, &no_id), "no packet_id on plain packet");
-    ok &= TEST_ASSERT(no_id == 0, "extracted id is 0 on plain packet");
-    pbuf_free(p_plain);
+    struct pbuf* p_other = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:4:5::5", 0xFF);
+    u32_t hash_other = dtn_compute_packet_hash(p_other);
+    ok &= TEST_ASSERT(hash_other != hash1, "different payload yields different hash");
+    pbuf_free(p_other);
 
-    pbuf_free(p_with_id);
+    // -----------------------------------------------------------------
+    // 5. NULL input returns 0
+    // -----------------------------------------------------------------
+    ok &= TEST_ASSERT(dtn_compute_packet_hash(NULL) == 0, "hash(NULL) returns 0");
+
+    pbuf_free(p_updated);
     return ok;
 }
 
-bool test_delete_by_packet_id(void) {
+bool test_delete_by_hash(void) {
     bool ok = true;
 
     strncpy(dtn_config.storage_path, TEST_STORAGE_DIR, sizeof(dtn_config.storage_path) - 1);
     dtn_config.storage_path[sizeof(dtn_config.storage_path) - 1] = '\0';
-    strncpy(dtn_config.name, "test_del_pid", sizeof(dtn_config.name) - 1);
+    strncpy(dtn_config.name, "test_del_hash", sizeof(dtn_config.name) - 1);
     dtn_config.name[sizeof(dtn_config.name) - 1] = '\0';
-    remove(TEST_STORAGE_DIR "/test_del_pid_dtn_packets.db");
+    remove(TEST_STORAGE_DIR "/test_del_hash_dtn_packets.db");
 
     Storage_Function* storage = dtn_storage_create(NULL);
-    ok &= TEST_ASSERT(storage != NULL, "storage created for delete_by_packet_id test");
+    ok &= TEST_ASSERT(storage != NULL, "storage created for delete_by_hash test");
     if (!storage)
         return false;
 
-    // Store two packets with the same src/dest — this is the problematic case
-    // that delete-by-src/dest cannot handle correctly.
+    // Two packets with the same src/dest but different payloads → different hashes.
+    // This is the case that delete-by-src/dest cannot handle correctly.
     struct pbuf* pa = make_test_packet(32, "fd00:a::1", "fd00:b::2", 0x11);
     struct pbuf* pb = make_test_packet(32, "fd00:a::1", "fd00:b::2", 0x22);
     DtnRoutingResult rr = make_routing_result(0.0, 100.0);
+
+    u32_t hash_a = dtn_compute_packet_hash(pa);
+    u32_t hash_b = dtn_compute_packet_hash(pb);
+    ok &= TEST_ASSERT(hash_a != 0, "hash_a is non-zero");
+    ok &= TEST_ASSERT(hash_b != 0, "hash_b is non-zero");
+    ok &= TEST_ASSERT(hash_a != hash_b, "two different payloads hash differently");
 
     ok &= TEST_ASSERT(dtn_storage_store_packet(storage, pa, &rr) == DTN_STORAGE_STORE_OK, "store pa");
     ok &= TEST_ASSERT(dtn_storage_store_packet(storage, pb, &rr) == DTN_STORAGE_STORE_OK, "store pb");
@@ -202,36 +214,26 @@ bool test_delete_by_packet_id(void) {
     pbuf_free(pb);
     ok &= TEST_ASSERT(dtn_storage_count(storage) == 2, "two packets stored");
 
-    // Read back entries; the row IDs are the packet_ids used for deletion.
-    Stored_Packet_Entry entries[4];
-    int n = dtn_storage_get_ready_entries(storage, 1000.0, entries, 4);
-    ok &= TEST_ASSERT(n == 2, "two entries ready");
-    if (n < 2) {
-        dtn_storage_destroy(storage);
-        return false;
-    }
+    // Simulate the receiver sending back an ICMPv6 RECEIVED with hash_a.
+    // Only the first packet should be deleted.
+    dtn_storage_delete_by_hash(storage, hash_a);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "one packet left after delete_by_hash(hash_a)");
 
-    int64_t id_a = entries[0].db_id;
-    int64_t id_b = entries[1].db_id;
-    pbuf_free(entries[0].p);
-    pbuf_free(entries[1].p);
-
-    // Delete only the first by its row-id-as-packet_id
-    dtn_storage_delete_by_packet_id(storage, (u32_t)id_a);
-    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "one packet left after delete_by_packet_id");
-
-    // Remaining packet must be the second one
+    // Remaining packet must have hash_b.
     Stored_Packet_Entry remaining[2];
     int nr = dtn_storage_get_ready_entries(storage, 1000.0, remaining, 2);
     ok &= TEST_ASSERT(nr == 1, "one ready entry remains");
     if (nr == 1) {
-        ok &= TEST_ASSERT(remaining[0].db_id == id_b, "surviving packet is id_b (%" PRId64 "), got %" PRId64, id_b, remaining[0].db_id);
+        // Reconstruct the hash from the stored pbuf and verify it matches hash_b.
+        u32_t remaining_hash = dtn_compute_packet_hash(remaining[0].p);
+        ok &= TEST_ASSERT(remaining_hash == hash_b,
+                          "surviving packet has hash_b (0x%08x), got 0x%08x", hash_b, remaining_hash);
         pbuf_free(remaining[0].p);
     }
 
-    // Deleting with packet_id = 0 must be a no-op
-    dtn_storage_delete_by_packet_id(storage, 0);
-    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count unchanged after delete_by_packet_id(0)");
+    // hash == 0 must be a no-op.
+    dtn_storage_delete_by_hash(storage, 0);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count unchanged after delete_by_hash(0)");
 
     dtn_storage_destroy(storage);
     return ok;
@@ -330,25 +332,20 @@ bool test_storage(void) {
     }
 
     // -----------------------------------------------------------------------
-    // 7. Delete by packet_id (= row db_id cast to u32_t)
+    // 7. Delete by hash
     // -----------------------------------------------------------------------
     struct pbuf* p2 = make_test_packet(32, "fd00:a:b::1", "fd00:c:d::2", 0xBB);
     ok &= TEST_ASSERT(p2 != NULL, "make_test_packet p2 non-NULL");
+    u32_t p2_hash = dtn_compute_packet_hash(p2);
+    ok &= TEST_ASSERT(p2_hash != 0, "p2 hash is non-zero");
     DtnRoutingResult rr2 = make_routing_result(0.0, 200.0);
     ok &= TEST_ASSERT(dtn_storage_store_packet(storage, p2, &rr2) == DTN_STORAGE_STORE_OK, "store p2 returns OK");
     pbuf_free(p2);
     ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count is 1 after storing p2");
 
-    // Retrieve the entry to obtain the db_id, which doubles as the packet_id.
-    Stored_Packet_Entry entries2[2];
-    int n_p2 = dtn_storage_get_ready_entries(storage, 1000.0, entries2, 2);
-    ok &= TEST_ASSERT(n_p2 == 1, "one ready entry for p2");
-    if (n_p2 >= 1) {
-        u32_t pkt_id2 = (u32_t)entries2[0].db_id;
-        pbuf_free(entries2[0].p);
-        dtn_storage_delete_by_packet_id(storage, pkt_id2);
-        ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_packet_id");
-    }
+    // Simulate the receiver echoing the hash back in ICMPv6 RECEIVED.
+    dtn_storage_delete_by_hash(storage, p2_hash);
+    ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_hash");
 
     // -----------------------------------------------------------------------
     // 8. NULL-safety — must not crash; must return safe/error values
@@ -392,10 +389,10 @@ int main() {
 
     bool ok = true;
 
-    DTN_TEST("CUSTODIAN / PACKET-ID TESTS");
+    DTN_TEST("CUSTODIAN / HASH TESTS");
     ok &= test_custodian();
     ok &= test_payload_length();
-    DTN_TEST("%s", ok ? "CUSTODIAN / PACKET-ID TESTS PASSED" : "CUSTODIAN / PACKET-ID TESTS FAILED");
+    DTN_TEST("%s", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
 
     DTN_TEST("ROUTING TESTS");
     ok &= test_routing();
@@ -405,9 +402,9 @@ int main() {
     ok &= test_storage();
     DTN_TEST("%s", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
 
-    DTN_TEST("DELETE-BY-PACKET-ID TESTS");
-    ok &= test_delete_by_packet_id();
-    DTN_TEST("%s", ok ? "DELETE-BY-PACKET-ID TESTS PASSED" : "DELETE-BY-PACKET-ID TESTS FAILED");
+    DTN_TEST("DELETE-BY-HASH TESTS");
+    ok &= test_delete_by_hash();
+    DTN_TEST("%s", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
 
     DTN_TEST("%s", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 

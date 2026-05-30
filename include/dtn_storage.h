@@ -74,6 +74,6 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
 
 // Delete
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);
-void dtn_storage_delete_by_packet_id(Storage_Function* storage, u32_t packet_id);
+void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash);
 
 #endif

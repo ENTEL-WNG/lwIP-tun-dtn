@@ -27,17 +27,19 @@
 #include "dtn_config.h"
 #include "dtn_custody.h"
 #include "dtn_logger.h"
+#include "dtn_utils.h"
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/sys.h"
 
 // Bump this whenever the schema changes. On mismatch the table is dropped and
 // recreated so old DBs don't cause INSERT/SELECT failures.
-#define SCHEMA_VERSION 1
+#define SCHEMA_VERSION 2
 
 static const char* CREATE_TABLE_SQL =
     "CREATE TABLE IF NOT EXISTS stored_packets ("
     "  id                       INTEGER PRIMARY KEY AUTOINCREMENT,"
+    "  packet_hash              INTEGER NOT NULL DEFAULT 0,"
     "  stored_time_ms           INTEGER NOT NULL,"
     "  delivery_time_in_sec     REAL    NOT NULL,"
     "  max_delivery_time_in_sec REAL    NOT NULL,"
@@ -47,7 +49,9 @@ static const char* CREATE_TABLE_SQL =
     "  packet_data              BLOB    NOT NULL"
     ");"
     "CREATE INDEX IF NOT EXISTS idx_delivery_time"
-    " ON stored_packets(delivery_time_in_sec);";
+    " ON stored_packets(delivery_time_in_sec);"
+    "CREATE INDEX IF NOT EXISTS idx_packet_hash"
+    " ON stored_packets(packet_hash);";
 
 static const char* DROP_TABLE_SQL = "DROP TABLE IF EXISTS stored_packets;";
 
@@ -264,11 +268,15 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     }
     pbuf_free(p_to_store);
 
+    // Compute FNV-1a hash for per-packet identification (used to delete the stored
+    // row when an ICMPv6 RECEIVED ACK arrives from the next hop).
+    u32_t pkt_hash = dtn_compute_packet_hash(p);
+
     const char* sql =
         "INSERT INTO stored_packets"
-        " (stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
+        " (packet_hash, stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
         "  src_addr, dest_addr, custodian_addr, packet_data)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?);";
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
 
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
@@ -278,16 +286,17 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         return DTN_STORAGE_STORE_ERR;
     }
 
-    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)sys_now());
-    sqlite3_bind_double(stmt, 2, routing_result->best_delivery_time);
-    sqlite3_bind_double(stmt, 3, routing_result->to_time);
-    bind_ip6_addr_text(stmt, 4, &src_addr);
-    bind_ip6_addr_text(stmt, 5, &dest_addr);
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)pkt_hash);
+    sqlite3_bind_int64(stmt, 2, (sqlite3_int64)sys_now());
+    sqlite3_bind_double(stmt, 3, routing_result->best_delivery_time);
+    sqlite3_bind_double(stmt, 4, routing_result->to_time);
+    bind_ip6_addr_text(stmt, 5, &src_addr);
+    bind_ip6_addr_text(stmt, 6, &dest_addr);
     if (has_custodian)
-        sqlite3_bind_text(stmt, 6, custodian_str, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 7, custodian_str, -1, SQLITE_TRANSIENT);
     else
-        sqlite3_bind_null(stmt, 6);
-    sqlite3_bind_blob(stmt, 7, buf, pkt_len, SQLITE_TRANSIENT);
+        sqlite3_bind_null(stmt, 7);
+    sqlite3_bind_blob(stmt, 8, buf, pkt_len, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     int ok = (rc == SQLITE_DONE);
@@ -403,9 +412,23 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     sqlite3_finalize(stmt);
 }
 
-void dtn_storage_delete_by_packet_id(Storage_Function* storage, u32_t packet_id) {
-    if (packet_id == 0)
+void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash) {
+    if (!storage || !storage->db || packet_hash == 0)
         return;
-    DTN_INFO("Deleting stored packet with packet_id (row id) %u", packet_id);
-    dtn_storage_delete_by_id(storage, (int64_t)packet_id);
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE packet_hash = ?;", -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare DELETE by hash: %s", sqlite3_errmsg(storage->db));
+        return;
+    }
+
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)packet_hash);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        DTN_ERROR("DELETE by hash failed: %s", sqlite3_errmsg(storage->db));
+    } else {
+        DTN_INFO("Deleted stored packet(s) with hash 0x%08x (%d rows)", packet_hash, sqlite3_changes(storage->db));
+    }
+    sqlite3_finalize(stmt);
 }

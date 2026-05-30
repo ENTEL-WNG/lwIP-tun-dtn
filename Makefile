@@ -47,6 +47,7 @@ APP_SRC = \
 	src/raw_socket.c \
     src/dtn_storage.c \
 	src/dtn_custody.c \
+	src/dtn_utils.c \
 	src/dtn_logger.c
 
 THIRD_PARTY_SRC = \

@@ -58,7 +58,7 @@ bool is_local_address(const ip6_addr_t* dest_addr, const char* addr) {
 
 static dtn_icmpv6_process_result_t dtn_controller_process_icmpv6(struct pbuf* p) { return dtn_icmpv6_process(p); }
 
-static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result, u32_t packet_id) {
+static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result) {
     const DtnInterface* dtn_interface = dtn_raw_socket_get_interface_for_node(routing_result.next_hop_node_id);
 
     if (!dtn_interface) {
@@ -68,7 +68,7 @@ static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult 
     struct pbuf* send_p = p;
     ip6_addr_t local_addr;
     ip6addr_aton(dtn_interface->local_addr, &local_addr);
-    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr, packet_id);
+    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
     if (p_custodian)
         send_p = p_custodian;
 
@@ -211,7 +211,7 @@ void dtn_controller_process_incoming(struct pbuf* p, struct netif* inp_netif) {
     switch (result) {
         case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward.", src_str, dest_str, custodian_str);
-            dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result, 0);
+            dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
             if (socket_result == DTN_SOCKET_OK) {
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded.", src_str, dest_str, custodian_str);
                 if (!has_custodian) {
@@ -349,12 +349,11 @@ void dtn_controller_attempt_forward_stored(struct netif* netif_out) {
         switch (result) {
             case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
-                dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result, (u32_t)entry->db_id);
-                // dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result, 0);
+                dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
                 if (socket_result == DTN_SOCKET_OK) {
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
                              custodian_str);
-                    dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                    // dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                     if (!has_custodian) {
                         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.",
                                  src_str, dest_str, custodian_str);

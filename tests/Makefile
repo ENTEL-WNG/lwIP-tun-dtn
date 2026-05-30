@@ -48,6 +48,7 @@ APP_SRC = \
 	$(ROOT)/src/raw_socket.c \
 	$(ROOT)/src/dtn_storage.c \
 	$(ROOT)/src/dtn_custody.c \
+	$(ROOT)/src/dtn_utils.c \
 	$(ROOT)/src/dtn_logger.c
 
 THIRD_PARTY_SRC = \
