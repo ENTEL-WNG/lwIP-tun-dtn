@@ -235,8 +235,8 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
             u32_t packet_id = lwip_ntohl(dtn_payload->packet_id);
             DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d | packet_id: %u || process PCK_RECEIVED", src_addr_str,
                      dest_addr_str, icmp6hdr->type, icmp6hdr->code, packet_id);
-            // if (packet_id != 0)
-            // dtn_storage_delete_by_packet_id(global_dtn_module->storage, packet_id);
+            if (packet_id != 0)
+                dtn_storage_delete_by_packet_id(global_dtn_module->storage, packet_id);
             return DTN_ICMPV6_PROCESS_OK;
         }
 

@@ -330,7 +330,7 @@ bool test_storage(void) {
     }
 
     // -----------------------------------------------------------------------
-    // 7. Delete by IP header
+    // 7. Delete by packet_id (= row db_id cast to u32_t)
     // -----------------------------------------------------------------------
     struct pbuf* p2 = make_test_packet(32, "fd00:a:b::1", "fd00:c:d::2", 0xBB);
     ok &= TEST_ASSERT(p2 != NULL, "make_test_packet p2 non-NULL");
@@ -339,16 +339,16 @@ bool test_storage(void) {
     pbuf_free(p2);
     ok &= TEST_ASSERT(dtn_storage_count(storage) == 1, "count is 1 after storing p2");
 
-    // Build a matching ip6_hdr to drive the delete.
-    struct ip6_hdr del_hdr;
-    memset(&del_hdr, 0, sizeof(del_hdr));
-    ip6_addr_t del_src, del_dst;
-    ip6addr_aton("fd00:a:b::1", &del_src);
-    ip6addr_aton("fd00:c:d::2", &del_dst);
-    ip6_addr_copy_to_packed(del_hdr.src, del_src);
-    ip6_addr_copy_to_packed(del_hdr.dest, del_dst);
-    dtn_storage_delete_packet_by_ip_header(storage, &del_hdr);
-    ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_ip_header");
+    // Retrieve the entry to obtain the db_id, which doubles as the packet_id.
+    Stored_Packet_Entry entries2[2];
+    int n_p2 = dtn_storage_get_ready_entries(storage, 1000.0, entries2, 2);
+    ok &= TEST_ASSERT(n_p2 == 1, "one ready entry for p2");
+    if (n_p2 >= 1) {
+        u32_t pkt_id2 = (u32_t)entries2[0].db_id;
+        pbuf_free(entries2[0].p);
+        dtn_storage_delete_by_packet_id(storage, pkt_id2);
+        ok &= TEST_ASSERT(dtn_storage_count(storage) == 0, "count is 0 after delete_by_packet_id");
+    }
 
     // -----------------------------------------------------------------------
     // 8. NULL-safety — must not crash; must return safe/error values

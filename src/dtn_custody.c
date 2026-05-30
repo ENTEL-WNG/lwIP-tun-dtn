@@ -25,16 +25,46 @@
 #define IP6_NEXTH_HOPOPTS 0
 #endif
 
+// Wire layout (32 bytes, hdr_ext_len = 3):
+//   [next_header(1)][hdr_ext_len=3(1)]
+//   [0x1E(1)][16(1)][custodian_addr×16]   ← TLV option 1: custody (18 bytes)
+//   [0x1F(1)][ 4(1)][packet_id×4]         ← TLV option 2: packet ID (6 bytes)
+//   [0x00×6]                               ← six Pad1 bytes to reach 32-byte alignment
 #pragma pack(push, 1)
 struct hbh_hdr {
+    // Fixed HBH header (2 bytes)
     uint8_t next_header;
-    uint8_t hdr_ext_len;
-    uint8_t opt_type;
-    uint8_t opt_data_len;
+    uint8_t hdr_ext_len;         // = (HBH_OPT_HDR_LEN / 8) - 1 = 3
+
+    // TLV Option 1: Custodian address (18 bytes)
+    uint8_t cust_opt_type;       // = CUSTODY_OPTION_TYPE (0x1E)
+    uint8_t cust_opt_data_len;   // = 16
     uint8_t addr[16];
-    uint8_t packet_id_bytes[4];  // per-hop storage ID in network byte order (was: pad)
+
+    // TLV Option 2: Packet ID (6 bytes)
+    uint8_t pkt_id_opt_type;     // = PACKET_ID_OPTION_TYPE (0x1F)
+    uint8_t pkt_id_opt_data_len; // = 4
+    uint8_t packet_id_bytes[4];  // per-hop storage row ID, network byte order
+
+    // Padding to reach HBH_OPT_HDR_LEN = 32 bytes  (32 - 26 = 6)
+    uint8_t pad[HBH_OPT_HDR_LEN - 26];
 };
 #pragma pack(pop)
+
+// Helper: fill every field of an hbh_hdr in one place.
+static void hbh_fill(struct hbh_hdr* hbh, uint8_t next_header,
+                     const ip6_addr_t* custodian, u32_t packet_id) {
+    hbh->next_header        = next_header;
+    hbh->hdr_ext_len        = (HBH_OPT_HDR_LEN / 8) - 1;  // = 3
+    hbh->cust_opt_type      = CUSTODY_OPTION_TYPE;
+    hbh->cust_opt_data_len  = 16;
+    memcpy(hbh->addr, custodian->addr, 16);
+    hbh->pkt_id_opt_type      = PACKET_ID_OPTION_TYPE;
+    hbh->pkt_id_opt_data_len  = 4;
+    uint32_t pid_net = htonl(packet_id);
+    memcpy(hbh->packet_id_bytes, &pid_net, 4);
+    memset(hbh->pad, 0, sizeof(hbh->pad));
+}
 
 bool dtn_add_custodian_option(struct pbuf** p, const ip6_addr_t* custodian) {
     if (!p || !*p || !custodian)
@@ -42,36 +72,29 @@ bool dtn_add_custodian_option(struct pbuf** p, const ip6_addr_t* custodian) {
     struct pbuf* orig = *p;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)orig->payload;
 
-    uint8_t old_nexth = IP6H_NEXTH(ip6hdr);
-    uint16_t orig_len = IP6H_PLEN(ip6hdr);
-    uint16_t new_len = orig_len + HBH_OPT_HDR_LEN;
+    uint8_t old_nexth   = IP6H_NEXTH(ip6hdr);
+    uint16_t orig_plen  = IP6H_PLEN(ip6hdr);
+    uint16_t new_plen   = orig_plen + HBH_OPT_HDR_LEN;
 
-    // Allocate new pbuf for rebuilt packet
-    struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_len, PBUF_RAM);
+    struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_plen, PBUF_RAM);
     if (!newp)
         return false;
 
-    // 1. Copy IPv6 header and update
+    // Copy and update IPv6 header
     memcpy(newp->payload, ip6hdr, IP6_HLEN);
-    struct ip6_hdr* new_ip6 = newp->payload;
+    struct ip6_hdr* new_ip6 = (struct ip6_hdr*)newp->payload;
     IP6H_NEXTH_SET(new_ip6, IP6_NEXTH_HOPOPTS);
-    IP6H_PLEN_SET(new_ip6, new_len);
+    IP6H_PLEN_SET(new_ip6, new_plen);
 
-    // 2. Build Hop-by-Hop header
+    // Build HBH extension header (packet_id = 0 on first hop)
     struct hbh_hdr* hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
-    hbh->next_header = old_nexth;
-    hbh->hdr_ext_len = (HBH_OPT_HDR_LEN / 8) - 1;
-    hbh->opt_type = CUSTODY_OPTION_TYPE;
-    hbh->opt_data_len = 20;  // 16 addr + 4 packet_id; all 20 bytes inside this option
-    memcpy(hbh->addr, custodian->addr, 16);
-    memset(hbh->packet_id_bytes, 0, sizeof(hbh->packet_id_bytes));
+    hbh_fill(hbh, old_nexth, custodian, 0);
 
-    // 3. Copy original payload after HBH
-    uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
-    uint8_t* src = (uint8_t*)orig->payload + IP6_HLEN;
+    // Copy original payload after HBH
+    uint8_t*       dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+    const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN;
     memcpy(dst, src, orig->tot_len - IP6_HLEN);
 
-    // 4. Replace old packet
     pbuf_free(orig);
     *p = newp;
     return true;
@@ -84,19 +107,18 @@ bool dtn_extract_custodian_option(const struct pbuf* p, ip6_addr_t* custodian_ou
     uint8_t nexth = IP6H_NEXTH(ip6hdr);
     const uint8_t* ptr = (const uint8_t*)ip6hdr + IP6_HLEN;
 
-    // Skip extension headers until Hop-by-Hop
+    // Walk extension headers until we find Hop-by-Hop (type 0)
     while (nexth != IP6_NEXTH_HOPOPTS && nexth != IP6_NEXTH_NONE) {
         const uint8_t* ext = ptr;
         nexth = ext[0];
-        uint8_t elen = (ext[1] + 1) * 8;
+        uint8_t elen = (uint8_t)((ext[1] + 1) * 8);
         ptr += elen;
     }
     if (nexth != IP6_NEXTH_HOPOPTS)
         return false;
 
-    // ptr points at HBH header start
     const struct hbh_hdr* hbh = (const struct hbh_hdr*)ptr;
-    if (hbh->opt_type != CUSTODY_OPTION_TYPE || hbh->opt_data_len != 20)
+    if (hbh->cust_opt_type != CUSTODY_OPTION_TYPE || hbh->cust_opt_data_len != 16)
         return false;
     memcpy(custodian_out->addr, hbh->addr, 16);
     return true;
@@ -108,120 +130,102 @@ bool dtn_strip_custodian_option(struct pbuf** p) {
     struct pbuf* orig = *p;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)orig->payload;
 
-    // Check if packet has hop-by-hop header
-    if (IP6H_NEXTH(ip6hdr) != IP6_NEXTH_HOPOPTS) {
-        return false;  // No hop-by-hop header to strip
-    }
+    if (IP6H_NEXTH(ip6hdr) != IP6_NEXTH_HOPOPTS)
+        return false;
 
-    // Get the hop-by-hop header
-    struct hbh_hdr* hbh = (struct hbh_hdr*)((uint8_t*)orig->payload + IP6_HLEN);
-    uint8_t next_nexth = hbh->next_header;
-    uint16_t hbh_len = HBH_OPT_HDR_LEN;
+    const struct hbh_hdr* hbh = (const struct hbh_hdr*)((uint8_t*)orig->payload + IP6_HLEN);
+    uint8_t  next_nexth = hbh->next_header;
+    uint16_t hbh_len    = HBH_OPT_HDR_LEN;
+    uint16_t orig_plen  = IP6H_PLEN(ip6hdr);
+    uint16_t new_plen   = orig_plen - hbh_len;
 
-    // Calculate new packet length
-    uint16_t orig_len = IP6H_PLEN(ip6hdr);
-    uint16_t new_len = orig_len - hbh_len;
-
-    // Allocate new pbuf without hop-by-hop header
-    struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_len, PBUF_RAM);
+    struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_plen, PBUF_RAM);
     if (!newp)
         return false;
 
-    // Copy IPv6 header and update
     memcpy(newp->payload, ip6hdr, IP6_HLEN);
-    struct ip6_hdr* new_ip6 = newp->payload;
-    IP6H_NEXTH_SET(new_ip6, next_nexth);  // Set next header to what HBH pointed to
-    IP6H_PLEN_SET(new_ip6, new_len);
+    struct ip6_hdr* new_ip6 = (struct ip6_hdr*)newp->payload;
+    IP6H_NEXTH_SET(new_ip6, next_nexth);
+    IP6H_PLEN_SET(new_ip6, new_plen);
 
-    // Copy remaining payload (skip HBH header)
-    uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN;
-    uint8_t* src = (uint8_t*)orig->payload + IP6_HLEN + hbh_len;
+    uint8_t*       dst = (uint8_t*)newp->payload + IP6_HLEN;
+    const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN + hbh_len;
     memcpy(dst, src, orig->tot_len - IP6_HLEN - hbh_len);
 
-    // Replace old packet
     pbuf_free(orig);
     *p = newp;
     return true;
 }
 
-struct pbuf* dtn_update_or_add_custodian_option(const struct pbuf* orig, const ip6_addr_t* custodian, u32_t packet_id) {
+struct pbuf* dtn_update_or_add_custodian_option(const struct pbuf* orig,
+                                                const ip6_addr_t* custodian,
+                                                u32_t packet_id) {
     if (!orig || !custodian)
         return NULL;
-
-    // Encode packet_id in network byte order for wire storage.
-    uint32_t pid_net = htonl(packet_id);
 
     const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)orig->payload;
 
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_HOPOPTS) {
-        const struct hbh_hdr* hbh = (const struct hbh_hdr*)((const uint8_t*)orig->payload + IP6_HLEN);
+        const struct hbh_hdr* hbh =
+            (const struct hbh_hdr*)((const uint8_t*)orig->payload + IP6_HLEN);
 
-        if (hbh->opt_type == CUSTODY_OPTION_TYPE && hbh->opt_data_len == 20) {
-            // Already has our custody option — copy the packet, update address and packet_id.
+        if (hbh->cust_opt_type == CUSTODY_OPTION_TYPE && hbh->cust_opt_data_len == 16) {
+            // Already has our custody option — copy packet and update address + packet_id.
             struct pbuf* newp = pbuf_alloc(PBUF_RAW, orig->tot_len, PBUF_RAM);
             if (!newp)
                 return NULL;
             memcpy(newp->payload, orig->payload, orig->tot_len);
-            struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+            struct hbh_hdr* new_hbh =
+                (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
             memcpy(new_hbh->addr, custodian->addr, 16);
+            uint32_t pid_net = htonl(packet_id);
             memcpy(new_hbh->packet_id_bytes, &pid_net, 4);
             return newp;
         }
 
-        // Has a different HBH option — replace it with a fresh custody HBH.
-        // The existing HBH is assumed to be exactly HBH_OPT_HDR_LEN bytes (our format),
-        // so the new packet is the same total size.
-        uint8_t next_nexth = hbh->next_header;
-        uint16_t orig_plen = IP6H_PLEN(ip6hdr);
+        // Has a different HBH — replace it in-place (same total size assumed).
+        uint8_t  next_nexth = hbh->next_header;
+        uint16_t orig_plen  = IP6H_PLEN(ip6hdr);
 
         struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + orig_plen, PBUF_RAM);
         if (!newp)
             return NULL;
 
         memcpy(newp->payload, ip6hdr, IP6_HLEN);
-        struct ip6_hdr* new_ip6 = newp->payload;
+        struct ip6_hdr* new_ip6 = (struct ip6_hdr*)newp->payload;
         IP6H_NEXTH_SET(new_ip6, IP6_NEXTH_HOPOPTS);
         IP6H_PLEN_SET(new_ip6, orig_plen);
 
-        struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
-        new_hbh->next_header = next_nexth;
-        new_hbh->hdr_ext_len = (HBH_OPT_HDR_LEN / 8) - 1;
-        new_hbh->opt_type = CUSTODY_OPTION_TYPE;
-        new_hbh->opt_data_len = 20;  // 16 addr + 4 packet_id; all inside this option
-        memcpy(new_hbh->addr, custodian->addr, 16);
-        memcpy(new_hbh->packet_id_bytes, &pid_net, 4);
+        struct hbh_hdr* new_hbh =
+            (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+        hbh_fill(new_hbh, next_nexth, custodian, packet_id);
 
-        // Copy payload that came after the old HBH header.
-        uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+        uint8_t*       dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
         const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
         memcpy(dst, src, orig->tot_len - IP6_HLEN - HBH_OPT_HDR_LEN);
 
         return newp;
     }
 
-    // No HBH header — add one.
-    uint8_t old_nexth = IP6H_NEXTH(ip6hdr);
+    // No HBH header — prepend one.
+    uint8_t  old_nexth = IP6H_NEXTH(ip6hdr);
     uint16_t orig_plen = IP6H_PLEN(ip6hdr);
-    uint16_t new_plen = orig_plen + HBH_OPT_HDR_LEN;
+    uint16_t new_plen  = orig_plen + HBH_OPT_HDR_LEN;
 
     struct pbuf* newp = pbuf_alloc(PBUF_RAW, IP6_HLEN + new_plen, PBUF_RAM);
     if (!newp)
         return NULL;
 
     memcpy(newp->payload, ip6hdr, IP6_HLEN);
-    struct ip6_hdr* new_ip6 = newp->payload;
+    struct ip6_hdr* new_ip6 = (struct ip6_hdr*)newp->payload;
     IP6H_NEXTH_SET(new_ip6, IP6_NEXTH_HOPOPTS);
     IP6H_PLEN_SET(new_ip6, new_plen);
 
-    struct hbh_hdr* new_hbh = (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
-    new_hbh->next_header = old_nexth;
-    new_hbh->hdr_ext_len = (HBH_OPT_HDR_LEN / 8) - 1;
-    new_hbh->opt_type = CUSTODY_OPTION_TYPE;
-    new_hbh->opt_data_len = 16;
-    memcpy(new_hbh->addr, custodian->addr, 16);
-    memcpy(new_hbh->packet_id_bytes, &pid_net, 4);
+    struct hbh_hdr* new_hbh =
+        (struct hbh_hdr*)((uint8_t*)newp->payload + IP6_HLEN);
+    hbh_fill(new_hbh, old_nexth, custodian, packet_id);
 
-    uint8_t* dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
+    uint8_t*       dst = (uint8_t*)newp->payload + IP6_HLEN + HBH_OPT_HDR_LEN;
     const uint8_t* src = (const uint8_t*)orig->payload + IP6_HLEN;
     memcpy(dst, src, orig->tot_len - IP6_HLEN);
 
@@ -235,8 +239,11 @@ bool dtn_extract_packet_id_from_hbh(const struct pbuf* p, u32_t* packet_id_out) 
     const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
     if (IP6H_NEXTH(ip6hdr) != IP6_NEXTH_HOPOPTS)
         return false;
-    const struct hbh_hdr* hbh = (const struct hbh_hdr*)((const uint8_t*)ip6hdr + IP6_HLEN);
-    if (hbh->opt_type != CUSTODY_OPTION_TYPE || hbh->opt_data_len != 20)
+    const struct hbh_hdr* hbh =
+        (const struct hbh_hdr*)((const uint8_t*)ip6hdr + IP6_HLEN);
+    if (hbh->cust_opt_type    != CUSTODY_OPTION_TYPE   || hbh->cust_opt_data_len    != 16)
+        return false;
+    if (hbh->pkt_id_opt_type  != PACKET_ID_OPTION_TYPE || hbh->pkt_id_opt_data_len  != 4)
         return false;
     uint32_t pid_net;
     memcpy(&pid_net, hbh->packet_id_bytes, 4);
