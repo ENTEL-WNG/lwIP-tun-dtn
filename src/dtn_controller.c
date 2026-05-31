@@ -39,6 +39,29 @@
 
 extern DTN_Module* global_dtn_module;
 
+// ---------------------------------------------------------------------------
+// Per-node throughput stats
+// ---------------------------------------------------------------------------
+
+static uint32_t stat_fwd_immediate = 0; // packets forwarded on-the-spot
+static uint32_t stat_fwd_stored    = 0; // stored packets forwarded later
+static uint32_t stat_stored        = 0; // packets placed in storage
+static uint32_t stat_dropped       = 0; // packets discarded (no route / send error)
+
+static void stats_timer_cb(void* arg) {
+    (void)arg;
+    int db_count = (global_dtn_module && global_dtn_module->storage)
+                       ? dtn_storage_count(global_dtn_module->storage)
+                       : -1;
+    DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u dropped=%u db=%d",
+             stat_fwd_immediate, stat_fwd_stored, stat_stored, stat_dropped, db_count);
+    sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL);
+}
+
+void dtn_controller_stats_timer_start(void) {
+    sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL);
+}
+
 static dtn_icmpv6_process_result_t dtn_controller_process_icmpv6(struct pbuf* p) { return dtn_icmpv6_process(p); }
 
 static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult routing_result) {
@@ -138,6 +161,7 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward.", src_str, dest_str, custodian_str);
             dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
             if (socket_result == DTN_SOCKET_OK) {
+                stat_fwd_immediate++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded.", src_str, dest_str, custodian_str);
                 if (!has_custodian) {
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED.", src_str, dest_str,
@@ -153,14 +177,17 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
                 }
                 return DTN_CONTROLLER_PROCESS_INCOMING_FORWARDED;
             }
+            stat_dropped++;
             DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward", src_str, dest_str, custodian_str);
             return DTN_CONTROLLER_PROCESS_INCOMING_ERR;
         }
         case DTN_CONTROLLER_PROCESS_OUTGOING_STORE: {
             dtn_storage_store_packet_result_t storage_result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
             if (storage_result == DTN_STORAGE_STORE_OK) {
+                stat_stored++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL stored.", src_str, dest_str, custodian_str);
             } else {
+                stat_dropped++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || FAILED storing %d.", src_str, dest_str, custodian_str,
                          storage_result);
             }
@@ -170,9 +197,11 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to send without CGR", src_str, dest_str, custodian_str);
             dtn_socket_result_t socket_result = dtn_raw_socket_send(p);
             if (socket_result == DTN_SOCKET_OK) {
+                stat_fwd_immediate++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send without CGR", src_str, dest_str, custodian_str);
                 return DTN_CONTROLLER_PROCESS_INCOMING_FORWARDED;
             }
+            stat_dropped++;
             DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to send without CGR", src_str, dest_str, custodian_str);
             return DTN_CONTROLLER_PROCESS_INCOMING_ERR;
         }
@@ -275,6 +304,7 @@ void dtn_controller_process_stored(void) {
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
                 dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
                 if (socket_result == DTN_SOCKET_OK) {
+                    stat_fwd_stored++;
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
                              custodian_str);
                     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
