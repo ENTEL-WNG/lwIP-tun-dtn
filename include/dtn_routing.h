@@ -27,6 +27,14 @@ typedef struct Routing_Function {
     DTN_Module* parent_module;
     char* routing_algorithm_name;
     u32_t base_time_in_ms;
+    /* Persistent Python CGR state — initialised once in dtn_routing_create,
+     * released in dtn_routing_destroy.  Stored as void* to avoid pulling
+     * Python.h into every translation unit that includes this header. */
+    void* py_module;        /* PyObject*: py_cgr_lib module              */
+    void* py_cgr_yen;       /* PyObject*: module.cgr_yen callable        */
+    void* py_fwd_candidate; /* PyObject*: module.fwd_candidate callable  */
+    void* py_ipv6_packet;   /* PyObject*: module.ipv6_packet callable    */
+    void* py_contact_plan;  /* PyObject*: loaded contact-plan object     */
 } Routing_Function;
 
 typedef enum {
@@ -56,9 +64,8 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms,
                                                       DtnRoutingResult* result);
 
 dtn_routing_result_t _dtn_routing_get_next_hop_node_id(
-    char* contact_plan_path, double start_time_in_sec, double current_time_in_sec,
-    long current_node_id, long src_node_id, long dest_node_id, long deadline, long package_length,
-    long dscp, DtnRoutingResult* result);
+    double current_time_in_sec, long current_node_id, long src_node_id, long dest_node_id,
+    long deadline, long package_length, long dscp, DtnRoutingResult* result);
 
 // bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t* dest_ip);
 

@@ -4,8 +4,8 @@
 id     = 2
 name   = "node2"
 is_dtn        = true
-dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2"]
-addresses     = ["fd00:01:02::1", "fd00:02:03::3"]
+dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3"]
+addresses     = ["fd00:01:02::1"]
 tun_ipv6_addr  = "fd00:ffff:02::1/64"
 lwip_ipv6_addr = "fd00:ffff:02::02/64"
 
@@ -34,8 +34,8 @@ start_in_sec   = 10
 end_in_sec     = 300
 rate           = 1
 range          = 1
-dtn_addresses  = ["fd00:02:03::2"]
-addresses      = ["fd00:02:03::3"]
+dtn_addresses  = ["fd00:02:03::2", "fd00:02:03::3"]
+addresses      = []
 
 # contact-plan-throughput.toml
 # Stable 3-node linear topology for sustained throughput measurement.
@@ -67,7 +67,7 @@ isDtnNode = true    # DTN relay
 
 [[nodes]]
 id = 3
-isDtnNode = false   # traffic sink (receiver)
+isDtnNode = true   # traffic sink (receiver)
 
 # Edge Definitions — both links always active for 300 s
 [[edges]]
