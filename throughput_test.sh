@@ -49,7 +49,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Defaults
 # ---------------------------------------------------------------------------
 CONTACT_PLAN="${SCRIPT_DIR}/networks/contact-plan-throughput.toml"
-RATE=50
+RATE=100
 DURATION=30
 SIZE=512
 PORT=5005

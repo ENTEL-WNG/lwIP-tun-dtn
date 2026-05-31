@@ -27,7 +27,7 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
-#define MAX_STORED_PACKETS 128
+#define MAX_STORED_PACKETS 2048
 #define MAX_PATH_LENGTH 512
 
 // A single loaded packet entry returned by dtn_storage_get_ready_entries.
