@@ -239,6 +239,72 @@ bool test_delete_by_hash(void) {
     return ok;
 }
 
+bool test_is_local_addr(void) {
+    bool ok = true;
+
+    // Save the config fields we'll modify so other tests are unaffected.
+    char saved_lwip[DTN_MAX_ADDR_LEN];
+    char saved_tun[DTN_MAX_ADDR_LEN];
+    int saved_iface_count = dtn_config.interface_count;
+    char saved_iface_addrs[DTN_MAX_INTERFACES][DTN_MAX_ADDR_LEN];
+
+    strncpy(saved_lwip, dtn_config.lwip_ipv6_addr, DTN_MAX_ADDR_LEN);
+    strncpy(saved_tun, dtn_config.tun_ipv6_addr, DTN_MAX_ADDR_LEN);
+    for (int i = 0; i < DTN_MAX_INTERFACES; i++)
+        strncpy(saved_iface_addrs[i], dtn_config.interfaces[i].local_addr, DTN_MAX_ADDR_LEN);
+
+    // Set up a deterministic config for this test.
+    strncpy(dtn_config.lwip_ipv6_addr, "fd00:ffff:2::2", DTN_MAX_ADDR_LEN);
+    strncpy(dtn_config.tun_ipv6_addr, "fd00:ffff:2::1", DTN_MAX_ADDR_LEN);
+    dtn_config.interface_count = 2;
+    strncpy(dtn_config.interfaces[0].local_addr, "fd00:1:2::2", DTN_MAX_ADDR_LEN);
+    strncpy(dtn_config.interfaces[1].local_addr, "fd00:2:3::2", DTN_MAX_ADDR_LEN);
+
+    ip6_addr_t addr;
+
+    // 1. lwip_ipv6_addr is local.
+    ip6addr_aton("fd00:ffff:2::2", &addr);
+    ok &= TEST_ASSERT(is_local_addr(&addr), "lwip_ipv6_addr is local");
+
+    // 2. tun_ipv6_addr is local.
+    ip6addr_aton("fd00:ffff:2::1", &addr);
+    ok &= TEST_ASSERT(is_local_addr(&addr), "tun_ipv6_addr is local");
+
+    // 3. interface[0] local_addr is local.
+    ip6addr_aton("fd00:1:2::2", &addr);
+    ok &= TEST_ASSERT(is_local_addr(&addr), "interface[0].local_addr is local");
+
+    // 4. interface[1] local_addr is local.
+    ip6addr_aton("fd00:2:3::2", &addr);
+    ok &= TEST_ASSERT(is_local_addr(&addr), "interface[1].local_addr is local");
+
+    // 5. An unrelated address is not local.
+    ip6addr_aton("fd00:9:9::9", &addr);
+    ok &= TEST_ASSERT(!is_local_addr(&addr), "unrelated address is not local");
+
+    // 6. A remote peer address is not local.
+    ip6addr_aton("fd00:1:2::1", &addr);
+    ok &= TEST_ASSERT(!is_local_addr(&addr), "remote peer address is not local");
+
+    // 7. With interface_count = 0, only lwip/tun addresses match.
+    dtn_config.interface_count = 0;
+
+    ip6addr_aton("fd00:ffff:2::2", &addr);
+    ok &= TEST_ASSERT(is_local_addr(&addr), "lwip addr is local when interface_count=0");
+
+    ip6addr_aton("fd00:1:2::2", &addr);
+    ok &= TEST_ASSERT(!is_local_addr(&addr), "interface addr not local when interface_count=0");
+
+    // Restore config.
+    strncpy(dtn_config.lwip_ipv6_addr, saved_lwip, DTN_MAX_ADDR_LEN);
+    strncpy(dtn_config.tun_ipv6_addr, saved_tun, DTN_MAX_ADDR_LEN);
+    dtn_config.interface_count = saved_iface_count;
+    for (int i = 0; i < DTN_MAX_INTERFACES; i++)
+        strncpy(dtn_config.interfaces[i].local_addr, saved_iface_addrs[i], DTN_MAX_ADDR_LEN);
+
+    return ok;
+}
+
 // Own node_id is defined in node_test.toml which is 2
 bool test_routing(void) {
     bool ok = true;
@@ -388,6 +454,10 @@ int main() {
     DTN_TEST("START TESTING");
 
     bool ok = true;
+
+    DTN_TEST("IS_LOCAL_ADDR TESTS");
+    ok &= test_is_local_addr();
+    DTN_TEST("%s", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
 
     DTN_TEST("CUSTODIAN / HASH TESTS");
     ok &= test_custodian();

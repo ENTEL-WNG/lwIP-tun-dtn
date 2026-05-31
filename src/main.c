@@ -156,7 +156,10 @@ err_t tunif_input(struct netif* netif) {
         return copy_err;
     }
 
-    dtn_controller_process_incoming(p, netif);
+    dtn_controller_process_incoming_result_t result = dtn_controller_process_incoming(p, netif);
+    if (result != DTN_CONTROLLER_PROCESS_INCOMING_LOCAL) {
+        pbuf_free(p);
+    }
     return ERR_OK;
 }
 
@@ -364,7 +367,7 @@ int main() {
             }
         }
 
-        dtn_controller_attempt_forward_stored(&tun_netif);
+        dtn_controller_process_stored();
     }
 
     DTN_INFO("Shutting down...");

@@ -15,11 +15,102 @@
 
 #include "dtn_utils.h"
 
+#include <ctype.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include "dtn_config.h"
+#include "dtn_logger.h"
 #include "lwip/ip6.h"
+#include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
+
+// ---------------------------------------------------------------------------
+// Address helpers
+// ---------------------------------------------------------------------------
+
+bool is_addr_equal(const ip6_addr_t* dest_addr, const char* addr) {
+    ip6_addr_t local_addr;
+    if (ip6addr_aton(addr, &local_addr)) {
+        ip6_addr_t dest_nozone = *dest_addr;
+#if LWIP_IPV6_SCOPES
+        ip6_addr_set_zone(&dest_nozone, IP6_NO_ZONE);
+        ip6_addr_set_zone(&local_addr, IP6_NO_ZONE);
+#endif
+        return ip6_addr_eq(&dest_nozone, &local_addr);
+    }
+    return false;
+}
+
+bool is_local_addr(const ip6_addr_t* addr) {
+    for (int i = 0; i < dtn_config.interface_count; i++) {
+        if (is_addr_equal(addr, dtn_config.interfaces[i].local_addr)) {
+            return true;
+        }
+    }
+
+    if (is_addr_equal(addr, dtn_config.lwip_ipv6_addr)) {
+        return true;
+    }
+
+    if (is_addr_equal(addr, dtn_config.tun_ipv6_addr)) {
+        return true;
+    }
+
+    return false;
+}
+
+// ---------------------------------------------------------------------------
+// Payload printing
+// ---------------------------------------------------------------------------
+
+const char* dtn_print_packet_payload(const struct pbuf* p) {
+    if (!p)
+        return NULL;
+
+    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+    uint8_t nexth = IP6H_NEXTH(ip6hdr);
+    uint16_t offset = sizeof(struct ip6_hdr);
+
+    /* Walk past extension headers (Hop-by-Hop=0, Routing=43,
+     * Fragment=44, Dest Options=60) to reach the transport header. */
+    while (nexth == 0 || nexth == 43 || nexth == 44 || nexth == 60) {
+        uint8_t ext[2];
+        if (pbuf_copy_partial(p, ext, 2, offset) < 2)
+            break;
+        /* Fragment header is always 8 bytes; others: (len+1)*8 */
+        uint16_t ext_len = (nexth == 44) ? 8 : ((uint16_t)(ext[1] + 1) * 8);
+        nexth = ext[0];
+        offset += ext_len;
+        if (offset >= p->tot_len)
+            break;
+    }
+
+    /* Skip transport header */
+    uint16_t transport_hdr_len = 0;
+    if (nexth == 17)
+        transport_hdr_len = 8; /* UDP */
+    else if (nexth == 6)
+        transport_hdr_len = 20; /* TCP */
+
+    static char buf[512];
+    uint16_t copied = pbuf_copy_partial(p, (uint8_t*)buf, sizeof(buf) - 1, offset + transport_hdr_len);
+    buf[copied] = '\0';
+
+    /* Strip trailing whitespace */
+    while (copied > 0 && isspace((unsigned char)buf[copied - 1])) buf[--copied] = '\0';
+
+    /* Return NULL if every byte is not printable ASCII */
+    if (copied == 0)
+        return NULL;
+    for (uint16_t i = 0; i < copied; i++) {
+        if (!isprint((unsigned char)buf[i]) && !isspace((unsigned char)buf[i]))
+            return NULL;
+    }
+
+    return buf;
+}
 
 // IPv6 Hop-by-Hop next-header value
 #ifndef IP6_NEXTH_HOPOPTS
@@ -30,7 +121,7 @@
 // FNV-1a 32-bit hash
 // ---------------------------------------------------------------------------
 
-#define FNV1A_32_INIT  0x811c9dc5u
+#define FNV1A_32_INIT 0x811c9dc5u
 #define FNV1A_32_PRIME 0x01000193u
 
 static uint32_t fnv1a_32(const uint8_t* data, size_t len, uint32_t hash) {
@@ -49,12 +140,12 @@ u32_t dtn_compute_packet_hash(const struct pbuf* p) {
 
     uint32_t h = FNV1A_32_INIT;
     // Hash IPv6 src and dst — identical on both sender (no HBH) and receiver (has HBH).
-    h = fnv1a_32((const uint8_t*)&ip6hdr->src,  sizeof(ip6hdr->src),  h);
+    h = fnv1a_32((const uint8_t*)&ip6hdr->src, sizeof(ip6hdr->src), h);
     h = fnv1a_32((const uint8_t*)&ip6hdr->dest, sizeof(ip6hdr->dest), h);
 
     // Advance past the fixed IPv6 header.
     const uint8_t* payload = (const uint8_t*)ip6hdr + IP6_HLEN;
-    uint16_t       plen    = IP6H_PLEN(ip6hdr);  // host byte order via macro
+    uint16_t plen = IP6H_PLEN(ip6hdr);  // host byte order via macro
 
     // Skip HBH extension header if present so the hash is the same regardless
     // of whether the custodian HBH has been added or not.
@@ -62,7 +153,7 @@ u32_t dtn_compute_packet_hash(const struct pbuf* p) {
         uint16_t hbh_bytes = (uint16_t)((payload[1] + 1) * 8);
         if (hbh_bytes <= plen) {
             payload += hbh_bytes;
-            plen    -= hbh_bytes;
+            plen -= hbh_bytes;
         }
     }
 

@@ -21,10 +21,10 @@
 #include "dtn_config.h"
 #include "dtn_controller.h"
 #include "dtn_custody.h"
-#include "dtn_utils.h"
 #include "dtn_logger.h"
 #include "dtn_module.h"
 #include "dtn_storage.h"
+#include "dtn_utils.h"
 #include "lwip/icmp6.h"
 #include "lwip/inet_chksum.h"
 #include "lwip/ip.h"
@@ -43,7 +43,7 @@ typedef struct {
     u32_t packet_hash;     // FNV-1a hash of the original packet; 0 = not stored
     u32_t timestamp;       // when this ICMPv6 message was created (ms)
     u16_t payload_length;  // original packet payload length
-    u8_t  reason_code;     // reason code (DELETED messages only)
+    u8_t reason_code;      // reason code (DELETED messages only)
 } dtn_icmpv6_payload_t;
 #pragma pack()
 
@@ -72,10 +72,10 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 
     // Set up DTN payload
     dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
-    dtn_payload->packet_hash    = lwip_htonl(dtn_compute_packet_hash(p));
-    dtn_payload->timestamp      = sys_now();
+    dtn_payload->packet_hash = lwip_htonl(dtn_compute_packet_hash(p));
+    dtn_payload->timestamp = sys_now();
     dtn_payload->payload_length = lwip_ntohs(IP6H_PLEN(orig_ip6hdr));
-    dtn_payload->reason_code    = reason;
+    dtn_payload->reason_code = reason;
 
     // Copy IPv6 header + first 8 bytes of payload from original packet
     pbuf_copy_partial(p, (u8_t*)(dtn_payload + 1), IP6_HLEN + 8, 0);
@@ -153,6 +153,10 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 }
 
 static dtn_icmpv6_send_message_result_t dtn_icmpv6_send_message(const struct pbuf* p, dtn_icmpv6_msg_type_t type, u8_t code, u8_t reason) {
+    if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
+        return DTN_ICMPV6_SEND_MESSAGE_DISABLED;
+    }
+
     ip6_addr_t src_addr, dest_addr, custodian_addr;
 
     bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
@@ -230,8 +234,8 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
         case ICMP6_TYPE_DTN_PCK_RECEIVED: {
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
             u32_t hash = lwip_ntohl(dtn_payload->packet_hash);
-            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d | hash: 0x%08x || process PCK_RECEIVED",
-                     src_addr_str, dest_addr_str, icmp6hdr->type, icmp6hdr->code, hash);
+            DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d | hash: 0x%08x || process PCK_RECEIVED", src_addr_str, dest_addr_str,
+                     icmp6hdr->type, icmp6hdr->code, hash);
             if (hash != 0)
                 dtn_storage_delete_by_hash(global_dtn_module->storage, hash);
             return DTN_ICMPV6_PROCESS_OK;

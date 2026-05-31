@@ -26,9 +26,16 @@ typedef enum {
     DTN_CONTROLLER_PROCESS_OUTGOING_ERR = -1,
 } dtn_controller_process_outgoing_result_t;
 
-void dtn_controller_process_incoming(struct pbuf* p, struct netif* inp_netif);
-void dtn_controller_attempt_forward_stored(struct netif* netif_out);
-dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(
-    struct pbuf* p, DtnRoutingResult* out_routing_result);
+typedef enum {
+    DTN_CONTROLLER_PROCESS_INCOMING_FORWARDED = 0,  // packet sent to next hop
+    DTN_CONTROLLER_PROCESS_INCOMING_STORED = 1,     // packet stored for later forwarding
+    DTN_CONTROLLER_PROCESS_INCOMING_LOCAL = 2,      // packet delivered to local stack
+    DTN_CONTROLLER_PROCESS_INCOMING_ICMPV6 = 3,     // packet handled as DTN ICMPv6 control
+    DTN_CONTROLLER_PROCESS_INCOMING_ERR = -1,       // invalid input or unrecoverable failure
+} dtn_controller_process_incoming_result_t;
+
+dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct pbuf* p, struct netif* inp_netif);
+dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct pbuf* p, DtnRoutingResult* out_routing_result);
+void dtn_controller_process_stored(void);
 
 #endif
