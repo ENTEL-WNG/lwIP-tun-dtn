@@ -30,7 +30,7 @@
 // Address helpers
 // ---------------------------------------------------------------------------
 
-bool is_addr_equal(const ip6_addr_t* dest_addr, const char* addr) {
+bool dtn_utils_is_addr_equal(const ip6_addr_t* dest_addr, const char* addr) {
     ip6_addr_t local_addr;
     if (ip6addr_aton(addr, &local_addr)) {
         ip6_addr_t dest_nozone = *dest_addr;
@@ -43,18 +43,18 @@ bool is_addr_equal(const ip6_addr_t* dest_addr, const char* addr) {
     return false;
 }
 
-bool is_local_addr(const ip6_addr_t* addr) {
+bool dtn_utils_is_local_addr(const ip6_addr_t* addr) {
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        if (is_addr_equal(addr, dtn_config.interfaces[i].local_addr)) {
+        if (dtn_utils_is_addr_equal(addr, dtn_config.interfaces[i].local_addr)) {
             return true;
         }
     }
 
-    if (is_addr_equal(addr, dtn_config.lwip_ipv6_addr)) {
+    if (dtn_utils_is_addr_equal(addr, dtn_config.lwip_ipv6_addr)) {
         return true;
     }
 
-    if (is_addr_equal(addr, dtn_config.tun_ipv6_addr)) {
+    if (dtn_utils_is_addr_equal(addr, dtn_config.tun_ipv6_addr)) {
         return true;
     }
 
@@ -65,7 +65,7 @@ bool is_local_addr(const ip6_addr_t* addr) {
 // Payload printing
 // ---------------------------------------------------------------------------
 
-const char* dtn_print_packet_payload(const struct pbuf* p) {
+const char* dtn_utils_print_packet_payload(const struct pbuf* p) {
     if (!p)
         return NULL;
 
@@ -124,7 +124,7 @@ const char* dtn_print_packet_payload(const struct pbuf* p) {
 #define FNV1A_32_INIT 0x811c9dc5u
 #define FNV1A_32_PRIME 0x01000193u
 
-static uint32_t fnv1a_32(const uint8_t* data, size_t len, uint32_t hash) {
+static uint32_t dtn_utils_fnv1a_32(const uint8_t* data, size_t len, uint32_t hash) {
     for (size_t i = 0; i < len; i++) {
         hash ^= data[i];
         hash *= FNV1A_32_PRIME;
@@ -132,7 +132,7 @@ static uint32_t fnv1a_32(const uint8_t* data, size_t len, uint32_t hash) {
     return hash;
 }
 
-u32_t dtn_compute_packet_hash(const struct pbuf* p) {
+u32_t dtn_utils_compute_packet_hash(const struct pbuf* p) {
     if (!p)
         return 0;
 
@@ -140,8 +140,8 @@ u32_t dtn_compute_packet_hash(const struct pbuf* p) {
 
     uint32_t h = FNV1A_32_INIT;
     // Hash IPv6 src and dst — identical on both sender (no HBH) and receiver (has HBH).
-    h = fnv1a_32((const uint8_t*)&ip6hdr->src, sizeof(ip6hdr->src), h);
-    h = fnv1a_32((const uint8_t*)&ip6hdr->dest, sizeof(ip6hdr->dest), h);
+    h = dtn_utils_fnv1a_32((const uint8_t*)&ip6hdr->src, sizeof(ip6hdr->src), h);
+    h = dtn_utils_fnv1a_32((const uint8_t*)&ip6hdr->dest, sizeof(ip6hdr->dest), h);
 
     // Advance past the fixed IPv6 header.
     const uint8_t* payload = (const uint8_t*)ip6hdr + IP6_HLEN;
@@ -157,7 +157,7 @@ u32_t dtn_compute_packet_hash(const struct pbuf* p) {
         }
     }
 
-    h = fnv1a_32(payload, plen, h);
+    h = dtn_utils_fnv1a_32(payload, plen, h);
 
     // Ensure 0 is never returned (0 is the "not stored" sentinel).
     return (h == 0) ? 1u : h;

@@ -264,7 +264,8 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, d
     ip6addr_ntoa_r(&src, src_string, sizeof(src_string));
     ip6addr_ntoa_r(&dest, dest_string, sizeof(dest_string));
 
-    DTN_DEBUG("DTN Routing: Get next hop current_time_in_sec: %f - src: %s - dest: %s", current_time_in_sec, src_string, dest_string);
+    DTN_DEBUG("Packet|| src: %s - dest: %s || start_time_in_sec: %f - current_time_in_sec: %f", src_string, dest_string, start_time_in_sec,
+              current_time_in_sec);
 
     u8_t version = IP6H_V(ip6h);
     u8_t traffic_class = IP6H_TC(ip6h);
@@ -275,18 +276,17 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, d
     u16_t package_length = IP6_HLEN + payload_length;
 
     DTN_DEBUG(
-        "Get next hop version: %u - traffic_class: %u - hoplim: %u - dscp: %u - "
-        "payload_length: "
-        "%u - package_length: %u",
-        version, traffic_class, hoplim, dscp, payload_length, package_length);
+        "Packet|| src: %s - dest: %s || hop version: %u - traffic_class: %u - hoplim: %u - dscp: %u - "
+        "payload_length: %u - package_length: %u",
+        src_string, dest_string, version, traffic_class, hoplim, dscp, payload_length, package_length);
 
     long deadline = hoplim * 1000;
     long curr_node_id = (long)dtn_config.id;
     long src_node_id = dtn_routing_ipv6_to_nodeid(src_string);
     long dest_node_id = dtn_routing_ipv6_to_nodeid(dest_string);
 
-    DTN_DEBUG("src_node_id: %ld -> curr_node_id: %ld -> dest_node_id: %ld - deadline: %ld", src_node_id, curr_node_id, dest_node_id,
-              deadline);
+    DTN_DEBUG("Packet|| src: %s - dest: %s || src_node_id : % ld->curr_node_id : % ld->dest_node_id : % ld - deadline : % ld ", src_string,
+              dest_string, src_node_id, curr_node_id, dest_node_id, deadline);
 
     return _dtn_routing_get_next_hop_node_id(current_time_in_sec, curr_node_id, src_node_id, dest_node_id, deadline, package_length, dscp,
                                              result);

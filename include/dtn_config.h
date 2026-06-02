@@ -8,7 +8,7 @@
  * Variables
  * ---------------------------------------------------------------------- */
 #define PRINT_PAYLOAD 1
-#define IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED 1
+#define IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED 0
 
 /* -------------------------------------------------------------------------
  * ENV Variables

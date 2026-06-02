@@ -293,7 +293,7 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
 # Docker Compose generator
 # ---------------------------------------------------------------------------
 
-def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
+def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: str = "1.0") -> None:
     """
     Write a docker-compose.yml that models the contact-plan topology.
 
@@ -395,6 +395,12 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path) -> None:
 
         if svc_networks:
             service["networks"] = svc_networks
+
+        service["deploy"] = {
+            "resources": {
+                "limits": {"cpus": cpus},
+            }
+        }
 
         services[svc_name] = service
 
@@ -585,7 +591,8 @@ def main():
 
     generate_graph(data, node_data, out_dir / "topology.png")
 
-    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml")
+    cpus = str(data.get("contact_plan", {}).get("cpus", "1.0"))
+    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus)
 
     test_script = out_dir / "test.sh"
     if not test_script.exists():

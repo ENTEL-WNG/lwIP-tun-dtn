@@ -9,11 +9,11 @@
 #include "dtn_config.h"
 #include "dtn_controller.h"
 #include "dtn_custody.h"
-#include "dtn_utils.h"
 #include "dtn_icmpv6.h"
 #include "dtn_logger.h"
 #include "dtn_routing.h"
 #include "dtn_storage.h"
+#include "dtn_utils.h"
 #include "lwip/err.h"
 #include "lwip/icmp6.h"
 #include "lwip/init.h"
@@ -120,9 +120,9 @@ bool test_custodian(void) {
     // -----------------------------------------------------------------
     // 1. Hash of plain packet (no HBH) — must be non-zero and consistent
     // -----------------------------------------------------------------
-    u32_t hash1 = dtn_compute_packet_hash(p);
+    u32_t hash1 = dtn_utils_compute_packet_hash(p);
     ok &= TEST_ASSERT(hash1 != 0, "hash of plain packet is non-zero");
-    u32_t hash1b = dtn_compute_packet_hash(p);
+    u32_t hash1b = dtn_utils_compute_packet_hash(p);
     ok &= TEST_ASSERT(hash1 == hash1b, "hash is deterministic");
 
     // -----------------------------------------------------------------
@@ -142,7 +142,7 @@ bool test_custodian(void) {
     ip6addr_ntoa_r(&custodian, got, sizeof(got));
     ok &= TEST_ASSERT(strcmp(exp, got) == 0, "custodian addr: expected '%s', got '%s'", exp, got);
 
-    u32_t hash2 = dtn_compute_packet_hash(p_custodian);
+    u32_t hash2 = dtn_utils_compute_packet_hash(p_custodian);
     ok &= TEST_ASSERT(hash2 == hash1, "hash with HBH equals hash without HBH (HBH skipped)");
 
     // -----------------------------------------------------------------
@@ -154,7 +154,7 @@ bool test_custodian(void) {
     pbuf_free(p_custodian);
     ok &= TEST_ASSERT(p_updated != NULL, "dtn_update_or_add_custodian_option (update) returned NULL");
 
-    u32_t hash3 = dtn_compute_packet_hash(p_updated);
+    u32_t hash3 = dtn_utils_compute_packet_hash(p_updated);
     ok &= TEST_ASSERT(hash3 == hash1, "hash unchanged after custodian address update");
 
     // custodian address must reflect the new value
@@ -169,14 +169,14 @@ bool test_custodian(void) {
     // 4. Different payload → different hash
     // -----------------------------------------------------------------
     struct pbuf* p_other = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:4:5::5", 0xFF);
-    u32_t hash_other = dtn_compute_packet_hash(p_other);
+    u32_t hash_other = dtn_utils_compute_packet_hash(p_other);
     ok &= TEST_ASSERT(hash_other != hash1, "different payload yields different hash");
     pbuf_free(p_other);
 
     // -----------------------------------------------------------------
     // 5. NULL input returns 0
     // -----------------------------------------------------------------
-    ok &= TEST_ASSERT(dtn_compute_packet_hash(NULL) == 0, "hash(NULL) returns 0");
+    ok &= TEST_ASSERT(dtn_utils_compute_packet_hash(NULL) == 0, "hash(NULL) returns 0");
 
     pbuf_free(p_updated);
     return ok;
@@ -202,8 +202,8 @@ bool test_delete_by_hash(void) {
     struct pbuf* pb = make_test_packet(32, "fd00:a::1", "fd00:b::2", 0x22);
     DtnRoutingResult rr = make_routing_result(0.0, 100.0);
 
-    u32_t hash_a = dtn_compute_packet_hash(pa);
-    u32_t hash_b = dtn_compute_packet_hash(pb);
+    u32_t hash_a = dtn_utils_compute_packet_hash(pa);
+    u32_t hash_b = dtn_utils_compute_packet_hash(pb);
     ok &= TEST_ASSERT(hash_a != 0, "hash_a is non-zero");
     ok &= TEST_ASSERT(hash_b != 0, "hash_b is non-zero");
     ok &= TEST_ASSERT(hash_a != hash_b, "two different payloads hash differently");
@@ -225,9 +225,8 @@ bool test_delete_by_hash(void) {
     ok &= TEST_ASSERT(nr == 1, "one ready entry remains");
     if (nr == 1) {
         // Reconstruct the hash from the stored pbuf and verify it matches hash_b.
-        u32_t remaining_hash = dtn_compute_packet_hash(remaining[0].p);
-        ok &= TEST_ASSERT(remaining_hash == hash_b,
-                          "surviving packet has hash_b (0x%08x), got 0x%08x", hash_b, remaining_hash);
+        u32_t remaining_hash = dtn_utils_compute_packet_hash(remaining[0].p);
+        ok &= TEST_ASSERT(remaining_hash == hash_b, "surviving packet has hash_b (0x%08x), got 0x%08x", hash_b, remaining_hash);
         pbuf_free(remaining[0].p);
     }
 
@@ -250,8 +249,7 @@ bool test_is_local_addr(void) {
 
     strncpy(saved_lwip, dtn_config.lwip_ipv6_addr, DTN_MAX_ADDR_LEN);
     strncpy(saved_tun, dtn_config.tun_ipv6_addr, DTN_MAX_ADDR_LEN);
-    for (int i = 0; i < DTN_MAX_INTERFACES; i++)
-        strncpy(saved_iface_addrs[i], dtn_config.interfaces[i].local_addr, DTN_MAX_ADDR_LEN);
+    for (int i = 0; i < DTN_MAX_INTERFACES; i++) strncpy(saved_iface_addrs[i], dtn_config.interfaces[i].local_addr, DTN_MAX_ADDR_LEN);
 
     // Set up a deterministic config for this test.
     strncpy(dtn_config.lwip_ipv6_addr, "fd00:ffff:2::2", DTN_MAX_ADDR_LEN);
@@ -264,43 +262,42 @@ bool test_is_local_addr(void) {
 
     // 1. lwip_ipv6_addr is local.
     ip6addr_aton("fd00:ffff:2::2", &addr);
-    ok &= TEST_ASSERT(is_local_addr(&addr), "lwip_ipv6_addr is local");
+    ok &= TEST_ASSERT(dtn_utils_is_local_addr(&addr), "lwip_ipv6_addr is local");
 
     // 2. tun_ipv6_addr is local.
     ip6addr_aton("fd00:ffff:2::1", &addr);
-    ok &= TEST_ASSERT(is_local_addr(&addr), "tun_ipv6_addr is local");
+    ok &= TEST_ASSERT(dtn_utils_is_local_addr(&addr), "tun_ipv6_addr is local");
 
     // 3. interface[0] local_addr is local.
     ip6addr_aton("fd00:1:2::2", &addr);
-    ok &= TEST_ASSERT(is_local_addr(&addr), "interface[0].local_addr is local");
+    ok &= TEST_ASSERT(dtn_utils_is_local_addr(&addr), "interface[0].local_addr is local");
 
     // 4. interface[1] local_addr is local.
     ip6addr_aton("fd00:2:3::2", &addr);
-    ok &= TEST_ASSERT(is_local_addr(&addr), "interface[1].local_addr is local");
+    ok &= TEST_ASSERT(dtn_utils_is_local_addr(&addr), "interface[1].local_addr is local");
 
     // 5. An unrelated address is not local.
     ip6addr_aton("fd00:9:9::9", &addr);
-    ok &= TEST_ASSERT(!is_local_addr(&addr), "unrelated address is not local");
+    ok &= TEST_ASSERT(!dtn_utils_is_local_addr(&addr), "unrelated address is not local");
 
     // 6. A remote peer address is not local.
     ip6addr_aton("fd00:1:2::1", &addr);
-    ok &= TEST_ASSERT(!is_local_addr(&addr), "remote peer address is not local");
+    ok &= TEST_ASSERT(!dtn_utils_is_local_addr(&addr), "remote peer address is not local");
 
     // 7. With interface_count = 0, only lwip/tun addresses match.
     dtn_config.interface_count = 0;
 
     ip6addr_aton("fd00:ffff:2::2", &addr);
-    ok &= TEST_ASSERT(is_local_addr(&addr), "lwip addr is local when interface_count=0");
+    ok &= TEST_ASSERT(dtn_utils_is_local_addr(&addr), "lwip addr is local when interface_count=0");
 
     ip6addr_aton("fd00:1:2::2", &addr);
-    ok &= TEST_ASSERT(!is_local_addr(&addr), "interface addr not local when interface_count=0");
+    ok &= TEST_ASSERT(!dtn_utils_is_local_addr(&addr), "interface addr not local when interface_count=0");
 
     // Restore config.
     strncpy(dtn_config.lwip_ipv6_addr, saved_lwip, DTN_MAX_ADDR_LEN);
     strncpy(dtn_config.tun_ipv6_addr, saved_tun, DTN_MAX_ADDR_LEN);
     dtn_config.interface_count = saved_iface_count;
-    for (int i = 0; i < DTN_MAX_INTERFACES; i++)
-        strncpy(dtn_config.interfaces[i].local_addr, saved_iface_addrs[i], DTN_MAX_ADDR_LEN);
+    for (int i = 0; i < DTN_MAX_INTERFACES; i++) strncpy(dtn_config.interfaces[i].local_addr, saved_iface_addrs[i], DTN_MAX_ADDR_LEN);
 
     return ok;
 }
@@ -309,17 +306,42 @@ bool test_is_local_addr(void) {
 bool test_routing(void) {
     bool ok = true;
 
-    struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
-    struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+    Routing_Function* routing = dtn_routing_create(NULL);
+    ok &= TEST_ASSERT(routing != NULL, "routing_create returns non-NULL");
+    if (!routing)
+        return false;
 
-    DtnRoutingResult routing_result;
-    dtn_routing_get_next_hop_node_id(0, 0 * 1000, ip6h, &routing_result);
-    DTN_TEST("t=0 | next_hop_node_id: %d | %f", routing_result.next_hop_node_id, routing_result.best_delivery_time);
+    {
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
+        struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+        DtnRoutingResult routing_result;
+        int t = 0;
+        dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
+        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
+                 routing_result.best_delivery_time, routing_result.to_time);
+        pbuf_free(p);
+    }
+    {
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
+        struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+        DtnRoutingResult routing_result;
+        int t = 21;
+        dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
+        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
+                 routing_result.best_delivery_time, routing_result.to_time);
+        pbuf_free(p);
+    }
+    {
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN * 16, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
+        struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+        DtnRoutingResult routing_result;
+        int t = 990;
+        dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
+        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
+                 routing_result.best_delivery_time, routing_result.to_time);
+        pbuf_free(p);
+    }
 
-    dtn_routing_get_next_hop_node_id(0, 21 * 1000, ip6h, &routing_result);
-    DTN_TEST("t=21 | next_hop_node_id: %d | %f", routing_result.next_hop_node_id, routing_result.best_delivery_time);
-
-    pbuf_free(p);
     return ok;
 }
 
@@ -402,7 +424,7 @@ bool test_storage(void) {
     // -----------------------------------------------------------------------
     struct pbuf* p2 = make_test_packet(32, "fd00:a:b::1", "fd00:c:d::2", 0xBB);
     ok &= TEST_ASSERT(p2 != NULL, "make_test_packet p2 non-NULL");
-    u32_t p2_hash = dtn_compute_packet_hash(p2);
+    u32_t p2_hash = dtn_utils_compute_packet_hash(p2);
     ok &= TEST_ASSERT(p2_hash != 0, "p2 hash is non-zero");
     DtnRoutingResult rr2 = make_routing_result(0.0, 200.0);
     ok &= TEST_ASSERT(dtn_storage_store_packet(storage, p2, &rr2) == DTN_STORAGE_STORE_OK, "store p2 returns OK");
@@ -450,6 +472,7 @@ int main() {
 
     dtn_config_print(&dtn_config);
     dtn_log_init(DTN_LOG_LEVEL_TEST);
+    // dtn_log_init(DTN_LOG_LEVEL_DEBUG);
 
     DTN_TEST("START TESTING");
 
@@ -457,26 +480,26 @@ int main() {
 
     DTN_TEST("IS_LOCAL_ADDR TESTS");
     ok &= test_is_local_addr();
-    DTN_TEST("%s", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
 
     DTN_TEST("CUSTODIAN / HASH TESTS");
     ok &= test_custodian();
     ok &= test_payload_length();
-    DTN_TEST("%s", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
 
     DTN_TEST("ROUTING TESTS");
     ok &= test_routing();
-    DTN_TEST("%s", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
 
     DTN_TEST("STORAGE TESTS");
     ok &= test_storage();
-    DTN_TEST("%s", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
 
     DTN_TEST("DELETE-BY-HASH TESTS");
     ok &= test_delete_by_hash();
-    DTN_TEST("%s", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
 
-    DTN_TEST("%s", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
+    DTN_TEST("%s\n", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 
     return ok ? 0 : 1;
 }

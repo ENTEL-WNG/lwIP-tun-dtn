@@ -270,7 +270,7 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
 
     // Compute FNV-1a hash for per-packet identification (used to delete the stored
     // row when an ICMPv6 RECEIVED ACK arrives from the next hop).
-    u32_t pkt_hash = dtn_compute_packet_hash(p);
+    u32_t pkt_hash = dtn_utils_compute_packet_hash(p);
 
     const char* sql =
         "INSERT INTO stored_packets"

@@ -120,7 +120,7 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY process incoming.", src_str, dest_str, custodian_str);
 
     if (PRINT_PAYLOAD) {
-        const char* payload = dtn_print_packet_payload(p);
+        const char* payload = dtn_utils_print_packet_payload(p);
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s | payload: %s ||", src_str, dest_str, custodian_str, payload);
     }
 
@@ -137,7 +137,7 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
         dtn_icmpv6_send_pck_received(p, ICMP6_CODE_DTN_NO_INFO);
     }
 
-    if (is_local_addr(&dest_addr)) {
+    if (dtn_utils_is_local_addr(&dest_addr)) {
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process as local.", src_str, dest_str, custodian_str);
         dtn_icmpv6_send_pck_delivered(p, ICMP6_CODE_DTN_NO_INFO);
 

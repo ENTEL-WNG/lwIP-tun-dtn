@@ -318,6 +318,22 @@ def make_html_report(traffic: dict, resources: dict, capture_dir: str) -> str:
         figs_b64.append(base64.b64encode(buf.getvalue()).decode())
         plt.close(fig)
 
+        # Memory per node
+        fig, ax = plt.subplots(figsize=(8, 3))
+        for node in nodes:
+            rows = [m for m in metrics if m["node"] == node]
+            xs = [r["ts"] - t0 for r in rows]
+            ys = [r.get("mem_mb", 0) for r in rows]
+            ax.plot(xs, ys, label=node)
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Memory (MiB)")
+        ax.set_title("Memory usage per node")
+        ax.legend()
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", bbox_inches="tight")
+        figs_b64.append(base64.b64encode(buf.getvalue()).decode())
+        plt.close(fig)
+
         # DB count for DTN nodes
         dtn_rows = [m for m in metrics if m.get("db_count", -1) >= 0]
         if dtn_rows:

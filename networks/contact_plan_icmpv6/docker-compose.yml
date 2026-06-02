@@ -21,6 +21,10 @@ services:
     networks:
       net-node1-node2:
         mac_address: 00:01:00:02:00:01
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   node2:
     build:
       context: ../..
@@ -45,6 +49,10 @@ services:
         mac_address: 00:01:00:02:00:02
       net-node2-node3:
         mac_address: 00:02:00:03:00:02
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   node3:
     build:
       context: ../..
@@ -69,6 +77,10 @@ services:
         mac_address: 00:02:00:03:00:03
       net-node3-node4:
         mac_address: 00:03:00:04:00:03
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   node4:
     build:
       context: ../..
@@ -91,6 +103,10 @@ services:
     networks:
       net-node3-node4:
         mac_address: 00:03:00:04:00:04
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   capture:
     image: nicolaka/netshoot
     container_name: capture
