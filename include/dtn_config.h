@@ -8,7 +8,7 @@
  * Variables
  * ---------------------------------------------------------------------- */
 #define PRINT_PAYLOAD 1
-#define IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED 0
+#define IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED 1
 
 /* -------------------------------------------------------------------------
  * ENV Variables
@@ -39,7 +39,7 @@ typedef struct {
     int remote_node_id;
     int64_t start_in_sec;
     int64_t end_in_sec;
-    double rate;
+    double rate_in_bits_per_sec;
     double range;
 
     char dtn_addresses[DTN_MAX_ADDRESSES][DTN_MAX_ADDR_LEN];
@@ -81,7 +81,7 @@ typedef struct {
     int64_t max_time_in_sec;
 
     /* [contact_plan.defaults] */
-    double default_rate;
+    double default_rate_in_bits_per_sec;
     double default_range;
 
     /* [[nodes]] */

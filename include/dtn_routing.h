@@ -50,47 +50,14 @@ typedef struct {
 } DtnRoutingResult;
 
 Routing_Function* dtn_routing_create(DTN_Module* parent);
-
 void dtn_routing_destroy(Routing_Function* routing);
-
 dtn_routing_result_t dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node);
-
-dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id,
-                                                    bool* is_next_hop_active);
-
-dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms,
-                                                      double current_time_in_ms,
-                                                      struct ip6_hdr* ip6h,
+dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id, bool* is_next_hop_active);
+dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms, struct ip6_hdr* ip6h,
                                                       DtnRoutingResult* result);
-
-dtn_routing_result_t _dtn_routing_get_next_hop_node_id(
-    double current_time_in_sec, long current_node_id, long src_node_id, long dest_node_id,
-    long deadline, long package_length, long dscp, DtnRoutingResult* result);
-
-// bool dtn_routing_is_dtn_destination(Routing_Function* routing, const ip6_addr_t* dest_ip);
-
-// int dtn_routing_get_dtn_next_hop(Routing_Function* routing, u32_t* v_tc_fl, u16_t* plen,
-//                                  u8_t* hoplim, ip6_addr_t* dest_ip, ip6_addr_t* sender,
-//                                  ip6_addr_t* next_hop_ip);
-// int dtn_routing_get_next_dnt_hop_v2(double start_time, double current_time,
-//                                     struct ip6_hdr* ip6_header, ip6_addr_t* next_hop_ip);
-
-// int dtn_routing_add_contact(Routing_Function* routing, const ip6_addr_t* node_addr,
-//                             const ip6_addr_t* next_hop, u32_t start_time_ms, u32_t end_time_ms,
-//                             bool is_dtn_node);
-
-// int dtn_routing_remove_contact(Routing_Function* routing, const ip6_addr_t* node_addr);
-
-// bool dtn_routing_update_contacts(Routing_Function* routing);
-
-// bool dtn_routing_has_active_contact(Routing_Function* routing, const ip6_addr_t* dest_ip);
-
-// int ip6_addr_to_str(const ip6_addr_t* a, char* buf, size_t buflen);
-
+dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_sec, long current_node_id, long src_node_id,
+                                                       long dest_node_id, long deadline, long package_length_in_bits, long dscp,
+                                                       DtnRoutingResult* result);
 long dtn_routing_ipv6_to_nodeid(const char* ip6);
-
-// int nodeid_to_ipv6(long node_id, ip6_addr_t* out);
-
-// int dtn_routing_load_contacts(Routing_Function* routing, const char* filename);
 
 #endif

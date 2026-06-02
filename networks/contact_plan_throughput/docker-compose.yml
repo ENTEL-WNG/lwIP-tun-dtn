@@ -21,6 +21,10 @@ services:
     networks:
       net-node1-node2:
         mac_address: 00:01:00:02:00:01
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   node2:
     build:
       context: ../..
@@ -45,6 +49,10 @@ services:
         mac_address: 00:01:00:02:00:02
       net-node2-node3:
         mac_address: 00:02:00:03:00:02
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   node3:
     build:
       context: ../..
@@ -67,6 +75,38 @@ services:
     networks:
       net-node2-node3:
         mac_address: 00:02:00:03:00:03
+      net-node3-node10:
+        mac_address: 00:03:00:0a:00:03
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+  node10:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node10
+    privileged: true
+    hostname: node10
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_throughput/node10.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_throughput/node10.toml
+    networks:
+      net-node3-node10:
+        mac_address: 00:03:00:0a:00:0a
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
   capture:
     image: nicolaka/netshoot
     container_name: capture
@@ -85,5 +125,8 @@ networks:
     driver: bridge
     enable_ipv6: true
   net-node2-node3:
+    driver: bridge
+    enable_ipv6: true
+  net-node3-node10:
     driver: bridge
     enable_ipv6: true

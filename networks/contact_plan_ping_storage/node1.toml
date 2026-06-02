@@ -18,7 +18,7 @@ remote_mac  = "00:01:00:02:00:02"
 remote_node_id = 2
 start_in_sec   = 0
 end_in_sec     = 100
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3"]
 addresses      = ["fd00:01:02::1"]
@@ -28,7 +28,7 @@ name = "contact_plan_ping_storage"
 max_time_in_sec = 200
 
 [contact_plan.defaults]
-rate = 100
+rate_in_bits_per_sec = 100
 range = 1
 
 # Node Definitions

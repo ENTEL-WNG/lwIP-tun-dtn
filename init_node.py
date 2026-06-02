@@ -127,7 +127,7 @@ def setup_interfaces(cfg: dict) -> list[str]:
 
         if old_name and old_name != int_name:
             log.info("Renaming %s -> %s", old_name, int_name)
-            tmp = f"tmp_{int_name}"
+            tmp = f"i_{int_name}"
             ip("link", "set", old_name, "down")
             ip("link", "set", old_name, "name", tmp)
             ip("link", "set", tmp, "name", int_name)

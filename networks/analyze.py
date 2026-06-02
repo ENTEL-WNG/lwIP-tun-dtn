@@ -138,6 +138,28 @@ def analyze_traffic(sent: list[dict], recv: list[dict]) -> dict:
 # Metrics analysis
 # ---------------------------------------------------------------------------
 
+def _net_rates(rows: list[dict]) -> list[dict]:
+    """Derive per-second RX/TX kbit/s from consecutive cumulative KiB samples."""
+    rates = []
+    for i in range(1, len(rows)):
+        prev, curr = rows[i - 1], rows[i]
+        dt = curr["ts"] - prev["ts"]
+        if dt <= 0:
+            continue
+        rx_p, rx_c = prev.get("net_rx_kb", -1), curr.get("net_rx_kb", -1)
+        tx_p, tx_c = prev.get("net_tx_kb", -1), curr.get("net_tx_kb", -1)
+        if rx_p < 0 or rx_c < 0 or tx_p < 0 or tx_c < 0:
+            continue
+        if rx_c < rx_p or tx_c < tx_p:  # counter reset — skip
+            continue
+        rates.append({
+            "ts":      curr["ts"],
+            "rx_kbps": (rx_c - rx_p) / dt * 8,
+            "tx_kbps": (tx_c - tx_p) / dt * 8,
+        })
+    return rates
+
+
 def analyze_metrics(metrics: list[dict]) -> dict:
     if not metrics:
         return {"error": "metrics.jsonl missing or empty"}
@@ -151,13 +173,22 @@ def analyze_metrics(metrics: list[dict]) -> dict:
         mem_vals = [r["mem_mb"]  for r in rows if r.get("mem_mb",  -1) >= 0]
         db_vals  = [r["db_count"] for r in rows if r.get("db_count", -1) >= 0]
 
+        rates    = _net_rates(rows)
+        rx_vals  = [r["rx_kbps"] for r in rates]
+        tx_vals  = [r["tx_kbps"] for r in rates]
+
         result[node] = {
-            "cpu_mean_pct": round(sum(cpu_vals) / len(cpu_vals), 2) if cpu_vals else -1,
-            "cpu_max_pct":  round(max(cpu_vals), 2) if cpu_vals else -1,
-            "mem_mean_mb":  round(sum(mem_vals) / len(mem_vals), 2) if mem_vals else -1,
-            "mem_max_mb":   round(max(mem_vals), 2) if mem_vals else -1,
-            "db_max_count": max(db_vals) if db_vals else -1,
-            "samples": len(rows),
+            "cpu_mean_pct":   round(sum(cpu_vals) / len(cpu_vals), 2) if cpu_vals else -1,
+            "cpu_max_pct":    round(max(cpu_vals), 2) if cpu_vals else -1,
+            "mem_mean_mb":    round(sum(mem_vals) / len(mem_vals), 2) if mem_vals else -1,
+            "mem_max_mb":     round(max(mem_vals), 2) if mem_vals else -1,
+            "db_max_count":   max(db_vals) if db_vals else -1,
+            "net_rx_kbps_mean": round(sum(rx_vals) / len(rx_vals), 2) if rx_vals else -1,
+            "net_rx_kbps_peak": round(max(rx_vals), 2) if rx_vals else -1,
+            "net_tx_kbps_mean": round(sum(tx_vals) / len(tx_vals), 2) if tx_vals else -1,
+            "net_tx_kbps_peak": round(max(tx_vals), 2) if tx_vals else -1,
+            "net_rate_bins":  rates,
+            "samples":        len(rows),
         }
 
     return result
@@ -238,6 +269,21 @@ def make_text_report(traffic: dict, resources: dict, logs: dict) -> str:
             lines.append(f"  Avg throughput: {avg_pps:.1f} pkt/s  {avg_kbps:.1f} kbit/s")
     else:
         lines.append(f"  {traffic['error']}")
+
+    lines.append("\n--- Per-node throughput ---")
+    if "error" not in resources:
+        for node, r in resources.items():
+            rx_mean = r.get("net_rx_kbps_mean", -1)
+            rx_peak = r.get("net_rx_kbps_peak", -1)
+            tx_mean = r.get("net_tx_kbps_mean", -1)
+            tx_peak = r.get("net_tx_kbps_peak", -1)
+            if rx_mean >= 0:
+                lines.append(f"  {node}:  RX {rx_mean:.1f} kbit/s avg  {rx_peak:.1f} peak"
+                             f"  |  TX {tx_mean:.1f} kbit/s avg  {tx_peak:.1f} peak")
+            else:
+                lines.append(f"  {node}:  (no net rate data)")
+    else:
+        lines.append(f"  {resources['error']}")
 
     lines.append("\n--- Resource Usage (per node) ---")
     if "error" not in resources:
@@ -332,6 +378,48 @@ def make_html_report(traffic: dict, resources: dict, capture_dir: str) -> str:
         buf = io.BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight")
         figs_b64.append(base64.b64encode(buf.getvalue()).decode())
+        plt.close(fig)
+
+        # Per-node RX throughput
+        fig, ax = plt.subplots(figsize=(8, 3))
+        any_rx = False
+        for node in nodes:
+            node_res = resources.get(node, {})
+            rate_bins = node_res.get("net_rate_bins", [])
+            if rate_bins:
+                xs = [r["ts"] - t0 for r in rate_bins]
+                ys = [r["rx_kbps"] for r in rate_bins]
+                ax.plot(xs, ys, label=node)
+                any_rx = True
+        if any_rx:
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("kbit/s")
+            ax.set_title("RX throughput per node")
+            ax.legend()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            figs_b64.append(base64.b64encode(buf.getvalue()).decode())
+        plt.close(fig)
+
+        # Per-node TX throughput
+        fig, ax = plt.subplots(figsize=(8, 3))
+        any_tx = False
+        for node in nodes:
+            node_res = resources.get(node, {})
+            rate_bins = node_res.get("net_rate_bins", [])
+            if rate_bins:
+                xs = [r["ts"] - t0 for r in rate_bins]
+                ys = [r["tx_kbps"] for r in rate_bins]
+                ax.plot(xs, ys, label=node)
+                any_tx = True
+        if any_tx:
+            ax.set_xlabel("Time (s)")
+            ax.set_ylabel("kbit/s")
+            ax.set_title("TX throughput per node")
+            ax.legend()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            figs_b64.append(base64.b64encode(buf.getvalue()).decode())
         plt.close(fig)
 
         # DB count for DTN nodes

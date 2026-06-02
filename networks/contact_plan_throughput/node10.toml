@@ -1,41 +1,27 @@
-# Auto-generated config for node 3
+# Auto-generated config for node 10
 
 [node]
-id     = 3
-name   = "node3"
-is_dtn        = true
+id     = 10
+name   = "node10"
+is_dtn        = false
 dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3", "fd00:03:0a::3"]
 addresses     = ["fd00:01:02::1", "fd00:03:0a::10"]
-tun_ipv6_addr  = "fd00:ffff:03::1/64"
-lwip_ipv6_addr = "fd00:ffff:03::03/64"
+tun_ipv6_addr  = "fd00:ffff:0a::1/64"
+lwip_ipv6_addr = "fd00:ffff:0a::0a/64"
 
 [[interface]]
-name           = "node3-node2"
-local_addr     = "fd00:02:03::3/64"
-local_mac      = "00:02:00:03:00:03"
-remote_addr    = "fd00:02:03::2/64"
-remote_mac  = "00:02:00:03:00:02"
-remote_node_id = 2
+name           = "node10-node3"
+local_addr     = "fd00:03:0a::10/64"
+local_mac      = "00:03:00:0a:00:0a"
+remote_addr    = "fd00:03:0a::3/64"
+remote_mac  = "00:03:00:0a:00:03"
+remote_node_id = 3
 start_in_sec   = 0
 end_in_sec     = 300
 rate_in_bits_per_sec = 1
 range          = 1
-dtn_addresses  = ["fd00:02:03::3", "fd00:01:02::2", "fd00:02:03::2"]
-addresses      = ["fd00:01:02::1"]
-
-[[interface]]
-name           = "node3-node10"
-local_addr     = "fd00:03:0a::3/64"
-local_mac      = "00:03:00:0a:00:03"
-remote_addr    = "fd00:03:0a::10/64"
-remote_mac  = "00:03:00:0a:00:0a"
-remote_node_id = 10
-start_in_sec   = 0
-end_in_sec     = 300
-rate_in_bits_per_sec = 1
-range          = 1
-dtn_addresses  = ["fd00:03:0a::3"]
-addresses      = ["fd00:03:0a::10"]
+dtn_addresses  = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:03::3", "fd00:03:0a::3"]
+addresses      = ["fd00:03:0a::10", "fd00:01:02::1"]
 
 [contact_plan]
 name = "contact_plan_throughput"

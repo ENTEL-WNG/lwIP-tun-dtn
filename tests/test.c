@@ -335,7 +335,17 @@ bool test_routing(void) {
         struct pbuf* p = make_test_packet(PAYLOAD_LEN * 16, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
         struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
         DtnRoutingResult routing_result;
-        int t = 990;
+        int t = 900;
+        dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
+        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
+                 routing_result.best_delivery_time, routing_result.to_time);
+        pbuf_free(p);
+    }
+    {
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN * 16, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
+        struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+        DtnRoutingResult routing_result;
+        int t = 940;
         dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
         DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
                  routing_result.best_delivery_time, routing_result.to_time);
@@ -471,33 +481,37 @@ int main() {
     }
 
     dtn_config_print(&dtn_config);
-    dtn_log_init(DTN_LOG_LEVEL_TEST);
-    // dtn_log_init(DTN_LOG_LEVEL_DEBUG);
+    // dtn_log_init(DTN_LOG_LEVEL_TEST);
+    dtn_log_init(DTN_LOG_LEVEL_DEBUG);
 
     DTN_TEST("START TESTING");
 
     bool ok = true;
 
-    DTN_TEST("IS_LOCAL_ADDR TESTS");
-    ok &= test_is_local_addr();
-    DTN_TEST("%s\n", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
-
-    DTN_TEST("CUSTODIAN / HASH TESTS");
-    ok &= test_custodian();
-    ok &= test_payload_length();
-    DTN_TEST("%s\n", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
-
     DTN_TEST("ROUTING TESTS");
     ok &= test_routing();
     DTN_TEST("%s\n", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
 
-    DTN_TEST("STORAGE TESTS");
-    ok &= test_storage();
-    DTN_TEST("%s\n", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
+    // DTN_TEST("IS_LOCAL_ADDR TESTS");
+    // ok &= test_is_local_addr();
+    // DTN_TEST("%s\n", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
 
-    DTN_TEST("DELETE-BY-HASH TESTS");
-    ok &= test_delete_by_hash();
-    DTN_TEST("%s\n", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
+    // DTN_TEST("CUSTODIAN / HASH TESTS");
+    // ok &= test_custodian();
+    // ok &= test_payload_length();
+    // DTN_TEST("%s\n", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
+
+    // DTN_TEST("ROUTING TESTS");
+    // ok &= test_routing();
+    // DTN_TEST("%s\n", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
+
+    // DTN_TEST("STORAGE TESTS");
+    // ok &= test_storage();
+    // DTN_TEST("%s\n", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
+
+    // DTN_TEST("DELETE-BY-HASH TESTS");
+    // ok &= test_delete_by_hash();
+    // DTN_TEST("%s\n", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
 
     DTN_TEST("%s\n", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 

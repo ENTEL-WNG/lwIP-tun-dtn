@@ -3,7 +3,7 @@ name = "contact_plan_ping_storage"
 max_time_in_sec = 200
 
 [contact_plan.defaults]
-rate = 100
+rate_in_bits_per_sec = 100
 range = 1
 
 # Node Definitions

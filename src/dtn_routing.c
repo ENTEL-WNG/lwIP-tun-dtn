@@ -274,26 +274,27 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, d
 
     u16_t payload_length = lwip_ntohs(ip6h->_plen);
     u16_t package_length = IP6_HLEN + payload_length;
+    long package_length_in_bits = package_length * 8;
 
     DTN_DEBUG(
         "Packet|| src: %s - dest: %s || hop version: %u - traffic_class: %u - hoplim: %u - dscp: %u - "
-        "payload_length: %u - package_length: %u",
-        src_string, dest_string, version, traffic_class, hoplim, dscp, payload_length, package_length);
+        "payload_length: %u - package_length: %u - package_length in bits: %ld.",
+        src_string, dest_string, version, traffic_class, hoplim, dscp, payload_length, package_length, package_length_in_bits);
 
     long deadline = hoplim * 1000;
     long curr_node_id = (long)dtn_config.id;
     long src_node_id = dtn_routing_ipv6_to_nodeid(src_string);
     long dest_node_id = dtn_routing_ipv6_to_nodeid(dest_string);
 
-    DTN_DEBUG("Packet|| src: %s - dest: %s || src_node_id : % ld->curr_node_id : % ld->dest_node_id : % ld - deadline : % ld ", src_string,
+    DTN_DEBUG("Packet|| src: %s - dest: %s || src_node_id:%ld -> curr_node_id:%ld -> dest_node_id:%ld - deadline: %ld.", src_string,
               dest_string, src_node_id, curr_node_id, dest_node_id, deadline);
 
-    return _dtn_routing_get_next_hop_node_id(current_time_in_sec, curr_node_id, src_node_id, dest_node_id, deadline, package_length, dscp,
-                                             result);
+    return _dtn_routing_get_next_hop_node_id(current_time_in_sec, curr_node_id, src_node_id, dest_node_id, deadline, package_length_in_bits,
+                                             dscp, result);
 }
 
 dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_sec, long current_node_id, long src_node_id,
-                                                       long dest_node_id, long deadline, long package_length, long dscp,
+                                                       long dest_node_id, long deadline, long package_length_in_bits, long dscp,
                                                        DtnRoutingResult* result) {
     if (!g_routing || !g_routing->py_module) {
         DTN_ERROR("DTN Routing: Python not initialised — call dtn_routing_create first");
@@ -342,7 +343,7 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     PyObject* args_pkt = track_obj(PyTuple_New(6));
     PyTuple_SetItem(args_pkt, 0, PyFloat_FromDouble(current_time_in_sec));
     PyTuple_SetItem(args_pkt, 1, PyLong_FromLong(dest_node_id));
-    PyTuple_SetItem(args_pkt, 2, PyLong_FromLong(package_length));
+    PyTuple_SetItem(args_pkt, 2, PyLong_FromLong(package_length_in_bits));
     PyTuple_SetItem(args_pkt, 3, PyLong_FromLong(deadline));
     PyTuple_SetItem(args_pkt, 4, PyLong_FromLong(dscp));
     PyTuple_SetItem(args_pkt, 5, PyLong_FromLong(src_node_id));

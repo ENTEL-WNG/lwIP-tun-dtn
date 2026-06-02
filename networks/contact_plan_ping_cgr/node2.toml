@@ -18,7 +18,7 @@ remote_mac  = "00:01:00:02:00:01"
 remote_node_id = 1
 start_in_sec   = 0
 end_in_sec     = 1000
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:01:02::2"]
 addresses      = ["fd00:01:02::1"]
@@ -32,7 +32,7 @@ remote_mac  = "00:02:00:03:00:03"
 remote_node_id = 3
 start_in_sec   = 0
 end_in_sec     = 20
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:02:03::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
 addresses      = []
@@ -46,7 +46,7 @@ remote_mac  = "00:02:00:05:00:05"
 remote_node_id = 5
 start_in_sec   = 20
 end_in_sec     = 1000
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:02:05::2", "fd00:02:03::3", "fd00:03:04::3", "fd00:03:04::4", "fd00:04:05::4", "fd00:02:05::5", "fd00:04:05::5"]
 addresses      = []
@@ -56,7 +56,7 @@ name = "contact_plan_ping_cgr"
 max_time_in_sec = 1000
 
 [contact_plan.defaults]
-rate = 200
+rate_in_bits_per_sec = 200
 range = 1
 
 # Node Definitions

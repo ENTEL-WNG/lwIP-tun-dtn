@@ -18,7 +18,7 @@ remote_mac  = "00:02:00:03:00:02"
 remote_node_id = 2
 start_in_sec   = 5
 end_in_sec     = 1000
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:02:03::3", "fd00:01:02::2", "fd00:02:03::2"]
 addresses      = ["fd00:01:02::1"]
@@ -32,7 +32,7 @@ remote_mac  = "00:03:00:04:00:04"
 remote_node_id = 4
 start_in_sec   = 10
 end_in_sec     = 1000
-rate           = 1
+rate_in_bits_per_sec = 1
 range          = 1
 dtn_addresses  = ["fd00:03:04::3", "fd00:03:04::4"]
 addresses      = []
@@ -42,7 +42,7 @@ name = "contact_plan_icmpv6"
 max_time_in_sec = 1000
 
 [contact_plan.defaults]
-rate = 100
+rate_in_bits_per_sec = 100
 range = 1
 
 # Node Definitions

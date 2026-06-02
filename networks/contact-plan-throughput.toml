@@ -1,36 +1,28 @@
-# contact-plan-throughput.toml
-# Stable 3-node linear topology for sustained throughput measurement.
-# No time-varying contacts — all links stay up for the full 300 s window.
-#
-#   node1 (non-DTN sender) ── node2 (DTN relay) ── node3 (non-DTN receiver)
-#
-# Generate configs:
-#   python3 generate-network.py networks/contact-plan-throughput.toml
-# Run:
-#   cd networks/contact_plan_throughput && docker compose up --build
-
 [contact_plan]
 name = "contact_plan_throughput"
 max_time_in_sec = 300
 
 [contact_plan.defaults]
-rate  = 100
+rate_in_bits_per_sec  = 128
 range = 1
 
 # Node Definitions
 [[nodes]]
 id = 1
-isDtnNode = false   # traffic source
+isDtnNode = false
 
 [[nodes]]
 id = 2
-isDtnNode = true    # DTN relay
+isDtnNode = true
 
 [[nodes]]
 id = 3
-isDtnNode = true   # traffic sink (receiver)
+isDtnNode = true
 
-# Edge Definitions — both links always active for 300 s
+[[nodes]]
+id = 10
+isDtnNode = false
+
 [[edges]]
 from         = 1
 to           = 2
@@ -41,6 +33,13 @@ bidirected   = true
 [[edges]]
 from         = 2
 to           = 3
-start_in_sec = 10
+start_in_sec = 0
+end_in_sec   = 300
+bidirected   = true
+
+[[edges]]
+from         = 3
+to           = 10
+start_in_sec = 0
 end_in_sec   = 300
 bidirected   = true

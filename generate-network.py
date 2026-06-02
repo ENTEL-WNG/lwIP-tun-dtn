@@ -124,7 +124,7 @@ def reachable_via(first_hop: int, exclude: int, adj: dict) -> set:
 
 def build_node_data(data: dict) -> dict:
     defaults = data.get("contact_plan.defaults", {})
-    default_rate = defaults.get("rate", 1)
+    default_rate = defaults.get("rate_in_bits_per_sec", 1)
     default_range = defaults.get("range", 1)
 
     # Node metadata lookup
@@ -153,7 +153,7 @@ def build_node_data(data: dict) -> dict:
         b = edge["to"]
         start_in_sec  = edge.get("start_in_sec")
         end_in_sec    = edge.get("end_in_sec")
-        rate   = edge.get("rate", default_rate)
+        rate   = edge.get("rate_in_bits_per_sec", default_rate)
         range  = edge.get("range", default_range)
 
         addr_a, addr_b = link_ipv6(a, b)
@@ -175,7 +175,7 @@ def build_node_data(data: dict) -> dict:
                 "remote_node_id": remote,
                 "start_in_sec":   start_in_sec,
                 "end_in_sec":     end_in_sec,
-                "rate":           rate,
+                "rate_in_bits_per_sec": rate,
                 "range":          range,
             })
 
@@ -276,7 +276,7 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
         lines.append(f"remote_node_id = {iface['remote_node_id']}")
         lines.append(f"start_in_sec   = {iface['start_in_sec']}")
         lines.append(f"end_in_sec     = {iface['end_in_sec']}")
-        lines.append(f"rate           = {iface['rate']}")
+        lines.append(f"rate_in_bits_per_sec = {iface['rate_in_bits_per_sec']}")
         lines.append(f"range          = {iface['range']}")
         lines.append(f"dtn_addresses  = {toml_str_list(iface['dtn_addresses'])}")
         lines.append(f"addresses      = {toml_str_list(iface['addresses'])}")

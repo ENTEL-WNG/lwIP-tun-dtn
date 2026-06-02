@@ -238,7 +238,7 @@ def cp_load(contact_plan_path, time_now, max_contacts=None):
         data = tomllib.load(f)
 
     defaults = data.get("contact_plan", {}).get("defaults", {})                                                                                                                       
-    default_rate = defaults.get("rate", 1)
+    default_rate = defaults.get("rate_in_bits_per_sec", 1)
     default_range = defaults.get("range", 1)
 
     edges = data.get("edges", [])
@@ -248,7 +248,7 @@ def cp_load(contact_plan_path, time_now, max_contacts=None):
         frm     = edge["from"]
         to      = edge["to"]
         bidirected = edge.get("bidirected", False)
-        rate   = edge.get("rate", default_rate)
+        rate   = edge.get("rate_in_bits_per_sec", default_rate)
         range  = edge.get("range", default_range)
         contact = Contact(time_now, frm, to, start, end, rate, range)
         __contact_plan.append(contact)
