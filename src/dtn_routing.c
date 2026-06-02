@@ -37,6 +37,19 @@
 static PyObject* py_registry[MAX_PY_OBJECTS];
 static int py_registry_count = 0;
 
+/* Route cache: avoid calling cgr_yen on every packet for the same destination.
+ * A cached entry is valid until its contact window expires (to_time). */
+#define ROUTE_CACHE_SIZE 32
+
+typedef struct {
+    int              dest_node_id;
+    double           valid_until_sec; /* entry expires at this contact-plan time */
+    DtnRoutingResult result;
+} RouteCacheEntry;
+
+static RouteCacheEntry g_route_cache[ROUTE_CACHE_SIZE];
+static int             g_route_cache_count = 0;
+
 /* Module-level pointer to the active Routing_Function so that
  * _dtn_routing_get_next_hop_node_id can reach the cached Python objects
  * without changing the public function signature. */
@@ -118,6 +131,7 @@ void dtn_routing_destroy(Routing_Function* routing) {
         return;
 
     DTN_INFO("Destroying DTN Routing Function...");
+    g_route_cache_count = 0;
     Py_XDECREF((PyObject*)routing->py_contact_plan);
     Py_XDECREF((PyObject*)routing->py_ipv6_packet);
     Py_XDECREF((PyObject*)routing->py_fwd_candidate);
@@ -305,6 +319,16 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     PyObject* py_ipv6_packet = (PyObject*)g_routing->py_ipv6_packet;
     PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
+    /* --- Route cache: skip Python CGR if we already know the answer --- */
+    for (int i = 0; i < g_route_cache_count; i++) {
+        RouteCacheEntry* e = &g_route_cache[i];
+        if (e->dest_node_id == dest_node_id && current_time_in_sec < e->valid_until_sec) {
+            DTN_DEBUG("DTN Routing: cache hit for dest %ld (valid until %.1f)", dest_node_id, e->valid_until_sec);
+            *result = e->result;
+            return DTN_ROUTING_OK;
+        }
+    }
+
     /* Reference-counting rule for this function:
      *   - Objects tracked in py_registry must NOT also be stolen by a tuple via
      *     PyTuple_SetItem, because SetItem does not increment the refcount (it
@@ -393,6 +417,23 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     result->next_hop_node_id = (int)next_hop_node_id;
     DTN_DEBUG("DTN Routing: next hop node id %d | best_delivery_time %f | max_delivery_time %f", result->next_hop_node_id,
               result->best_delivery_time, result->to_time);
+
+    /* Store in route cache; replace the oldest entry for this dest or a free slot. */
+    int cache_idx = -1;
+    for (int i = 0; i < g_route_cache_count; i++) {
+        if (g_route_cache[i].dest_node_id == dest_node_id) {
+            cache_idx = i;
+            break;
+        }
+    }
+    if (cache_idx < 0 && g_route_cache_count < ROUTE_CACHE_SIZE)
+        cache_idx = g_route_cache_count++;
+    if (cache_idx >= 0) {
+        g_route_cache[cache_idx].dest_node_id   = (int)dest_node_id;
+        g_route_cache[cache_idx].valid_until_sec = result->to_time;
+        g_route_cache[cache_idx].result          = *result;
+        DTN_DEBUG("DTN Routing: cached route for dest %ld until %.1f", dest_node_id, result->to_time);
+    }
 
     return py_cgr_clean_all(DTN_ROUTING_OK);
 }

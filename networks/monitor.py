@@ -8,8 +8,8 @@ where the Docker Engine API /containers/{id}/stats endpoint returns empty
 or all-zero data because the daemon's cgroup collector is not wired through
 to the macOS host.
 
-Each background thread per container runs a tiny inline Python script via
-`docker exec python3 -c ...` that:
+Each background thread per container runs `container_stats.py` via
+`docker exec python3 /repo/networks/container_stats.py` that:
   - reads /sys/fs/cgroup/cpu.stat (usage_usec) twice, 1 s apart → CPU %
   - reads /sys/fs/cgroup/memory.current and memory.stat → RSS in MiB
   - reads /proc/net/dev → cumulative RX/TX bytes (excluding lo)
@@ -46,92 +46,18 @@ import sys
 import threading
 import time
 
-# ---------------------------------------------------------------------------
-# Inline script executed inside each container via `docker exec python3 -c`
-# ---------------------------------------------------------------------------
-
-_CONTAINER_STATS_SCRIPT = r"""
-import json, time
-
-def _read(path, default=''):
-    try:
-        return open(path).read().strip()
-    except Exception:
-        return default
-
-# --- Memory (cgroup v2) ---
-try:
-    current   = int(_read('/sys/fs/cgroup/memory.current', '0') or '0')
-    mem_stats = {}
-    for _line in _read('/sys/fs/cgroup/memory.stat', '').splitlines():
-        _p = _line.split()
-        if len(_p) == 2:
-            try:
-                mem_stats[_p[0]] = int(_p[1])
-            except ValueError:
-                pass
-    # 'file' covers page cache; 'anon' is pure RSS
-    file_cache = mem_stats.get('file', 0)
-    mem_mb     = (current - file_cache) / (1024 ** 2)
-except Exception:
-    mem_mb = -1.0
-
-# --- CPU (cgroup v2 cpu.stat delta over 1 second) ---
-def _get_usage_usec():
-    for _line in _read('/sys/fs/cgroup/cpu.stat', '').splitlines():
-        if _line.startswith('usage_usec'):
-            try:
-                return int(_line.split()[1])
-            except (IndexError, ValueError):
-                return 0
-    return 0
-
-try:
-    _t0 = time.monotonic();  _u0 = _get_usage_usec()
-    time.sleep(1.0)
-    _t1 = time.monotonic();  _u1 = _get_usage_usec()
-    _elapsed_us = (_t1 - _t0) * 1e6
-    cpu_pct = (_u1 - _u0) / _elapsed_us * 100.0 if _elapsed_us > 0 else 0.0
-except Exception:
-    cpu_pct = -1.0
-
-# --- Network (/proc/net/dev cumulative counters) ---
-try:
-    _rx_b = _tx_b = 0
-    for _line in _read('/proc/net/dev', '').splitlines()[2:]:
-        _parts = _line.split()
-        if not _parts:
-            continue
-        _iface = _parts[0].rstrip(':')
-        if _iface == 'lo':
-            continue
-        _rx_b += int(_parts[1])
-        _tx_b += int(_parts[9])
-    net_rx_kb = _rx_b / 1024
-    net_tx_kb = _tx_b / 1024
-except Exception:
-    net_rx_kb = net_tx_kb = -1.0
-
-print(json.dumps({
-    'cpu_pct':    round(cpu_pct,    2),
-    'mem_mb':     round(mem_mb,     2),
-    'net_rx_kb':  round(net_rx_kb,  2),
-    'net_tx_kb':  round(net_tx_kb,  2),
-}))
-"""
+_CONTAINER_STATS_PATH = "/repo/networks/container_stats.py"
 
 
 def _container_stats(container: str) -> dict:
     """
-    Run a short inline Python script inside the container to collect
-    cgroup v2 CPU, memory, and network stats.
-
-    The script sleeps 1 second internally to measure CPU delta, so this
-    call blocks for approximately 1 second.
+    Run container_stats.py inside the container to collect cgroup v2 CPU,
+    memory, and network stats.  The script sleeps 1 second internally to
+    measure the CPU delta, so this call blocks for approximately 1 second.
     """
     try:
         result = subprocess.run(
-            ["docker", "exec", container, "python3", "-c", _CONTAINER_STATS_SCRIPT],
+            ["docker", "exec", container, "python3", _CONTAINER_STATS_PATH],
             capture_output=True,
             text=True,
             timeout=10.0,
