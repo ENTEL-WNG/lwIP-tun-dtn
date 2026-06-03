@@ -45,7 +45,8 @@ typedef enum {
 
 typedef struct {
     int next_hop_node_id;
-    double to_time;
+    double min_delivery_time;
+    double max_delivery_time;
     double best_delivery_time;
 } DtnRoutingResult;
 

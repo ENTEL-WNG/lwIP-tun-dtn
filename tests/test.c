@@ -54,7 +54,7 @@ static DtnRoutingResult make_routing_result(double delivery, double to) {
     DtnRoutingResult r;
     memset(&r, 0, sizeof(r));
     r.best_delivery_time = delivery;
-    r.to_time = to;
+    r.max_delivery_time = to;
     return r;
 }
 
@@ -317,8 +317,9 @@ bool test_routing(void) {
         DtnRoutingResult routing_result;
         int t = 0;
         dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
-        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
-                 routing_result.best_delivery_time, routing_result.to_time);
+        DTN_TEST("t= %d | next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f\n", t,
+                 routing_result.next_hop_node_id, routing_result.min_delivery_time, routing_result.best_delivery_time,
+                 routing_result.max_delivery_time);
         pbuf_free(p);
     }
     {
@@ -327,8 +328,9 @@ bool test_routing(void) {
         DtnRoutingResult routing_result;
         int t = 21;
         dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
-        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
-                 routing_result.best_delivery_time, routing_result.to_time);
+        DTN_TEST("t= %d | next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f\n", t,
+                 routing_result.next_hop_node_id, routing_result.min_delivery_time, routing_result.best_delivery_time,
+                 routing_result.max_delivery_time);
         pbuf_free(p);
     }
     {
@@ -337,18 +339,31 @@ bool test_routing(void) {
         DtnRoutingResult routing_result;
         int t = 900;
         dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
-        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
-                 routing_result.best_delivery_time, routing_result.to_time);
+        DTN_TEST("t= %d | next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f\n", t,
+                 routing_result.next_hop_node_id, routing_result.min_delivery_time, routing_result.best_delivery_time,
+                 routing_result.max_delivery_time);
         pbuf_free(p);
     }
     {
-        struct pbuf* p = make_test_packet(PAYLOAD_LEN * 16, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN * 64, "fd00:1:2::1", "fd00:3:4::4", 0xAB);
         struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
         DtnRoutingResult routing_result;
-        int t = 940;
+        int t = 950;
         dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
-        DTN_TEST("t= %d | next_hop_node_id: %d | best_delivery_time: %f | max_delivery_time: %f", t, routing_result.next_hop_node_id,
-                 routing_result.best_delivery_time, routing_result.to_time);
+        DTN_TEST("t= %d | next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f\n", t,
+                 routing_result.next_hop_node_id, routing_result.min_delivery_time, routing_result.best_delivery_time,
+                 routing_result.max_delivery_time);
+        pbuf_free(p);
+    }
+    {
+        struct pbuf* p = make_test_packet(PAYLOAD_LEN * 16, "fd00:1:2::1", "fd00:9:a::a", 0xAB);
+        struct ip6_hdr* ip6h = (struct ip6_hdr*)p->payload;
+        DtnRoutingResult routing_result;
+        int t = 1;
+        dtn_routing_get_next_hop_node_id(0, t * 1000, ip6h, &routing_result);
+        DTN_TEST("t= %d | next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f\n", t,
+                 routing_result.next_hop_node_id, routing_result.min_delivery_time, routing_result.best_delivery_time,
+                 routing_result.max_delivery_time);
         pbuf_free(p);
     }
 
@@ -400,8 +415,8 @@ bool test_storage(void) {
     int n = dtn_storage_get_ready_entries(storage, 1000.0, entries, 10);
     ok &= TEST_ASSERT(n == 1, "get_ready_entries returns 1 for a past-due packet");
     if (n >= 1) {
-        ok &= TEST_ASSERT(entries[0].delivery_time_in_sec == 0.0, "delivery_time round-trips: expected 0.0, got %.2f",
-                          entries[0].delivery_time_in_sec);
+        ok &= TEST_ASSERT(entries[0].best_delivery_time_in_sec == 0.0, "delivery_time round-trips: expected 0.0, got %.2f",
+                          entries[0].best_delivery_time_in_sec);
         ok &= TEST_ASSERT(strcmp(entries[0].dest_addr, "FD00:4:5::5") == 0, "dest_addr: expected 'FD00:4:5::5', got '%s'",
                           entries[0].dest_addr);
         ok &=

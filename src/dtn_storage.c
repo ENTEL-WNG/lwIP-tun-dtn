@@ -41,15 +41,17 @@ static const char* CREATE_TABLE_SQL =
     "  id                       INTEGER PRIMARY KEY AUTOINCREMENT,"
     "  packet_hash              INTEGER NOT NULL DEFAULT 0,"
     "  stored_time_ms           INTEGER NOT NULL,"
-    "  delivery_time_in_sec     REAL    NOT NULL,"
+    "  next_hop_node_id         INTEGER NOT NULL,"
+    "  best_delivery_time_in_sec REAL    NOT NULL,"
     "  max_delivery_time_in_sec REAL    NOT NULL,"
+    "  min_delivery_time_in_sec REAL    NOT NULL,"
     "  src_addr                 TEXT    NOT NULL,"
     "  dest_addr                TEXT    NOT NULL,"
     "  custodian_addr           TEXT,"
     "  packet_data              BLOB    NOT NULL"
     ");"
     "CREATE INDEX IF NOT EXISTS idx_delivery_time"
-    " ON stored_packets(delivery_time_in_sec);"
+    " ON stored_packets(best_delivery_time_in_sec);"
     "CREATE INDEX IF NOT EXISTS idx_packet_hash"
     " ON stored_packets(packet_hash);";
 
@@ -274,9 +276,10 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
 
     const char* sql =
         "INSERT INTO stored_packets"
-        " (packet_hash, stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
+        " (packet_hash, stored_time_ms, next_hop_node_id,"
+        "  best_delivery_time_in_sec, max_delivery_time_in_sec, min_delivery_time_in_sec,"
         "  src_addr, dest_addr, custodian_addr, packet_data)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
 
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
@@ -286,17 +289,19 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         return DTN_STORAGE_STORE_ERR;
     }
 
-    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)pkt_hash);
-    sqlite3_bind_int64(stmt, 2, (sqlite3_int64)sys_now());
-    sqlite3_bind_double(stmt, 3, routing_result->best_delivery_time);
-    sqlite3_bind_double(stmt, 4, routing_result->to_time);
-    bind_ip6_addr_text(stmt, 5, &src_addr);
-    bind_ip6_addr_text(stmt, 6, &dest_addr);
+    sqlite3_bind_int64(stmt, 1,  (sqlite3_int64)pkt_hash);
+    sqlite3_bind_int64(stmt, 2,  (sqlite3_int64)sys_now());
+    sqlite3_bind_int(stmt,    3, routing_result->next_hop_node_id);
+    sqlite3_bind_double(stmt, 4, routing_result->best_delivery_time);
+    sqlite3_bind_double(stmt, 5, routing_result->max_delivery_time);
+    sqlite3_bind_double(stmt, 6, routing_result->min_delivery_time);
+    bind_ip6_addr_text(stmt,  7, &src_addr);
+    bind_ip6_addr_text(stmt,  8, &dest_addr);
     if (has_custodian)
-        sqlite3_bind_text(stmt, 7, custodian_str, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 9, custodian_str, -1, SQLITE_TRANSIENT);
     else
-        sqlite3_bind_null(stmt, 7);
-    sqlite3_bind_blob(stmt, 8, buf, pkt_len, SQLITE_TRANSIENT);
+        sqlite3_bind_null(stmt, 9);
+    sqlite3_bind_blob(stmt, 10, buf, pkt_len, SQLITE_TRANSIENT);
 
     rc = sqlite3_step(stmt);
     int ok = (rc == SQLITE_DONE);
@@ -314,16 +319,23 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     return ok ? DTN_STORAGE_STORE_OK : DTN_STORAGE_STORE_ERR;
 }
 
+#if FORWARD_BEST_DELIVERY_TIME
+#  define READY_TIME_COL "best_delivery_time_in_sec"
+#else
+#  define READY_TIME_COL "min_delivery_time_in_sec"
+#endif
+
 int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count) {
     if (!storage || !storage->db || !out || max_count <= 0)
         return 0;
 
     const char* sql =
-        "SELECT id, stored_time_ms, delivery_time_in_sec, max_delivery_time_in_sec,"
+        "SELECT id, stored_time_ms, next_hop_node_id,"
+        "       best_delivery_time_in_sec, max_delivery_time_in_sec, min_delivery_time_in_sec,"
         "       src_addr, dest_addr, custodian_addr, packet_data"
         " FROM stored_packets"
-        " WHERE delivery_time_in_sec <= ?"
-        " ORDER BY delivery_time_in_sec ASC;";
+        " WHERE " READY_TIME_COL " <= ?"
+        " ORDER BY " READY_TIME_COL " ASC;";
 
     sqlite3_stmt* stmt = NULL;
     int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
@@ -338,14 +350,16 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
     while (n < max_count && sqlite3_step(stmt) == SQLITE_ROW) {
         int64_t db_id = sqlite3_column_int64(stmt, 0);
         u32_t stored_ms = (u32_t)sqlite3_column_int64(stmt, 1);
-        double deliv = sqlite3_column_double(stmt, 2);
-        double max_deliv = sqlite3_column_double(stmt, 3);
+        int    next_hop  = sqlite3_column_int(stmt, 2);
+        double deliv     = sqlite3_column_double(stmt, 3);
+        double max_deliv = sqlite3_column_double(stmt, 4);
+        double min_deliv = sqlite3_column_double(stmt, 5);
 
-        const char* src_text = (const char*)sqlite3_column_text(stmt, 4);
-        const char* dest_text = (const char*)sqlite3_column_text(stmt, 5);
-        const char* cust_text = (const char*)sqlite3_column_text(stmt, 6);  // NULL if no custodian
-        const void* pkt_blob = sqlite3_column_blob(stmt, 7);
-        int pkt_len = sqlite3_column_bytes(stmt, 7);
+        const char* src_text  = (const char*)sqlite3_column_text(stmt, 6);
+        const char* dest_text = (const char*)sqlite3_column_text(stmt, 7);
+        const char* cust_text = (const char*)sqlite3_column_text(stmt, 8);  // NULL if no custodian
+        const void* pkt_blob  = sqlite3_column_blob(stmt, 9);
+        int pkt_len = sqlite3_column_bytes(stmt, 9);
 
         if (!src_text || !dest_text || !pkt_blob || pkt_len <= 0) {
             DTN_WARN("Skipping malformed row %" PRId64, db_id);
@@ -366,8 +380,10 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         Stored_Packet_Entry* e = &out[n];
         e->db_id = db_id;
         e->stored_time_ms = stored_ms;
-        e->delivery_time_in_sec = deliv;
+        e->best_delivery_time_in_sec = deliv;
         e->max_delivery_time_in_sec = max_deliv;
+        e->min_delivery_time_in_sec = min_deliv;
+        e->next_hop_node_id         = next_hop;
         e->p = p;
         strncpy(e->src_addr, src_text, sizeof(e->src_addr) - 1);
         e->src_addr[sizeof(e->src_addr) - 1] = '\0';

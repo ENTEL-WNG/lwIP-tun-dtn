@@ -37,18 +37,21 @@
 static PyObject* py_registry[MAX_PY_OBJECTS];
 static int py_registry_count = 0;
 
-/* Route cache: avoid calling cgr_yen on every packet for the same destination.
- * A cached entry is valid until its contact window expires (to_time). */
+/* Route cache: avoid calling cgr_yen on every packet for the same destination
+ * and packet size.  packet_length_in_bits is part of the key because CGR may
+ * select different routes depending on available volume.
+ * A cached entry is valid until its contact window expires (max_delivery_time). */
 #define ROUTE_CACHE_SIZE 32
 
 typedef struct {
-    int              dest_node_id;
-    double           valid_until_sec; /* entry expires at this contact-plan time */
+    int  dest_node_id;
+    long packet_length_in_bits; /* key: packet size used when route was computed */
+    double valid_until_sec;     /* entry expires at this contact-plan time */
     DtnRoutingResult result;
 } RouteCacheEntry;
 
 static RouteCacheEntry g_route_cache[ROUTE_CACHE_SIZE];
-static int             g_route_cache_count = 0;
+static int g_route_cache_count = 0;
 
 /* Module-level pointer to the active Routing_Function so that
  * _dtn_routing_get_next_hop_node_id can reach the cached Python objects
@@ -246,18 +249,27 @@ dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, i
     return DTN_ROUTING_ERR;
 }
 
-// TODO:: Add to config
-// The Last number in the address currently defines the node id
-// fd00:2:3::3 -> node_id == 3
+// The last hex group after the final ':' encodes the node id.
+// fd00:2:3::3  -> 3
+// fd00:2:3::a  -> 10
+// fd00:2:3::1f -> 31
 long dtn_routing_ipv6_to_nodeid(const char* ip6) {
-    int length = strlen(ip6);
-    if (length > 0) {
-        char node_id = ip6[length - 1];
-        return node_id - '0';
-    } else {
+    if (!ip6 || ip6[0] == '\0') {
         DTN_WARN("ip6 is empty");
+        return -1;
     }
-    return -1;
+    const char* last_colon = strrchr(ip6, ':');
+    if (!last_colon || last_colon[1] == '\0') {
+        DTN_WARN("ip6 has no node-id segment: %s", ip6);
+        return -1;
+    }
+    char* end;
+    long id = strtol(last_colon + 1, &end, 16);
+    if (end == last_colon + 1) {
+        DTN_WARN("ip6 node-id segment is not a valid hex number: %s", ip6);
+        return -1;
+    }
+    return id;
 }
 
 dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms, struct ip6_hdr* ip6h,
@@ -322,8 +334,11 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     /* --- Route cache: skip Python CGR if we already know the answer --- */
     for (int i = 0; i < g_route_cache_count; i++) {
         RouteCacheEntry* e = &g_route_cache[i];
-        if (e->dest_node_id == dest_node_id && current_time_in_sec < e->valid_until_sec) {
-            DTN_DEBUG("DTN Routing: cache hit for dest %ld (valid until %.1f)", dest_node_id, e->valid_until_sec);
+        if (e->dest_node_id          == dest_node_id          &&
+            e->packet_length_in_bits == package_length_in_bits &&
+            current_time_in_sec < e->valid_until_sec) {
+            DTN_DEBUG("DTN Routing: cache hit for dest %ld len %ld (valid until %.1f)",
+                      dest_node_id, package_length_in_bits, e->valid_until_sec);
             *result = e->result;
             return DTN_ROUTING_OK;
         }
@@ -409,19 +424,23 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     long next_hop_node_id;
     if (py_get_long_attr(first, "next_node", &next_hop_node_id) != 0)
         return py_cgr_clean_all(DTN_ROUTING_NO_ROUTE);
-    if (py_get_double_attr(first, "to_time", &result->to_time) != 0)
+    if (py_get_double_attr(first, "from_time", &result->min_delivery_time) != 0)
+        return py_cgr_clean_all(DTN_ROUTING_ERR);
+    if (py_get_double_attr(first, "to_time", &result->max_delivery_time) != 0)
         return py_cgr_clean_all(DTN_ROUTING_ERR);
     if (py_get_double_attr(first, "best_delivery_time", &result->best_delivery_time) != 0)
         return py_cgr_clean_all(DTN_ROUTING_ERR);
 
     result->next_hop_node_id = (int)next_hop_node_id;
-    DTN_DEBUG("DTN Routing: next hop node id %d | best_delivery_time %f | max_delivery_time %f", result->next_hop_node_id,
-              result->best_delivery_time, result->to_time);
+    DTN_DEBUG("DTN Routing|| next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f||",
+              result->next_hop_node_id, result->min_delivery_time, result->best_delivery_time, result->max_delivery_time);
 
-    /* Store in route cache; replace the oldest entry for this dest or a free slot. */
+    /* Store in route cache; replace an existing entry for the same (dest, size)
+     * pair or take a free slot. */
     int cache_idx = -1;
     for (int i = 0; i < g_route_cache_count; i++) {
-        if (g_route_cache[i].dest_node_id == dest_node_id) {
+        if (g_route_cache[i].dest_node_id          == dest_node_id &&
+            g_route_cache[i].packet_length_in_bits == package_length_in_bits) {
             cache_idx = i;
             break;
         }
@@ -429,10 +448,12 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     if (cache_idx < 0 && g_route_cache_count < ROUTE_CACHE_SIZE)
         cache_idx = g_route_cache_count++;
     if (cache_idx >= 0) {
-        g_route_cache[cache_idx].dest_node_id   = (int)dest_node_id;
-        g_route_cache[cache_idx].valid_until_sec = result->to_time;
-        g_route_cache[cache_idx].result          = *result;
-        DTN_DEBUG("DTN Routing: cached route for dest %ld until %.1f", dest_node_id, result->to_time);
+        g_route_cache[cache_idx].dest_node_id          = (int)dest_node_id;
+        g_route_cache[cache_idx].packet_length_in_bits = package_length_in_bits;
+        g_route_cache[cache_idx].valid_until_sec       = result->max_delivery_time;
+        g_route_cache[cache_idx].result                = *result;
+        DTN_DEBUG("DTN Routing: cached route for dest %ld len %ld until %.1f",
+                  dest_node_id, package_length_in_bits, result->max_delivery_time);
     }
 
     return py_cgr_clean_all(DTN_ROUTING_OK);

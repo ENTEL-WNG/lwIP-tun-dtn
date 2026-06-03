@@ -43,24 +43,20 @@ extern DTN_Module* global_dtn_module;
 // Per-node throughput stats
 // ---------------------------------------------------------------------------
 
-static uint32_t stat_fwd_immediate = 0; // packets forwarded on-the-spot
-static uint32_t stat_fwd_stored    = 0; // stored packets forwarded later
-static uint32_t stat_stored        = 0; // packets placed in storage
-static uint32_t stat_dropped       = 0; // packets discarded (no route / send error)
+static uint32_t stat_fwd_immediate = 0;  // packets forwarded on-the-spot
+static uint32_t stat_fwd_stored = 0;     // stored packets forwarded later
+static uint32_t stat_stored = 0;         // packets placed in storage
+static uint32_t stat_dropped = 0;        // packets discarded (no route / send error)
 
 static void stats_timer_cb(void* arg) {
     (void)arg;
-    int db_count = (global_dtn_module && global_dtn_module->storage)
-                       ? dtn_storage_count(global_dtn_module->storage)
-                       : -1;
-    DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u dropped=%u db=%d",
-             stat_fwd_immediate, stat_fwd_stored, stat_stored, stat_dropped, db_count);
+    int db_count = (global_dtn_module && global_dtn_module->storage) ? dtn_storage_count(global_dtn_module->storage) : -1;
+    DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u dropped=%u db=%d", stat_fwd_immediate, stat_fwd_stored, stat_stored, stat_dropped,
+             db_count);
     sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL);
 }
 
-void dtn_controller_stats_timer_start(void) {
-    sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL);
-}
+void dtn_controller_stats_timer_start(void) { sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL); }
 
 static dtn_icmpv6_process_result_t dtn_controller_process_icmpv6(struct pbuf* p) { return dtn_icmpv6_process(p); }
 
@@ -269,9 +265,12 @@ void dtn_controller_process_stored(void) {
         return;
     }
 
-    // Query only the packets whose contact window has arrived.
-    Stored_Packet_Entry entries[MAX_STORED_PACKETS];
-    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, MAX_STORED_PACKETS);
+    // Load a small batch per callback to avoid exhausting the lwIP heap
+    // (MEM_SIZE) and the stack.  The timer fires again shortly so any
+    // remaining ready packets are forwarded in the next call.
+    int max_stored_packets = MAX_STORED_PACKETS * 0.25;
+    Stored_Packet_Entry entries[max_stored_packets];
+    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, max_stored_packets);
 
     DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f", number_of_stored_packages, n, now_sec);
 

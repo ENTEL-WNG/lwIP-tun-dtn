@@ -35,8 +35,10 @@
 typedef struct Stored_Packet_Entry {
     int64_t db_id;
     u32_t stored_time_ms;
-    double delivery_time_in_sec;
+    double best_delivery_time_in_sec;
     double max_delivery_time_in_sec;
+    double min_delivery_time_in_sec;
+    int    next_hop_node_id;
     char src_addr[IP6ADDR_STRLEN_MAX];        // human-readable IPv6 string
     char dest_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
     char custodian_addr[IP6ADDR_STRLEN_MAX];  // valid only when has_custodian is true
@@ -68,7 +70,7 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
 int dtn_storage_is_full(Storage_Function* storage);
 int dtn_storage_count(Storage_Function* storage);
 
-// Read packets whose delivery_time_in_sec <= now_sec into out[].
+// Read packets whose best_delivery_time_in_sec <= now_sec into out[].
 // Returns number of entries filled. Caller must pbuf_free each entry's p.
 int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count);
 

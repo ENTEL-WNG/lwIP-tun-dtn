@@ -21,7 +21,6 @@
 #include <linux/if_packet.h>
 #include <net/if.h>
 #include <netinet/in.h>
-#include "lwip/prot/ip6.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +33,7 @@
 #include "dtn_logger.h"
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
+#include "lwip/prot/ip6.h"
 #include "raw_socket.h"
 
 #define USE_AF_INET6
@@ -47,24 +47,21 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
 
         int raw_socket = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
         if (raw_socket < 0) {
-            DTN_ERROR("Failed to create AF_INET6 raw socket for interface %s: errno=%d (%s)",
-                      ifname, errno, strerror(errno));
+            DTN_ERROR("Failed to create AF_INET6 raw socket for interface %s: errno=%d (%s)", ifname, errno, strerror(errno));
             return DTN_SOCKET_ERR_CREATE;
         }
 
         /* We supply a complete IPv6 packet (header + payload) from lwIP. */
         int one = 1;
         if (setsockopt(raw_socket, IPPROTO_IPV6, IPV6_HDRINCL, &one, sizeof(one)) < 0) {
-            DTN_ERROR("Failed to set IPV6_HDRINCL for interface %s: errno=%d (%s)", ifname, errno,
-                      strerror(errno));
+            DTN_ERROR("Failed to set IPV6_HDRINCL for interface %s: errno=%d (%s)", ifname, errno, strerror(errno));
             close(raw_socket);
             return DTN_SOCKET_ERR_SOCKOPT;
         }
 
         /* Force egress on the correct physical interface. */
         if (setsockopt(raw_socket, SOL_SOCKET, SO_BINDTODEVICE, ifname, strlen(ifname) + 1) < 0) {
-            DTN_ERROR("Failed to SO_BINDTODEVICE to %s: errno=%d (%s)", ifname, errno,
-                      strerror(errno));
+            DTN_ERROR("Failed to SO_BINDTODEVICE to %s: errno=%d (%s)", ifname, errno, strerror(errno));
             close(raw_socket);
             return DTN_SOCKET_ERR_BIND;
         }
@@ -74,8 +71,7 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
          * through the TUN interface, causing a forwarding loop. */
         int mark = 2;
         if (setsockopt(raw_socket, SOL_SOCKET, SO_MARK, &mark, sizeof(mark)) < 0) {
-            DTN_ERROR("Failed to set SO_MARK for interface %s: errno=%d (%s)", ifname, errno,
-                      strerror(errno));
+            DTN_ERROR("Failed to set SO_MARK for interface %s: errno=%d (%s)", ifname, errno, strerror(errno));
             close(raw_socket);
             return DTN_SOCKET_ERR_SOCKOPT;
         }
@@ -84,8 +80,7 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
     }
 
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        DTN_INFO("Raw Socket: Initialized socket for interface %s: fd=%d",
-                 dtn_config.interfaces[i].name, dtn_config.interfaces[i].socket);
+        DTN_INFO("Raw Socket: Initialized socket for interface %s: fd=%d", dtn_config.interfaces[i].name, dtn_config.interfaces[i].socket);
     }
 
     return DTN_SOCKET_OK;
@@ -121,9 +116,8 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
     }
 
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        DTN_INFO("Raw Socket: Initialized raw socket with name %s: socket %d, index %d",
-                 dtn_config.interfaces[i].name, dtn_config.interfaces[i].socket,
-                 dtn_config.interfaces[i].socket_index);
+        DTN_INFO("Raw Socket: Initialized raw socket with name %s: socket %d, index %d", dtn_config.interfaces[i].name,
+                 dtn_config.interfaces[i].socket, dtn_config.interfaces[i].socket_index);
     }
 
     return DTN_SOCKET_OK;
@@ -161,8 +155,7 @@ dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p) {
         ip6_addr_t candidate;
 
         for (int j = 0; j < iface->dtn_address_count; j++) {
-            if (ip6addr_aton(iface->dtn_addresses[j], &candidate) &&
-                ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
+            if (ip6addr_aton(iface->dtn_addresses[j], &candidate) && ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
                 interface_to_use = i;
                 break;
             }
@@ -172,8 +165,7 @@ dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p) {
         }
 
         for (int j = 0; j < iface->address_count; j++) {
-            if (ip6addr_aton(iface->addresses[j], &candidate) &&
-                ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
+            if (ip6addr_aton(iface->addresses[j], &candidate) && ip6_addr_zoneless_eq(&dest_addr, &candidate)) {
                 interface_to_use = i;
                 break;
             }
@@ -191,15 +183,13 @@ dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p) {
     }
 
     const DtnInterface* iface = &dtn_config.interfaces[interface_to_use];
-    DTN_INFO("Sending packet to dest: %s using interface %s (fd=%d)", dest_str, iface->name,
-             iface->socket);
+    DTN_INFO("Sending packet to dest: %s using interface %s (fd=%d)", dest_str, iface->name, iface->socket);
 
     return dtn_raw_socket_send_via_interface(p, iface);
 }
 
 #ifdef USE_AF_INET6
-dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
-                                                      const DtnInterface* dtn_interface) {
+dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnInterface* dtn_interface) {
     if (p->tot_len > 2048) {
         DTN_ERROR("Packet too large for raw socket buffer.");
         return DTN_SOCKET_ERR_PKT_TOO_LARGE;
@@ -224,30 +214,24 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
         sa6.sin6_scope_id = if_nametoindex(dtn_interface->name);
     }
 
-    int sent_bytes =
-        sendto(dtn_interface->socket, buf, p->tot_len, 0, (struct sockaddr*)&sa6, sizeof(sa6));
+    int sent_bytes = sendto(dtn_interface->socket, buf, p->tot_len, 0, (struct sockaddr*)&sa6, sizeof(sa6));
     if (sent_bytes < 0) {
-        DTN_ERROR("Failed to send packet via interface %s: errno=%d (%s)", dtn_interface->name,
-                  errno, strerror(errno));
+        DTN_ERROR("Failed to send packet via interface %s: errno=%d (%s)", dtn_interface->name, errno, strerror(errno));
         return DTN_SOCKET_ERR_SEND;
     } else if ((uint16_t)sent_bytes != p->tot_len) {
-        DTN_WARN("Sent only %d of %d bytes on interface %s", sent_bytes, p->tot_len,
-                 dtn_interface->name);
+        DTN_WARN("Sent only %d of %d bytes on interface %s", sent_bytes, p->tot_len, dtn_interface->name);
         return DTN_SOCKET_ERR_PARTIAL;
     }
+    DTN_DEBUG("Successfully send via %s", dtn_interface->name);
 
     return DTN_SOCKET_OK;
 }
 #else
 static int parse_mac(const char* mac_str, uint8_t mac[6]) {
-    return sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1], &mac[2], &mac[3],
-                  &mac[4], &mac[5]) == 6
-               ? 0
-               : -1;
+    return sscanf(mac_str, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx", &mac[0], &mac[1], &mac[2], &mac[3], &mac[4], &mac[5]) == 6 ? 0 : -1;
 }
 
-dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
-                                                      const DtnInterface* dtn_interface) {
+dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnInterface* dtn_interface) {
     uint8_t buf[ETH_HDR_LEN + 2048];
 
     if (p->tot_len > 2048) {
@@ -257,13 +241,11 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
 
     uint8_t dst_mac[6], src_mac[6];
     if (parse_mac(dtn_interface->remote_mac, dst_mac) < 0) {
-        DTN_ERROR("Failed to parse remote_mac '%s' for interface %s", dtn_interface->remote_mac,
-                  dtn_interface->name);
+        DTN_ERROR("Failed to parse remote_mac '%s' for interface %s", dtn_interface->remote_mac, dtn_interface->name);
         return DTN_SOCKET_ERR_SEND;
     }
     if (parse_mac(dtn_interface->local_mac, src_mac) < 0) {
-        DTN_ERROR("Failed to parse local_mac '%s' for interface %s", dtn_interface->local_mac,
-                  dtn_interface->name);
+        DTN_ERROR("Failed to parse local_mac '%s' for interface %s", dtn_interface->local_mac, dtn_interface->name);
         return DTN_SOCKET_ERR_SEND;
     }
 
@@ -286,16 +268,13 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
     memcpy(sll.sll_addr, dst_mac, 6);
 
     int frame_len = ETH_HDR_LEN + p->tot_len;
-    int sent_bytes =
-        sendto(dtn_interface->socket, buf, frame_len, 0, (struct sockaddr*)&sll, sizeof(sll));
+    int sent_bytes = sendto(dtn_interface->socket, buf, frame_len, 0, (struct sockaddr*)&sll, sizeof(sll));
 
     if (sent_bytes < 0) {
-        DTN_ERROR("Failed to send frame via interface %s: errno=%d (%s)", dtn_interface->name,
-                  errno, strerror(errno));
+        DTN_ERROR("Failed to send frame via interface %s: errno=%d (%s)", dtn_interface->name, errno, strerror(errno));
         return DTN_SOCKET_ERR_SEND;
     } else if (sent_bytes != frame_len) {
-        DTN_WARN("Sent only %d of %d bytes on interface %s", sent_bytes, frame_len,
-                 dtn_interface->name);
+        DTN_WARN("Sent only %d of %d bytes on interface %s", sent_bytes, frame_len, dtn_interface->name);
         return DTN_SOCKET_ERR_PARTIAL;
     }
 
