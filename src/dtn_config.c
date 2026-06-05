@@ -94,6 +94,7 @@ static int parse_interfaces(toml_table_t* root, DtnConfig* cfg) {
         DtnInterface* iface = &cfg->interfaces[cfg->interface_count];
 
         copy_str_opt(t, "name", iface->name, DTN_MAX_NAME_LEN);
+        copy_str_opt(t, "eth_name", iface->eth_name, DTN_MAX_NAME_LEN);
         copy_str_opt(t, "local_addr", iface->local_addr, DTN_MAX_ADDR_LEN);
         copy_str_opt(t, "local_mac", iface->local_mac, DTN_MAX_MAC_LEN);
         copy_str_opt(t, "remote_addr", iface->remote_addr, DTN_MAX_ADDR_LEN);
@@ -299,9 +300,9 @@ void dtn_config_print(const DtnConfig* cfg) {
     DTN_INFO("[[interface]] count = %d", cfg->interface_count);
     for (int i = 0; i < cfg->interface_count; i++) {
         const DtnInterface* iface = &cfg->interfaces[i];
-        DTN_INFO("  [%d] name=%s  local=%s  remote=%s  node=%d  start=%lld  end=%lld", i,
-                 iface->name, iface->local_addr, iface->remote_addr, iface->remote_node_id,
-                 (long long)iface->start_in_sec, (long long)iface->end_in_sec);
+        DTN_INFO("  [%d] name=%s  eth_name=%s  local=%s  remote=%s  node=%d  start=%lld  end=%lld", i,
+                 iface->name, iface->eth_name, iface->local_addr, iface->remote_addr,
+                 iface->remote_node_id, (long long)iface->start_in_sec, (long long)iface->end_in_sec);
         DTN_INFO("       dtn_addresses (%d):", iface->dtn_address_count);
         for (int j = 0; j < iface->dtn_address_count; j++)
             DTN_INFO("         %s", iface->dtn_addresses[j]);

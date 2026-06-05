@@ -54,7 +54,7 @@ def run(cmd: list[str], *, check: bool = True, ignore_errors: bool = False) -> s
     if result.stdout.strip():
         log.debug("stdout: %s", result.stdout.strip())
     if result.stderr.strip():
-        log.debug("stderr: %s", result.stderr.strip())
+        log.warning("stderr[rc=%d]: %s", result.returncode, result.stderr.strip())
     if check and not ignore_errors and result.returncode != 0:
         log.error("Command failed (rc=%d): %s", result.returncode, result.stderr.strip())
         raise subprocess.CalledProcessError(result.returncode, cmd)
@@ -90,7 +90,54 @@ def load_config(toml_path: str) -> dict:
 # Route / interface setup  (replaces init_routes.sh)
 # ---------------------------------------------------------------------------
 
-def setup_interfaces(cfg: dict) -> list[str]:
+def write_back_eth_names(toml_path: str, cfg: dict) -> None:
+    """Persist resolved eth_name for each [[interface]] block back to the TOML file."""
+    iface_eth = {
+        iface["name"]: iface["eth_name"]
+        for iface in cfg.get("interface", [])
+        if "eth_name" in iface
+    }
+    if not iface_eth:
+        return
+
+    path = Path(toml_path)
+    lines = path.read_text().splitlines(keepends=True)
+    out: list[str] = []
+    in_iface = False
+    cur_name: str | None = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == "[[interface]]":
+            in_iface = True
+            cur_name = None
+            out.append(line)
+            continue
+
+        if stripped.startswith("[") and stripped != "[[interface]]":
+            in_iface = False
+
+        if in_iface:
+            # Drop stale eth_name lines; the fresh one is injected right after name=
+            if re.match(r'eth_name\s*=', stripped):
+                continue
+            m = re.match(r'name\s*=\s*"([^"]+)"', stripped)
+            if m and cur_name is None:
+                cur_name = m.group(1)
+                out.append(line)
+                if cur_name in iface_eth:
+                    indent = line[: len(line) - len(line.lstrip())]
+                    out.append(f'{indent}eth_name       = "{iface_eth[cur_name]}"\n')
+                continue
+
+        out.append(line)
+
+    path.write_text("".join(out))
+    log.info("Wrote eth_name entries back to %s", toml_path)
+
+
+def setup_interfaces(cfg: dict, toml_path: str) -> list[str]:
     """
     Rename Docker veth interfaces to the names declared in the TOML,
     assign IPv6 addresses, add routes, and install permanent neighbour
@@ -109,31 +156,21 @@ def setup_interfaces(cfg: dict) -> list[str]:
         remote_addr: str = iface["remote_addr"].split("/")[0]
         neigh_mac:   str = iface["remote_mac"]
 
+        # ---- Resolve the actual interface name ------------------------------
+        if "eth_name" in iface:
+            int_name = iface["eth_name"]
+        else:
+            result = run(["ip", "-o", "link", "show"], check=False)
+            for line in result.stdout.splitlines():
+                if local_mac.lower() in line.lower():
+                    m = re.search(r":\s+(\S+?)[@:]", line)
+                    if m:
+                        int_name = m.group(1)
+                        break
+            else:
+                log.warning("Could not find interface with MAC %s; falling back to %s.", local_mac, int_name)
+        iface["eth_name"] = int_name   # reflect resolved name back into cfg dict
         log.info("=== Configuring %s ===", int_name)
-
-        # ---- Rename the Docker-assigned ethX to our logical name ----------
-        result = run(
-            ["ip", "-o", "link", "show"],
-            check=False,
-        )
-        old_name: str | None = None
-        for line in result.stdout.splitlines():
-            if local_mac.lower() in line.lower():
-                # Format: "N: ethX@if…: …"
-                m = re.search(r":\s+(\S+?)[@:]", line)
-                if m:
-                    old_name = m.group(1)
-                    break
-
-        if old_name and old_name != int_name:
-            log.info("Renaming %s -> %s", old_name, int_name)
-            tmp = f"i_{int_name}"
-            ip("link", "set", old_name, "down")
-            ip("link", "set", old_name, "name", tmp)
-            ip("link", "set", tmp, "name", int_name)
-            ip("link", "set", int_name, "up")
-        elif not old_name:
-            log.warning("Could not find interface with MAC %s; skipping rename.", local_mac)
 
         # ---- Disable DAD before assigning address (avoid tentative state) --
         sysctl(f"net.ipv6.conf.{int_name}.accept_dad", "0")
@@ -169,6 +206,7 @@ def setup_interfaces(cfg: dict) -> list[str]:
 
         all_interfaces.append(int_name)
 
+    write_back_eth_names(toml_path, cfg)
     return all_interfaces
 
 
@@ -190,16 +228,15 @@ def setup_trace_rules(interfaces: list[str]) -> None:
 # Regular-node init  (replaces init_reg_node.sh)
 # ---------------------------------------------------------------------------
 
-def init_regular_node(cfg: dict) -> None:
+def init_regular_node(cfg: dict, toml_path: str) -> None:
     node_id = cfg["node"]["id"]
     log.info("--- Initializing Regular Node (id=%s) ---", node_id)
 
     sysctl("net.ipv6.conf.all.accept_dad", "0")
     sysctl("net.ipv6.conf.all.forwarding", "1")
 
-    all_interfaces = setup_interfaces(cfg)
+    all_interfaces = setup_interfaces(cfg, toml_path)
     setup_trace_rules(all_interfaces)
-    start_captures(node_id, cfg["contact_plan"]["name"])
 
     log.info("--- Node %s Setup Complete. Keeping container alive ---", node_id)
     while True:
@@ -207,24 +244,10 @@ def init_regular_node(cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Per-node traffic capture
-# ---------------------------------------------------------------------------
-
-def start_captures(node_id: int, plan_name: str) -> None:
-    """
-    Run networks/capture_node.sh before os.execv into lwip_tun.
-    The script's tcpdump processes outlive the exec and keep capturing.
-    """
-    script = "/repo/networks/capture_node.sh"
-    subprocess.Popen(["sh", script, str(node_id), plan_name])
-    log.info("Capture script started for node%d (plan=%s)", node_id, plan_name)
-
-
-# ---------------------------------------------------------------------------
 # DTN-node init  (replaces init_dtn_node.sh)
 # ---------------------------------------------------------------------------
 
-def init_dtn_node(cfg: dict) -> None:
+def init_dtn_node(cfg: dict, toml_path: str) -> None:
     node_id       = cfg["node"]["id"]
     tun_addr      = cfg["node"]["tun_ipv6_addr"].split("/")[0]
     lwip_addr     = cfg["node"]["lwip_ipv6_addr"].split("/")[0]
@@ -236,7 +259,7 @@ def init_dtn_node(cfg: dict) -> None:
     sysctl("net.ipv6.conf.all.forwarding", "1")
 
     # ---- 2. Interfaces & routes -------------------------------------------
-    all_interfaces = setup_interfaces(cfg)
+    all_interfaces = setup_interfaces(cfg, toml_path)
 
     # ---- 3. TUN interface -------------------------------------------------
     log.info("Setting up /dev/net/tun...")
@@ -293,7 +316,7 @@ def init_dtn_node(cfg: dict) -> None:
     ip("-6", "rule", "del", "fwmark", "2", "table", "200", ignore_errors=True)
     ip("-6", "rule", "add", "fwmark", "2", "table", "200", "priority", "1")
     for iface in cfg.get("interface", []):
-        int_name    = iface["name"]
+        int_name    = iface.get("eth_name", iface["name"])
         local_net   = ipaddress.ip_interface(iface["local_addr"]).network
         remote_addr = iface["remote_addr"].split("/")[0]
         # Directly-connected /64
@@ -319,8 +342,6 @@ def init_dtn_node(cfg: dict) -> None:
         log.error("lwip_tun binary not found at %s", lwip_bin)
         sys.exit(1)
 
-    start_captures(node_id, cfg["contact_plan"]["name"])
-
     os.execv(str(lwip_bin), [str(lwip_bin)])
 
 # ---------------------------------------------------------------------------
@@ -342,9 +363,9 @@ def main() -> None:
     )
 
     if is_dtn:
-        init_dtn_node(cfg)
+        init_dtn_node(cfg, toml_path)
     else:
-        init_regular_node(cfg)
+        init_regular_node(cfg, toml_path)
 
 
 if __name__ == "__main__":

@@ -32,7 +32,8 @@
  * Interface  (one [[interface]] entry)
  * ---------------------------------------------------------------------- */
 typedef struct {
-    char name[DTN_MAX_NAME_LEN];
+    char name[DTN_MAX_NAME_LEN];     /* logical name from TOML */
+    char eth_name[DTN_MAX_NAME_LEN]; /* real kernel interface name (eth0, eth1, …) */
     char local_addr[DTN_MAX_ADDR_LEN];
     char local_mac[DTN_MAX_MAC_LEN];
     char remote_addr[DTN_MAX_ADDR_LEN];

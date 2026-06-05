@@ -2,8 +2,7 @@
 """
 plot_metrics.py — Generate publication-quality line graphs from metrics.jsonl.
 
-Reads <captures>/metrics.jsonl written by dtn_exporter during the experiment.
-No running containers or Prometheus instance needed.
+Reads <captures>/metrics.jsonl written by get_metrics during the experiment.
 
 Usage:
   python3 plot_metrics.py --captures networks/<plan>/captures/<N> [options]
@@ -12,9 +11,22 @@ Options:
   --captures DIR    Capture directory containing metrics.jsonl (required)
   --out DIR         Output directory for plots (default: <captures>/plots)
   --fmt FORMAT      pdf, svg, or png (default: svg)
+  --no-plots        Skip plot generation, write CSVs only
 
-Dependencies:
-  pip install matplotlib
+JSONL record fields:
+  ts                   Unix timestamp
+  node                 container name
+  cpu_pct              CPU % (0–100 × ncores)
+  mem_usage_bytes      memory usage
+  mem_limit_bytes      memory limit
+  net_rx_bytes         cumulative RX bytes (all ifaces)
+  net_tx_bytes         cumulative TX bytes (all ifaces)
+  net_ifaces           per-interface counters
+  blk_read_bytes       cumulative block-device read bytes
+  blk_write_bytes      cumulative block-device write bytes
+  pids                 current PID / thread count
+  db_stored_packets    rows in stored_packets table (null if no DB)
+  db_avg_delivery_sec  AVG(delivery_time_in_sec) (null if no DB)
 """
 
 import argparse
@@ -27,7 +39,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
 # ---------------------------------------------------------------------------
-# Matplotlib style for papers
+# Matplotlib style
 # ---------------------------------------------------------------------------
 
 plt.rcParams.update({
@@ -54,12 +66,7 @@ COLORS = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 # ---------------------------------------------------------------------------
 
 def load(jsonl_path: Path) -> dict[str, list[dict]]:
-    """
-    Read metrics.jsonl and return {node: [record, ...]} sorted by timestamp.
-    Each record has keys: ts, cpu_pct, mem_rss_bytes, mem_total_bytes,
-    net_rx_bytes, net_tx_bytes, db_stored_packets, db_avg_delivery_sec.
-    Missing keys are None.
-    """
+    """Read metrics.jsonl and return {node: [record, ...]} sorted by timestamp."""
     by_node: dict[str, list] = defaultdict(list)
     with open(jsonl_path) as f:
         for line in f:
@@ -76,11 +83,21 @@ def load(jsonl_path: Path) -> dict[str, list[dict]]:
     return dict(by_node)
 
 
-def _rel_times(records: list[dict], t0: float) -> list[float]:
+def _node_key(name: str):
+    """Sort by the first integer found in the name so node10 > node3."""
+    m = re.search(r"\d+", name)
+    return (int(m.group()), name) if m else (0, name)
+
+
+def _global_t0(by_node: dict) -> float:
+    return min(r["ts"] for recs in by_node.values() for r in recs)
+
+
+def _rel(records: list[dict], t0: float) -> list[float]:
     return [r["ts"] - t0 for r in records]
 
 
-def _values(records: list[dict], key: str) -> list:
+def _vals(records: list[dict], key: str) -> list:
     return [r.get(key) for r in records]
 
 
@@ -109,12 +126,20 @@ def _iface_rate(records: list[dict], iface: str, key: str) -> tuple[list[float],
     return times, rates
 
 
-def _global_t0(by_node: dict) -> float:
-    return min(r["ts"] for recs in by_node.values() for r in recs)
+_IFACE_RE = re.compile(r"^tun\d*$|^node\d+-node\d+$")
+
+
+def _dtn_ifaces(records: list[dict]) -> list[str]:
+    names: set[str] = set()
+    for r in records:
+        for iface in (r.get("net_ifaces") or {}):
+            if _IFACE_RE.match(iface):
+                names.add(iface)
+    return sorted(names, key=_node_key)
 
 
 # ---------------------------------------------------------------------------
-# Individual plots
+# Plot helpers
 # ---------------------------------------------------------------------------
 
 def _save(fig: plt.Figure, path: Path, fmt: str) -> None:
@@ -124,17 +149,25 @@ def _save(fig: plt.Figure, path: Path, fmt: str) -> None:
     print(f"  wrote {out}")
 
 
+def _has(by_node: dict, key: str) -> list[str]:
+    return [n for n, recs in by_node.items()
+            if any(r.get(key) is not None for r in recs)]
+
+
+# ---------------------------------------------------------------------------
+# Plots
+# ---------------------------------------------------------------------------
+
 def plot_cpu(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    nodes = [n for n, recs in by_node.items()
-             if any(r.get("cpu_pct") is not None for r in recs)]
+    nodes = _has(by_node, "cpu_pct")
     if not nodes:
         print("  [skip] cpu: no data")
         return
     fig, ax = plt.subplots(figsize=(6, 3))
     for i, node in enumerate(sorted(nodes, key=_node_key)):
         recs = by_node[node]
-        ts   = _rel_times(recs, t0)
-        vals = _values(recs, "cpu_pct")
+        ts   = _rel(recs, t0)
+        vals = _vals(recs, "cpu_pct")
         pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
         if pairs:
             ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
@@ -145,22 +178,40 @@ def plot_cpu(by_node: dict, t0: float, out: Path, fmt: str) -> None:
     _save(fig, out / "cpu", fmt)
 
 
+def plot_memory(by_node: dict, t0: float, out: Path, fmt: str) -> None:
+    nodes = _has(by_node, "mem_usage_bytes")
+    if not nodes:
+        print("  [skip] memory: no data")
+        return
+    fig, ax = plt.subplots(figsize=(6, 3))
+    for i, node in enumerate(sorted(nodes, key=_node_key)):
+        recs  = by_node[node]
+        ts    = _rel(recs, t0)
+        usage = [v / (1024 ** 2) if v is not None else None
+                 for v in _vals(recs, "mem_usage_bytes")]
+        color = COLORS[i % len(COLORS)]
+        pairs = [(t, v) for t, v in zip(ts, usage) if v is not None]
+        if pairs:
+            ax.plot(*zip(*pairs), label=node, color=color)
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Memory (MiB)")
+    ax.set_title("Memory Usage per Node")
+    ax.legend(loc="upper right")
+    _save(fig, out / "memory", fmt)
+
+
 def plot_throughput(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    nodes = [n for n, recs in by_node.items()
-             if any(r.get("net_tx_bytes") is not None for r in recs)]
+    nodes = _has(by_node, "net_tx_bytes")
     if not nodes:
         print("  [skip] throughput: no data")
         return
     fig, (ax_tx, ax_rx) = plt.subplots(1, 2, figsize=(10, 3))
     for i, node in enumerate(sorted(nodes, key=_node_key)):
-        recs = by_node[node]
+        recs  = by_node[node]
         color = COLORS[i % len(COLORS)]
-        for ax, key in [
-            (ax_tx, "net_tx_bytes"),
-            (ax_rx, "net_rx_bytes"),
-        ]:
+        for ax, key in [(ax_tx, "net_tx_bytes"), (ax_rx, "net_rx_bytes")]:
             times, rates = _rate(recs, key)
-            rel = [t - t0 for t in times]
+            rel  = [t - t0 for t in times]
             kbps = [r / 1024 for r in rates]
             ax.plot(rel, kbps, label=node, color=color)
     for ax, title in [(ax_tx, "TX Throughput"), (ax_rx, "RX Throughput")]:
@@ -172,132 +223,36 @@ def plot_throughput(by_node: dict, t0: float, out: Path, fmt: str) -> None:
     _save(fig, out / "throughput", fmt)
 
 
-def plot_memory(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    nodes = [n for n, recs in by_node.items()
-             if any(r.get("mem_rss_bytes") is not None for r in recs)]
+def plot_blkio(by_node: dict, t0: float, out: Path, fmt: str) -> None:
+    nodes = _has(by_node, "blk_write_bytes")
     if not nodes:
-        print("  [skip] memory: no data")
+        print("  [skip] blkio: no data")
         return
-    fig, ax = plt.subplots(figsize=(6, 3))
+    fig, (ax_rd, ax_wr) = plt.subplots(1, 2, figsize=(10, 3))
     for i, node in enumerate(sorted(nodes, key=_node_key)):
-        recs = by_node[node]
-        ts   = _rel_times(recs, t0)
-        vals = [v / (1024 ** 2) if v is not None else None
-                for v in _values(recs, "mem_rss_bytes")]
-        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
-        if pairs:
-            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Memory RSS (MiB)")
-    ax.set_title("Memory Usage per Node")
-    ax.legend(loc="upper right")
-    _save(fig, out / "memory", fmt)
-
-
-def plot_db(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    nodes_count = [n for n, recs in by_node.items()
-                   if any(r.get("db_stored_packets") is not None for r in recs)]
-    if not nodes_count:
-        print("  [skip] db: no data (no relay nodes or PLAN_NAME not set?)")
-        return
-
-    fig, ax = plt.subplots(figsize=(6, 3))
-    for i, node in enumerate(sorted(nodes_count, key=_node_key)):
-        recs = by_node[node]
-        ts   = _rel_times(recs, t0)
-        vals = _values(recs, "db_stored_packets")
-        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
-        if pairs:
-            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Stored Packets")
-    ax.set_title("DTN Storage — Queued Packets per Relay")
-    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
-    ax.legend(loc="upper right")
-    _save(fig, out / "db_packets", fmt)
-
-    nodes_avg = [n for n, recs in by_node.items()
-                 if any(r.get("db_avg_delivery_sec") is not None for r in recs)]
-    if not nodes_avg:
-        return
-    fig, ax = plt.subplots(figsize=(6, 3))
-    for i, node in enumerate(sorted(nodes_avg, key=_node_key)):
-        recs = by_node[node]
-        ts   = _rel_times(recs, t0)
-        vals = _values(recs, "db_avg_delivery_sec")
-        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
-        if pairs:
-            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Avg Delivery Time (s)")
-    ax.set_title("DTN Storage — Average Delivery Time per Relay")
-    ax.legend(loc="upper right")
-    _save(fig, out / "db_delivery", fmt)
-
-
-_IFACE_RE = re.compile(r"^tun\d*$|^node\d+-node\d+$")
-
-
-def _node_key(name: str):
-    """Sort by the first integer found in the name so node10 > node3."""
-    m = re.search(r"\d+", name)
-    return (int(m.group()), name) if m else (0, name)
-
-
-def _dtn_ifaces(records: list[dict]) -> list[str]:
-    """Return sorted interface names that are tun* or node<id>-node<id>."""
-    names: set[str] = set()
-    for r in records:
-        for iface in (r.get("net_ifaces") or {}):
-            if _IFACE_RE.match(iface):
-                names.add(iface)
-    return sorted(names, key=_node_key)
-
-
-def plot_iface_packets(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    series: list[tuple[str, str]] = [
-        (node, iface)
-        for node in sorted(by_node, key=_node_key)
-        for iface in _dtn_ifaces(by_node[node])
-    ]
-
-    if not series:
-        print("  [skip] iface_packets: no per-interface data")
-        return
-
-    fig, (ax_tx, ax_rx) = plt.subplots(1, 2, figsize=(10, 3))
-    for i, (node, iface) in enumerate(series):
         recs  = by_node[node]
         color = COLORS[i % len(COLORS)]
-        label = f"{node}/{iface}"
-        for ax, key in [(ax_tx, "tx_packets"), (ax_rx, "rx_packets")]:
-            times, rates = _iface_rate(recs, iface, key)
-            rel = [t - t0 for t in times]
-            ax.plot(rel, rates, label=label, color=color)
-
-    for ax, title in [
-        (ax_tx, "TX Packets/s per Interface"),
-        (ax_rx, "RX Packets/s per Interface"),
-    ]:
+        for ax, key in [(ax_rd, "blk_read_bytes"), (ax_wr, "blk_write_bytes")]:
+            times, rates = _rate(recs, key)
+            rel  = [t - t0 for t in times]
+            kbps = [r / 1024 for r in rates]
+            ax.plot(rel, kbps, label=node, color=color)
+    for ax, title in [(ax_rd, "Block Read"), (ax_wr, "Block Write")]:
         ax.set_xlabel("Time (s)")
-        ax.set_ylabel("Packets/s")
+        ax.set_ylabel("KB/s")
         ax.set_title(title)
-        ax.legend(loc="upper right", fontsize=7)
+        ax.legend(loc="upper right")
     fig.tight_layout()
-    _save(fig, out / "iface_packets", fmt)
+    _save(fig, out / "blkio", fmt)
 
 
 def plot_iface_bytes(by_node: dict, t0: float, out: Path, fmt: str) -> None:
-    series: list[tuple[str, str]] = [
-        (node, iface)
-        for node in sorted(by_node, key=_node_key)
-        for iface in _dtn_ifaces(by_node[node])
-    ]
-
+    series = [(node, iface)
+              for node in sorted(by_node, key=_node_key)
+              for iface in _dtn_ifaces(by_node[node])]
     if not series:
         print("  [skip] iface_bytes: no per-interface data")
         return
-
     fig, (ax_tx, ax_rx) = plt.subplots(1, 2, figsize=(10, 3))
     for i, (node, iface) in enumerate(series):
         recs  = by_node[node]
@@ -308,11 +263,7 @@ def plot_iface_bytes(by_node: dict, t0: float, out: Path, fmt: str) -> None:
             rel  = [t - t0 for t in times]
             kbps = [r / 1024 for r in rates]
             ax.plot(rel, kbps, label=label, color=color)
-
-    for ax, title in [
-        (ax_tx, "TX Throughput per Interface"),
-        (ax_rx, "RX Throughput per Interface"),
-    ]:
+    for ax, title in [(ax_tx, "TX per Interface"), (ax_rx, "RX per Interface")]:
         ax.set_xlabel("Time (s)")
         ax.set_ylabel("KB/s")
         ax.set_title(title)
@@ -321,8 +272,71 @@ def plot_iface_bytes(by_node: dict, t0: float, out: Path, fmt: str) -> None:
     _save(fig, out / "iface_bytes", fmt)
 
 
+def plot_iface_packets(by_node: dict, t0: float, out: Path, fmt: str) -> None:
+    series = [(node, iface)
+              for node in sorted(by_node, key=_node_key)
+              for iface in _dtn_ifaces(by_node[node])]
+    if not series:
+        print("  [skip] iface_packets: no per-interface data")
+        return
+    fig, (ax_tx, ax_rx) = plt.subplots(1, 2, figsize=(10, 3))
+    for i, (node, iface) in enumerate(series):
+        recs  = by_node[node]
+        color = COLORS[i % len(COLORS)]
+        label = f"{node}/{iface}"
+        for ax, key in [(ax_tx, "tx_packets"), (ax_rx, "rx_packets")]:
+            times, rates = _iface_rate(recs, iface, key)
+            rel = [t - t0 for t in times]
+            ax.plot(rel, rates, label=label, color=color)
+    for ax, title in [(ax_tx, "TX Packets/s per Interface"), (ax_rx, "RX Packets/s per Interface")]:
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Packets/s")
+        ax.set_title(title)
+        ax.legend(loc="upper right", fontsize=7)
+    fig.tight_layout()
+    _save(fig, out / "iface_packets", fmt)
+
+
+def plot_db(by_node: dict, t0: float, out: Path, fmt: str) -> None:
+    nodes = _has(by_node, "db_stored_packets")
+    if not nodes:
+        print("  [skip] db: no data (no relay nodes or PLAN_NAME not set?)")
+        return
+    fig, ax = plt.subplots(figsize=(6, 3))
+    for i, node in enumerate(sorted(nodes, key=_node_key)):
+        recs = by_node[node]
+        ts   = _rel(recs, t0)
+        vals = _vals(recs, "db_stored_packets")
+        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
+        if pairs:
+            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Stored Packets")
+    ax.set_title("DTN Storage — Queued Packets per Relay")
+    ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%d"))
+    ax.legend(loc="upper right")
+    _save(fig, out / "db_packets", fmt)
+
+    nodes = _has(by_node, "db_avg_delivery_sec")
+    if not nodes:
+        return
+    fig, ax = plt.subplots(figsize=(6, 3))
+    for i, node in enumerate(sorted(nodes, key=_node_key)):
+        recs = by_node[node]
+        ts   = _rel(recs, t0)
+        vals = _vals(recs, "db_avg_delivery_sec")
+        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
+        if pairs:
+            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Avg Delivery Time (s)")
+    ax.set_title("DTN Storage — Average Delivery Time per Relay")
+    ax.legend(loc="upper right")
+    _save(fig, out / "db_delivery", fmt)
+
+
 # ---------------------------------------------------------------------------
-# CSV export (pgfplots \addplot table compatible)
+# CSV export
 # ---------------------------------------------------------------------------
 
 def _csv(path: Path, header: str, rows: list) -> None:
@@ -345,16 +359,23 @@ def write_csvs(by_node: dict, t0: float, out: Path) -> None:
         if rows:
             _csv(csv_dir / f"cpu_{node}.csv", "time,cpu_pct", rows)
 
-        rows = [(round(r["ts"] - t0, 3), round(r["mem_rss_bytes"] / 1024 ** 2, 3))
-                for r in recs if r.get("mem_rss_bytes") is not None]
+        rows = [(round(r["ts"] - t0, 3), round(r["mem_usage_bytes"] / 1024 ** 2, 3))
+                for r in recs if r.get("mem_usage_bytes") is not None]
         if rows:
-            _csv(csv_dir / f"memory_{node}.csv", "time,mem_rss_mib", rows)
+            _csv(csv_dir / f"memory_{node}.csv", "time,mem_usage_mib", rows)
 
         for direction, key in [("tx", "net_tx_bytes"), ("rx", "net_rx_bytes")]:
             times, rates = _rate(recs, key)
             rows = [(round(t - t0, 3), round(r / 1024, 3)) for t, r in zip(times, rates)]
             if rows:
                 _csv(csv_dir / f"throughput_{direction}_{node}.csv",
+                     f"time,{direction}_kbps", rows)
+
+        for direction, key in [("read", "blk_read_bytes"), ("write", "blk_write_bytes")]:
+            times, rates = _rate(recs, key)
+            rows = [(round(t - t0, 3), round(r / 1024, 3)) for t, r in zip(times, rates)]
+            if rows:
+                _csv(csv_dir / f"blkio_{direction}_{node}.csv",
                      f"time,{direction}_kbps", rows)
 
         rows = [(round(r["ts"] - t0, 3), r["db_stored_packets"])
@@ -374,7 +395,6 @@ def write_csvs(by_node: dict, t0: float, out: Path) -> None:
                 if rows:
                     _csv(csv_dir / f"iface_pkts_{direction}_{node}_{iface}.csv",
                          f"time,{direction}_pkts_per_sec", rows)
-
             for direction, key in [("tx", "tx_bytes"), ("rx", "rx_bytes")]:
                 times, rates = _iface_rate(recs, iface, key)
                 rows = [(round(t - t0, 3), round(r / 1024, 3)) for t, r in zip(times, rates)]
@@ -419,19 +439,20 @@ def main() -> None:
     if not by_node:
         raise SystemExit("ERROR: metrics.jsonl is empty or malformed.")
 
-    t0 = _global_t0(by_node)
-    total_s = max(r["ts"] for recs in by_node.values() for r in recs) - t0
+    t0       = _global_t0(by_node)
+    total_s  = max(r["ts"] for recs in by_node.values() for r in recs) - t0
     print(f"[plot] nodes    : {sorted(by_node, key=_node_key)}")
     print(f"[plot] duration : {total_s:.0f}s")
     print()
 
     if not args.no_plots:
         plot_cpu(by_node, t0, out_dir, args.fmt)
-        plot_throughput(by_node, t0, out_dir, args.fmt)
         plot_memory(by_node, t0, out_dir, args.fmt)
-        plot_db(by_node, t0, out_dir, args.fmt)
-        plot_iface_packets(by_node, t0, out_dir, args.fmt)
+        plot_throughput(by_node, t0, out_dir, args.fmt)
+        plot_blkio(by_node, t0, out_dir, args.fmt)
         plot_iface_bytes(by_node, t0, out_dir, args.fmt)
+        plot_iface_packets(by_node, t0, out_dir, args.fmt)
+        plot_db(by_node, t0, out_dir, args.fmt)
         print()
 
     write_csvs(by_node, t0, out_dir)

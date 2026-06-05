@@ -37,12 +37,12 @@ One command, fully automated
 
 Skip plots during a run, generate them later
   python3 throughput_test.py --no-plots
-  python3 plot_metrics.py --captures networks/contact_plan_throughput/captures/1
-  
+  python3 networks/plot_metrics.py --captures networks/contact_plan_throughput/captures/1
+
 Manual workflow (containers already up)
   cd networks/contact_plan_throughput && docker compose up -d --build
   python3 run_traffic.py --rate 200 --duration 60
-  python3 plot_metrics.py --captures networks/contact_plan_throughput/captures/1
+  python3 networks/plot_metrics.py --captures networks/contact_plan_throughput/captures/1
 """
 
 import argparse
@@ -106,7 +106,7 @@ def main() -> None:
     p.add_argument("--receiver",   default="", metavar="NODE")
     p.add_argument("--relay",      default="", metavar="NODES")
     p.add_argument("--dst-addr",   default="", metavar="ADDR")
-    p.add_argument("--wait-after", type=int, default=15)
+    p.add_argument("--wait-after", type=int, default=5)
     p.add_argument("--no-analyze", action="store_true")
     p.add_argument("--no-plots",   action="store_true")
     p.add_argument("--keep-up",    action="store_true")
@@ -216,6 +216,9 @@ def main() -> None:
             traffic_cmd += ["--dst-addr", args.dst_addr]
         if args.no_analyze:
             traffic_cmd += ["--no-analyze"]
+        if args.no_plots:
+            traffic_cmd += ["--no-plots"]
+        traffic_cmd += ["--plot-fmt", args.plot_fmt]
 
         run(traffic_cmd)
 
@@ -223,21 +226,8 @@ def main() -> None:
         # Step 5 — Compose down + plots
         # -------------------------------------------------------------------------
         print()
-        print("--- [5/5] Tearing down and generating plots ---")
+        print("--- [5/5] Tearing down ---")
         do_compose_down()
-
-        if not args.no_plots and not args.keep_up:
-            metrics_jsonl = captures_dir / "metrics.jsonl"
-            if metrics_jsonl.exists():
-                print("Generating plots...")
-                subprocess.run(
-                    [sys.executable, str(SCRIPT_DIR / "plot_metrics.py"),
-                     "--captures", str(captures_dir),
-                     "--fmt",      args.plot_fmt],
-                    check=False,
-                )
-            else:
-                print(f"WARNING: {metrics_jsonl} not found — skipping plots")
 
         print()
         print("=" * 60)
@@ -254,7 +244,7 @@ def main() -> None:
         print("    logs.txt       — docker compose logs")
         print("    tcpdump.txt    — merged per-node traffic (time-sorted)")
         print("    report.*       — PDR / latency / throughput summary")
-        print(f"   plots/         — line graphs ({args.plot_fmt})")
+        print(f"    plots/         — line graphs ({args.plot_fmt})")
         print("=" * 60)
 
     finally:

@@ -432,21 +432,22 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
         "volumes": [f"{repo_root_host}:{repo_root_container}"],
     }
 
-    services["dtn_exporter"] = {
+    services["metrics"] = {
         "build": {
             "context": repo_root_host,
-            "dockerfile": "Dockerfile.exporter",
+            "dockerfile": "Dockerfile.metrics",
         },
-        "container_name": "dtn_exporter",
+        "container_name": "metrics",
         "environment": {
             "PLAN_NAME":   plan_subdir,
+            "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
             "METRICS_OUT": f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
         },
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock:ro",
             f"{repo_root_host}:{repo_root_container}",
         ],
-        "command": ["python3", f"{repo_root_container}/networks/dtn_exporter.py"],
+        "command": ["python3", f"{repo_root_container}/networks/get_metrics.py"],
     }
 
     compose = {

@@ -102,6 +102,8 @@ def main() -> None:
     p.add_argument("--dst-addr",   default="", metavar="ADDR")
     p.add_argument("--wait-after", type=int, default=15)
     p.add_argument("--no-analyze", action="store_true")
+    p.add_argument("--no-plots",   action="store_true")
+    p.add_argument("--plot-fmt",   default="svg", choices=["pdf", "svg", "png"])
     args = p.parse_args()
 
     contact_plan = Path(args.contact_plan)
@@ -242,6 +244,13 @@ def main() -> None:
                  str(captures_dir)],
                 check=False,
             )
+            if not args.no_plots:
+                subprocess.run(
+                    [sys.executable, str(SCRIPT_DIR / "networks/plot_metrics.py"),
+                     "--captures", str(captures_dir),
+                     "--fmt",      args.plot_fmt],
+                    check=False,
+                )
 
         print()
         print("=" * 60)

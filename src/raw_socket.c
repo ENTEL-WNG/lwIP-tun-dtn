@@ -43,7 +43,8 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
     DTN_DEBUG("Initializing raw sockets...");
 
     for (int i = 0; i < dtn_config.interface_count; i++) {
-        const char* ifname = dtn_config.interfaces[i].name;
+        const DtnInterface* di = &dtn_config.interfaces[i];
+        const char* ifname = di->eth_name[0] ? di->eth_name : di->name;
 
         int raw_socket = socket(AF_INET6, SOCK_RAW, IPPROTO_RAW);
         if (raw_socket < 0) {
@@ -93,7 +94,9 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
     struct ifreq ifr;
     for (int i = 0; i < dtn_config.interface_count; i++) {
         char interface_name[IFNAMSIZ];
-        strncpy(interface_name, dtn_config.interfaces[i].name, IFNAMSIZ - 1);
+        const DtnInterface* di = &dtn_config.interfaces[i];
+        const char* kname = di->eth_name[0] ? di->eth_name : di->name;
+        strncpy(interface_name, kname, IFNAMSIZ - 1);
         interface_name[IFNAMSIZ - 1] = '\0';
 
         /* AF_PACKET bypasses ip6tables/policy routing entirely — operating at L2. */
@@ -211,7 +214,8 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnI
     memcpy(&sa6.sin6_addr, dest_addr.addr, sizeof(sa6.sin6_addr));
     /* Link-local destinations need a scope id to select the outgoing interface. */
     if (IN6_IS_ADDR_LINKLOCAL(&sa6.sin6_addr)) {
-        sa6.sin6_scope_id = if_nametoindex(dtn_interface->name);
+        const char* kname = dtn_interface->eth_name[0] ? dtn_interface->eth_name : dtn_interface->name;
+        sa6.sin6_scope_id = if_nametoindex(kname);
     }
 
     int sent_bytes = sendto(dtn_interface->socket, buf, p->tot_len, 0, (struct sockaddr*)&sa6, sizeof(sa6));

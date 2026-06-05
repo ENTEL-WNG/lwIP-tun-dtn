@@ -47,7 +47,18 @@ For deployment on nodes/environments with other characteristics, all correspondi
 - main.c
 - raw_socket.h/c
 
-For deployment, the interfaces accessed by the lwIP/DTN userpace module have to exist and be configured on the system. Moreover, the environment has to be configured to forward all traffic towards the address of the lwIP/DTN userpace module (fd00::2) over the tun interface fd00::1 (tun0).  
+For deployment, the interfaces accessed by the lwIP/DTN userpace module have to exist and be configured on the system. Moreover, the environment has to be configured to forward all traffic towards the address of the lwIP/DTN userpace module (fd00::2) over the tun interface fd00::1 (tun0).
+
+### Network Generation
+
+install python
+install pip
+matplotlib
+networkx
+
+docker install
+
+git submodule
 
 ## PROJECT STRUCTURE
 
@@ -72,6 +83,10 @@ others
 ├── LICENSE                # AGPLv3 license
 └── dtn_storage/           # Packet storage directory
 ```
+
+### TODO:
+
+[ ] lwip as git submodule
 
 ## CUSTOM ICMPV6 MESSAGES
 

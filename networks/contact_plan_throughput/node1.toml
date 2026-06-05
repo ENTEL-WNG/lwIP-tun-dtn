@@ -11,6 +11,7 @@ lwip_ipv6_addr = "fd00:ffff:01::01/64"
 
 [[interface]]
 name           = "node1-node2"
+eth_name       = "eth0"
 local_addr     = "fd00:01:02::1/64"
 local_mac      = "00:01:00:02:00:01"
 remote_addr    = "fd00:01:02::2/64"
