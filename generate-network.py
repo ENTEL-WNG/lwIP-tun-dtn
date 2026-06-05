@@ -30,30 +30,10 @@ Per-interface reachable addresses (directional BFS excluding the local node):
     addresses      - same but for isDtnNode == false nodes
 """
 
-import json
 import sys
 import tomllib
 from collections import deque
 from pathlib import Path
-
-# ---------------------------------------------------------------------------
-# Monitoring backend
-# ---------------------------------------------------------------------------
-# Set USE_CADVISOR = True  on Linux / a real Docker host (containerd accessible
-#   at the standard path /run/containerd/containerd.sock).  cAdvisor reads
-#   cgroup v2 directly and exposes the full container_* metric family.
-#
-# Set USE_CADVISOR = False on macOS Docker Desktop.  cAdvisor 0.47+ requires
-#   containerd, which is NOT at the standard path inside the Docker Desktop
-#   Linux VM, so it falls back to "Raw factory" and container names are lost.
-#   dtn_exporter uses the Docker HTTP API (same socket as `docker stats`) which
-#   IS properly proxied by Docker Desktop and always returns named metrics.
-#
-# After changing this flag run:
-#   python3 generate-network.py networks/contact-plan-<name>.toml
-# for every plan you use.  This rewrites docker-compose.yml, prometheus.yml,
-# and grafana/dashboards/dtn.json in one shot.
-USE_CADVISOR = False
 
 import matplotlib
 matplotlib.use("Agg")
@@ -313,7 +293,7 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
 # Docker Compose generator
 # ---------------------------------------------------------------------------
 
-def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: str = "1.0") -> None:
+def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: str = "1.0", memory: str = "") -> None:
     """
     Write a docker-compose.yml that models the contact-plan topology.
 
@@ -416,11 +396,10 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
         if svc_networks:
             service["networks"] = svc_networks
 
-        service["deploy"] = {
-            "resources": {
-                "limits": {"cpus": cpus},
-            }
-        }
+        limits: dict = {"cpus": cpus}
+        if memory:
+            limits["memory"] = memory
+        service["deploy"] = {"resources": {"limits": limits}}
 
         services[svc_name] = service
 
@@ -453,109 +432,21 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
         "volumes": [f"{repo_root_host}:{repo_root_container}"],
     }
 
-    # Monitoring stack → Prometheus → Grafana
-    # Which metrics collector is used depends on USE_CADVISOR at the top of
-    # this file.  Both paths write Prometheus TSDB to captures/<n>/prometheus/
-    # and serve Grafana at :3000.
-    networks["monitoring"] = {"driver": "bridge"}
-
-    if USE_CADVISOR:
-        # ── Linux path ──────────────────────────────────────────────────────
-        # cAdvisor reads cgroup v2 + Docker API → CPU / memory / network.
-        # dtn_exporter runs in DB_ONLY mode → SQLite stored_packets metrics.
-        # Both are scraped by Prometheus (cadvisor:8080, dtn_exporter:9091).
-        services["cadvisor"] = {
-            "image": "gcr.io/cadvisor/cadvisor:latest",
-            "container_name": "cadvisor",
-            "privileged": True,
-            "volumes": [
-                "/:/rootfs:ro",
-                "/var/run:/var/run:ro",
-                "/sys:/sys:ro",
-                "/var/lib/docker/:/var/lib/docker:ro",
-                "/dev/disk/:/dev/disk:ro",
-            ],
-            "ports": ["8080:8080"],
-            "networks": ["monitoring"],
-        }
-        services["dtn_exporter"] = {
-            "build": {
-                "context": repo_root_host,
-                "dockerfile": "Dockerfile.exporter",
-            },
-            "container_name": "dtn_exporter",
-            "environment": {
-                "PLAN_NAME":   plan_subdir,
-                "DB_ONLY":     "1",
-                "METRICS_OUT": f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
-            },
-            "volumes": [
-                "/var/run/docker.sock:/var/run/docker.sock:ro",
-                f"{repo_root_host}:{repo_root_container}",
-            ],
-            "command": ["python3", f"{repo_root_container}/networks/dtn_exporter.py"],
-            "networks": ["monitoring"],
-        }
-        prometheus_depends = ["cadvisor", "dtn_exporter"]
-    else:
-        # ── macOS Docker Desktop path ────────────────────────────────────────
-        # cAdvisor 0.47+ requires containerd at /run/containerd/containerd.sock
-        # which is NOT accessible inside the Docker Desktop Linux VM, so it
-        # falls back to "Raw factory" and loses all container-name labels.
-        # dtn_exporter uses the Docker HTTP API (docker.sock) instead — always
-        # returns named per-container metrics and also collects SQLite DB stats.
-        services["dtn_exporter"] = {
-            "build": {
-                "context": repo_root_host,
-                "dockerfile": "Dockerfile.exporter",
-            },
-            "container_name": "dtn_exporter",
-            "environment": {
-                "PLAN_NAME":   plan_subdir,
-                "METRICS_OUT": f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
-            },
-            "volumes": [
-                "/var/run/docker.sock:/var/run/docker.sock:ro",
-                f"{repo_root_host}:{repo_root_container}",
-            ],
-            "command": ["python3", f"{repo_root_container}/networks/dtn_exporter.py"],
-            "networks": ["monitoring"],
-        }
-        prometheus_depends = ["dtn_exporter"]
-
-    services["prometheus"] = {
-        "image": "prom/prometheus:latest",
-        "container_name": "prometheus",
-        "user": "root",
-        "volumes": [
-            "../prometheus.yml:/etc/prometheus/prometheus.yml:ro",
-            "./captures/${TEST_CASE_NUMBER}/prometheus:/prometheus",
-        ],
-        "command": [
-            "--config.file=/etc/prometheus/prometheus.yml",
-            "--storage.tsdb.path=/prometheus",
-        ],
-        "ports": ["9090:9090"],
-        "depends_on": prometheus_depends,
-        "networks": ["monitoring"],
-    }
-
-    services["grafana"] = {
-        "image": "grafana/grafana:latest",
-        "container_name": "grafana",
-        "user": "root",
-        "volumes": [
-            "./captures/${TEST_CASE_NUMBER}/grafana:/var/lib/grafana",
-            "../grafana/provisioning:/etc/grafana/provisioning:ro",
-            "../grafana/dashboards:/etc/grafana/dashboards:ro",
-        ],
-        "ports": ["3000:3000"],
-        "environment": {
-            "GF_SECURITY_ADMIN_PASSWORD": "admin",
-            "GF_USERS_ALLOW_SIGN_UP": "false",
+    services["dtn_exporter"] = {
+        "build": {
+            "context": repo_root_host,
+            "dockerfile": "Dockerfile.exporter",
         },
-        "depends_on": ["prometheus"],
-        "networks": ["monitoring"],
+        "container_name": "dtn_exporter",
+        "environment": {
+            "PLAN_NAME":   plan_subdir,
+            "METRICS_OUT": f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
+        },
+        "volumes": [
+            "/var/run/docker.sock:/var/run/docker.sock:ro",
+            f"{repo_root_host}:{repo_root_container}",
+        ],
+        "command": ["python3", f"{repo_root_container}/networks/dtn_exporter.py"],
     }
 
     compose = {
@@ -691,166 +582,6 @@ def generate_graph(data: dict, node_data: dict, out_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Monitoring config writers  (prometheus.yml + Grafana dashboard)
-# ---------------------------------------------------------------------------
-
-def _panel(pid, title, description, expr, legend, unit, grid, ptype="timeseries",
-           extra_field=None, extra_opt=None):
-    panel = {
-        "id": pid, "type": ptype, "title": title, "description": description,
-        "gridPos": grid,
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "targets": [{"refId": "A",
-                      "datasource": {"type": "prometheus", "uid": "prometheus"},
-                      "expr": expr, "legendFormat": legend}],
-        "fieldConfig": {
-            "defaults": {
-                "unit": unit, "min": 0,
-                "color": {"mode": "palette-classic"},
-                "custom": {"lineWidth": 2, "fillOpacity": 10,
-                           "showPoints": "never", "spanNulls": False},
-            },
-            "overrides": [],
-        },
-        "options": {
-            "legend": {"displayMode": "list", "placement": "bottom", "showLegend": True},
-            "tooltip": {"mode": "multi", "sort": "none"},
-        },
-    }
-    if extra_field:
-        panel["fieldConfig"]["defaults"].update(extra_field)
-    if extra_opt:
-        panel["options"].update(extra_opt)
-    return panel
-
-
-def _bargauge_panel(pid, title, description, expr, legend, unit, grid):
-    return {
-        "id": pid, "type": "bargauge", "title": title, "description": description,
-        "gridPos": grid,
-        "datasource": {"type": "prometheus", "uid": "prometheus"},
-        "targets": [{"refId": "A",
-                      "datasource": {"type": "prometheus", "uid": "prometheus"},
-                      "expr": expr, "legendFormat": legend, "instant": True}],
-        "fieldConfig": {
-            "defaults": {
-                "unit": unit, "min": 0, "max": 536870912,
-                "color": {"mode": "thresholds"},
-                "thresholds": {"mode": "absolute", "steps": [
-                    {"color": "green",  "value": None},
-                    {"color": "yellow", "value": 268435456},
-                    {"color": "red",    "value": 469762048},
-                ]},
-            },
-            "overrides": [],
-        },
-        "options": {
-            "orientation": "horizontal",
-            "reduceOptions": {"calcs": ["lastNotNull"]},
-            "displayMode": "gradient", "showUnfilled": True,
-            "valueMode": "color", "text": {},
-        },
-    }
-
-
-def _build_dashboard(use_cadvisor: bool) -> dict:
-    if use_cadvisor:
-        cpu_expr   = 'rate(container_cpu_usage_seconds_total{name=~"node.*",cpu="total"}[15s]) * 100'
-        tx_expr    = 'rate(container_network_transmit_bytes_total{name=~"node.*"}[15s])'
-        rx_expr    = 'rate(container_network_receive_bytes_total{name=~"node.*"}[15s])'
-        ram_expr   = 'container_memory_usage_bytes{name=~"node.*"}'
-        rss_expr   = 'container_memory_rss{name=~"node.*"}'
-        legend     = "{{name}}"
-    else:
-        cpu_expr   = "dtn_cpu_percent"
-        tx_expr    = "rate(dtn_net_tx_bytes_total[15s])"
-        rx_expr    = "rate(dtn_net_rx_bytes_total[15s])"
-        ram_expr   = "dtn_memory_total_bytes"
-        rss_expr   = "dtn_memory_rss_bytes"
-        legend     = "{{container}}"
-
-    panels = [
-        _panel(1, "CPU Usage", "CPU % per node",
-               cpu_expr, legend, "percent", {"x":0,"y":0,"w":24,"h":8}),
-        _panel(2, "TX Throughput", "Transmit bytes/sec per node",
-               tx_expr, legend, "Bps", {"x":0,"y":8,"w":12,"h":8}),
-        _panel(3, "RX Throughput", "Receive bytes/sec per node",
-               rx_expr, legend, "Bps", {"x":12,"y":8,"w":12,"h":8}),
-        _bargauge_panel(5, "RAM Usage (current)",
-               "Total memory per node (memory.current)",
-               ram_expr, legend, "bytes", {"x":0,"y":16,"w":24,"h":6}),
-        _panel(4, "Memory RSS", "RSS per node (anon pages, excl. file cache)",
-               rss_expr, legend, "bytes", {"x":0,"y":22,"w":24,"h":8}),
-        _panel(6, "DTN Storage — Stored Packets",
-               "Rows in stored_packets table per relay node",
-               "dtn_db_stored_packets", "{{container}}",
-               "short", {"x":0,"y":30,"w":12,"h":8},
-               extra_field={"decimals": 0}),
-        _panel(7, "DTN Storage — Avg Delivery Time",
-               "AVG(delivery_time_in_sec) from stored_packets",
-               "dtn_db_avg_delivery_sec", "{{container}}",
-               "s", {"x":12,"y":30,"w":12,"h":8}),
-    ]
-
-    return {
-        "title": "DTN Nodes",
-        "uid": "dtn-nodes",
-        "schemaVersion": 39,
-        "version": 1,
-        "refresh": "5s",
-        "time": {"from": "now-10m", "to": "now"},
-        "timezone": "browser",
-        "graphTooltip": 1,
-        "tags": ["dtn"],
-        "editable": True,
-        "templating": {"list": []},
-        "annotations": {"list": []},
-        "links": [],
-        "panels": panels,
-    }
-
-
-def write_monitoring_configs(script_dir: Path) -> None:
-    """Write prometheus.yml and the Grafana dashboard for the active backend."""
-    networks_dir   = script_dir / "networks"
-    dashboard_dir  = networks_dir / "grafana" / "dashboards"
-    dashboard_dir.mkdir(parents=True, exist_ok=True)
-
-    # prometheus.yml — scrape targets depend on which services are running
-    if USE_CADVISOR:
-        prom_cfg = (
-            "global:\n"
-            "  scrape_interval: 5s\n"
-            "  evaluation_interval: 5s\n\n"
-            "scrape_configs:\n"
-            "  - job_name: cadvisor\n"
-            "    static_configs:\n"
-            "      - targets: ['cadvisor:8080']\n"
-            "  - job_name: dtn_exporter\n"
-            "    static_configs:\n"
-            "      - targets: ['dtn_exporter:9091']\n"
-        )
-    else:
-        prom_cfg = (
-            "global:\n"
-            "  scrape_interval: 5s\n"
-            "  evaluation_interval: 5s\n\n"
-            "scrape_configs:\n"
-            "  - job_name: dtn_exporter\n"
-            "    static_configs:\n"
-            "      - targets: ['dtn_exporter:9091']\n"
-        )
-    (networks_dir / "prometheus.yml").write_text(prom_cfg)
-    print(f"  wrote networks/prometheus.yml  (USE_CADVISOR={USE_CADVISOR})")
-
-    dashboard = _build_dashboard(USE_CADVISOR)
-    (dashboard_dir / "dtn.json").write_text(
-        json.dumps(dashboard, indent=2) + "\n"
-    )
-    print(f"  wrote networks/grafana/dashboards/dtn.json  (USE_CADVISOR={USE_CADVISOR})")
-
-
-# ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
@@ -876,8 +607,9 @@ def main():
 
     generate_graph(data, node_data, out_dir / "topology.png")
 
-    cpus = str(data.get("contact_plan", {}).get("cpus", "1.0"))
-    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus)
+    cpus   = str(data.get("contact_plan", {}).get("cpus",   "1.0"))
+    memory = str(data.get("contact_plan", {}).get("memory", ""))
+    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus, memory=memory)
 
     test_script = out_dir / "test.sh"
     if not test_script.exists():
@@ -886,8 +618,6 @@ def main():
         print(f"  wrote {test_script}")
     else:
         print(f"  skipped {test_script} (already exists)")
-
-    write_monitoring_configs(Path(__file__).parent)
 
     print(f"\nGenerated {len(node_data)} config(s) + docker-compose.yml in '{out_dir}/'")
     print(f"OUTPUT_DIR={out_dir}")

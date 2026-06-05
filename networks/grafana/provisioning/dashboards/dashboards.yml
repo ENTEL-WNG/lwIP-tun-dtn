@@ -1,9 +1,0 @@
-apiVersion: 1
-providers:
-  - name: default
-    folder: DTN
-    type: file
-    disableDeletion: false
-    updateIntervalSeconds: 1
-    options:
-      path: /etc/grafana/dashboards

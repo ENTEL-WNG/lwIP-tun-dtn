@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """
-dtn_exporter.py — Prometheus exporter for DTN node container stats.
+dtn_exporter.py — Per-container metrics collector for DTN nodes.
 
 Reads cgroup v2 and /proc files from inside each container via docker exec.
-Works on Docker Desktop for macOS where the Docker stats API returns empty data.
-
 One background thread per container measures CPU over a 1-second window then
-immediately reads memory, network, and SQLite DB stats.
-Prometheus scrapes the cached gauges.
+immediately reads memory, network, and SQLite DB stats, writing every sample
+to a JSONL file.
 
-Metrics on :9091/metrics:
-  dtn_cpu_percent{container}           CPU %  (0–100 × ncores)
-  dtn_memory_rss_bytes{container}      RSS (memory.current − file cache)
-  dtn_memory_total_bytes{container}    Total memory (memory.current)
-  dtn_net_rx_bytes_total{container}    cumulative RX bytes (excl. lo)
-  dtn_net_tx_bytes_total{container}    cumulative TX bytes (excl. lo)
-  dtn_db_stored_packets{container}     rows in stored_packets table
-  dtn_db_avg_delivery_sec{container}   AVG(delivery_time_in_sec)
+JSONL record fields:
+  ts                   Unix timestamp
+  node                 container name
+  cpu_pct              CPU % (0–100 × ncores)
+  mem_rss_bytes        RSS (memory.current − file cache)
+  mem_total_bytes      total memory (memory.current)
+  net_rx_bytes         cumulative RX bytes (excl. lo, all ifaces)
+  net_tx_bytes         cumulative TX bytes (excl. lo, all ifaces)
+  net_ifaces           per-interface counters (see _net_iface_stats)
+  db_stored_packets    rows in stored_packets table (null if no DB)
+  db_avg_delivery_sec  AVG(delivery_time_in_sec) (null if no DB)
 """
 
 import json
@@ -26,28 +27,14 @@ import threading
 import time
 
 import docker
-from prometheus_client import Gauge, start_http_server
 
-PORT        = int(os.environ.get("EXPORTER_PORT",    "9091"))
-INTERVAL    = float(os.environ.get("SCRAPE_INTERVAL", "1"))
+INTERVAL    = float(os.environ.get("SCRAPE_INTERVAL", "0.1"))
 NODE_PREFIX = os.environ.get("NODE_PREFIX",           "node")
 PLAN_NAME   = os.environ.get("PLAN_NAME",             "")
 DB_DIR      = f"/repo/dtn_storage/{PLAN_NAME}" if PLAN_NAME else ""
-# DB_ONLY=1: skip CPU/memory/network collection (set when cAdvisor handles those).
-DB_ONLY     = os.environ.get("DB_ONLY", "0") == "1"
-# METRICS_OUT: path to a JSONL file written each collection cycle.
-# Allows post-run plotting without needing Prometheus running.
 METRICS_OUT = os.environ.get("METRICS_OUT", "")
 
 _jsonl_lock = threading.Lock()
-
-cpu_gauge  = Gauge("dtn_cpu_percent",          "CPU usage %",                    ["container"])
-mem_gauge  = Gauge("dtn_memory_rss_bytes",     "Memory RSS bytes (excl. cache)", ["container"])
-mem_total  = Gauge("dtn_memory_total_bytes",   "Total memory usage bytes",       ["container"])
-rx_gauge   = Gauge("dtn_net_rx_bytes_total",   "Cumulative RX bytes",            ["container"])
-tx_gauge   = Gauge("dtn_net_tx_bytes_total",   "Cumulative TX bytes",            ["container"])
-db_count   = Gauge("dtn_db_stored_packets",    "Rows in stored_packets table",   ["container"])
-db_avg_del = Gauge("dtn_db_avg_delivery_sec",  "AVG delivery_time_in_sec",       ["container"])
 
 
 def _exec(container, cmd: str) -> str:
@@ -106,20 +93,34 @@ def _db_stats(name: str) -> tuple[int | None, float | None]:
         return None, None
 
 
-def _net_bytes(container) -> tuple[int, int]:
-    rx = tx = 0
+def _net_iface_stats(container) -> dict[str, dict[str, int]]:
+    """Parse /proc/net/dev and return per-interface counters (excl. lo).
+
+    Returns {iface: {rx_bytes, rx_packets, rx_errors, rx_drop,
+                     tx_bytes, tx_packets, tx_errors, tx_drop}}.
+    """
+    ifaces: dict[str, dict[str, int]] = {}
     try:
         for line in _exec(container, "cat /proc/net/dev").splitlines()[2:]:
             parts = line.split()
-            if not parts:
+            if len(parts) < 17:
                 continue
-            if parts[0].rstrip(":") == "lo":
+            name = parts[0].rstrip(":")
+            if name == "lo":
                 continue
-            rx += int(parts[1])
-            tx += int(parts[9])
+            ifaces[name] = {
+                "rx_bytes":   int(parts[1]),
+                "rx_packets": int(parts[2]),
+                "rx_errors":  int(parts[3]),
+                "rx_drop":    int(parts[4]),
+                "tx_bytes":   int(parts[9]),
+                "tx_packets": int(parts[10]),
+                "tx_errors":  int(parts[11]),
+                "tx_drop":    int(parts[12]),
+            }
     except Exception:
         pass
-    return rx, tx
+    return ifaces
 
 
 def _write_jsonl(record: dict) -> None:
@@ -134,47 +135,37 @@ def _write_jsonl(record: dict) -> None:
 
 def _poll(container, stop: threading.Event) -> None:
     name = container.name
-    mode = "db-only" if DB_ONLY else "full"
-    print(f"[exporter] polling {name} ({mode})", flush=True)
+    print(f"[exporter] polling {name}", flush=True)
     while not stop.is_set():
         t0 = time.monotonic()
         try:
-            if not DB_ONLY:
-                # CPU requires a 1-second window between two cgroup reads.
-                u0 = _cpu_usec(container)
-                stop.wait(1.0)
-                if stop.is_set():
-                    break
-                u1      = _cpu_usec(container)
-                elapsed = (time.monotonic() - t0) * 1e6
-                cpu     = (u1 - u0) / elapsed * 100.0 if elapsed > 0 else 0.0
-                cpu_gauge.labels(container=name).set(max(0.0, cpu))
-                rss, total = _memory(container)
-                mem_gauge.labels(container=name).set(rss)
-                mem_total.labels(container=name).set(total)
-                rx, tx = _net_bytes(container)
-                rx_gauge.labels(container=name).set(rx)
-                tx_gauge.labels(container=name).set(tx)
-
+            # CPU requires a 1-second window between two cgroup reads.
+            u0 = _cpu_usec(container)
+            stop.wait(1.0)
+            if stop.is_set():
+                break
+            u1      = _cpu_usec(container)
+            elapsed = (time.monotonic() - t0) * 1e6
+            cpu     = (u1 - u0) / elapsed * 100.0 if elapsed > 0 else 0.0
+            rss, total = _memory(container)
+            ifaces = _net_iface_stats(container)
+            rx = sum(s["rx_bytes"] for s in ifaces.values())
+            tx = sum(s["tx_bytes"] for s in ifaces.values())
             count, avg = _db_stats(name)
-            if count is not None:
-                db_count.labels(container=name).set(count)
-            if avg is not None:
-                db_avg_del.labels(container=name).set(avg)
 
             if METRICS_OUT:
-                record: dict = {"ts": time.time(), "node": name}
-                if not DB_ONLY:
-                    record.update({
-                        "cpu_pct":        round(cpu, 3),
-                        "mem_rss_bytes":  rss,
-                        "mem_total_bytes": total,
-                        "net_rx_bytes":   rx,
-                        "net_tx_bytes":   tx,
-                    })
-                record["db_stored_packets"]    = count
-                record["db_avg_delivery_sec"]  = avg
-                _write_jsonl(record)
+                _write_jsonl({
+                    "ts":                  time.time(),
+                    "node":                name,
+                    "cpu_pct":             round(cpu, 3),
+                    "mem_rss_bytes":       rss,
+                    "mem_total_bytes":     total,
+                    "net_rx_bytes":        rx,
+                    "net_tx_bytes":        tx,
+                    "net_ifaces":          ifaces,
+                    "db_stored_packets":   count,
+                    "db_avg_delivery_sec": avg,
+                })
 
         except Exception as exc:
             print(f"[exporter] {name}: {exc}", flush=True)
@@ -184,8 +175,7 @@ def _poll(container, stop: threading.Event) -> None:
 
 
 def main() -> None:
-    start_http_server(PORT)
-    print(f"[exporter] listening on :{PORT}  interval={INTERVAL}s", flush=True)
+    print(f"[exporter] interval={INTERVAL}s", flush=True)
 
     if METRICS_OUT:
         os.makedirs(os.path.dirname(os.path.abspath(METRICS_OUT)), exist_ok=True)

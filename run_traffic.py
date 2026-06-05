@@ -11,9 +11,6 @@ This script only:
   3. Waits --wait-after seconds for in-flight packets to drain
   4. Collects artefacts: sent.csv, recv.csv, logs.txt, tcpdump.txt, report.*
 
-Monitoring is handled by the cAdvisor + Prometheus + Grafana services in the
-compose stack.  Grafana: http://localhost:3000 (admin/admin)
-
 Usage:
     python3 run_traffic.py [options]
 
@@ -246,7 +243,6 @@ def main() -> None:
                 check=False,
             )
 
-        prometheus_yml = (SCRIPT_DIR / "networks" / "prometheus.yml").resolve()
         print()
         print("=" * 60)
         print("  Traffic test complete")
@@ -259,16 +255,7 @@ def main() -> None:
         print("    logs.txt    — docker compose logs")
         print("    tcpdump.txt — merged per-node traffic (time-sorted)")
         print("    report.*    — PDR / latency / throughput summary")
-        print()
-        print("  Metrics (Prometheus still running in compose stack):")
-        print("    Grafana   : http://localhost:3000  (admin/admin)")
-        print("    Prometheus: http://localhost:9090")
-        print()
-        print("  To replay metrics after compose down:")
-        print(f"    docker run -p 9090:9090 \\")
-        print(f"      -v {prometheus_yml}:/etc/prometheus/prometheus.yml:ro \\")
-        print(f"      -v {captures_dir.resolve()}/prometheus:/prometheus \\")
-        print(f"      prom/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus")
+        print("    metrics.jsonl — per-container resource metrics")
         print("=" * 60)
 
     finally:

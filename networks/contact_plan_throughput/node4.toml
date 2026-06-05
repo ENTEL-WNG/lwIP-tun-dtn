@@ -1,40 +1,40 @@
-# Auto-generated config for node 3
+# Auto-generated config for node 4
 
 [node]
-id     = 3
-name   = "node3"
+id     = 4
+name   = "node4"
 is_dtn        = true
 dtn_addresses = ["fd00:01:02::2", "fd00:02:03::2", "fd00:02:04::2", "fd00:02:03::3", "fd00:03:06::3", "fd00:02:04::4", "fd00:04:05::4", "fd00:04:05::5", "fd00:05:06::5"]
 addresses     = ["fd00:01:02::1", "fd00:03:06::6", "fd00:05:06::6"]
-tun_ipv6_addr  = "fd00:ffff:03::1/64"
-lwip_ipv6_addr = "fd00:ffff:03::03/64"
+tun_ipv6_addr  = "fd00:ffff:04::1/64"
+lwip_ipv6_addr = "fd00:ffff:04::04/64"
 
 [[interface]]
-name           = "node3-node2"
-local_addr     = "fd00:02:03::3/64"
-local_mac      = "00:02:00:03:00:03"
-remote_addr    = "fd00:02:03::2/64"
-remote_mac  = "00:02:00:03:00:02"
+name           = "node4-node2"
+local_addr     = "fd00:02:04::4/64"
+local_mac      = "00:02:00:04:00:04"
+remote_addr    = "fd00:02:04::2/64"
+remote_mac  = "00:02:00:04:00:02"
 remote_node_id = 2
-start_in_sec   = 10
-end_in_sec     = 20
-rate_in_bits_per_sec = 1
-range          = 1
-dtn_addresses  = ["fd00:02:03::3", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:04::2", "fd00:02:04::4", "fd00:04:05::4", "fd00:04:05::5", "fd00:05:06::5"]
-addresses      = ["fd00:01:02::1", "fd00:03:06::6", "fd00:05:06::6"]
-
-[[interface]]
-name           = "node3-node6"
-local_addr     = "fd00:03:06::3/64"
-local_mac      = "00:03:00:06:00:03"
-remote_addr    = "fd00:03:06::6/64"
-remote_mac  = "00:03:00:06:00:06"
-remote_node_id = 6
-start_in_sec   = 15
+start_in_sec   = 0
 end_in_sec     = 100
 rate_in_bits_per_sec = 1
 range          = 1
-dtn_addresses  = ["fd00:03:06::3", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:04::2", "fd00:02:04::4", "fd00:04:05::4", "fd00:04:05::5", "fd00:05:06::5"]
+dtn_addresses  = ["fd00:02:04::4", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:04::2", "fd00:02:03::3", "fd00:03:06::3", "fd00:04:05::5", "fd00:05:06::5"]
+addresses      = ["fd00:01:02::1", "fd00:03:06::6", "fd00:05:06::6"]
+
+[[interface]]
+name           = "node4-node5"
+local_addr     = "fd00:04:05::4/64"
+local_mac      = "00:04:00:05:00:04"
+remote_addr    = "fd00:04:05::5/64"
+remote_mac  = "00:04:00:05:00:05"
+remote_node_id = 5
+start_in_sec   = 25
+end_in_sec     = 100
+rate_in_bits_per_sec = 1
+range          = 1
+dtn_addresses  = ["fd00:04:05::4", "fd00:01:02::2", "fd00:02:03::2", "fd00:02:04::2", "fd00:02:03::3", "fd00:03:06::3", "fd00:04:05::5", "fd00:05:06::5"]
 addresses      = ["fd00:01:02::1", "fd00:03:06::6", "fd00:05:06::6"]
 
 [contact_plan]
