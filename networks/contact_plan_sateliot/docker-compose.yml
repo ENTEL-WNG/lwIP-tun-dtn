@@ -1,13 +1,13 @@
 services:
-  node1:
+  node0:
     build:
       context: ../..
       dockerfile: Dockerfile.node
-    container_name: node1
+    container_name: node0
     privileged: true
-    hostname: node1
+    hostname: SATELIOT_1
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_udp_cgr/node1.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node0.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -17,10 +17,42 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_udp_cgr/node1.toml
+    - /repo/networks/contact_plan_sateliot/node0.toml
     networks:
-      net-node1-node2:
-        mac_address: 00:01:00:02:00:01
+      net-node0-node5:
+        mac_address: 00:00:00:05:00:00
+      net-node0-node1:
+        mac_address: 00:00:00:01:00:00
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+  node1:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.node
+    container_name: node1
+    privileged: true
+    hostname: SATELIOT_2
+    environment:
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node1.toml
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
+    volumes:
+    - ../..:/repo
+    working_dir: /repo
+    cap_add:
+    - NET_ADMIN
+    entrypoint:
+    - python3
+    - /repo/init_node.py
+    - /repo/networks/contact_plan_sateliot/node1.toml
+    networks:
+      net-node1-node5:
+        mac_address: 00:01:00:05:00:01
+      net-node0-node1:
+        mac_address: 00:00:00:01:00:01
+      net-node1-node4:
+        mac_address: 00:01:00:04:00:01
     deploy:
       resources:
         limits:
@@ -31,9 +63,9 @@ services:
       dockerfile: Dockerfile.node
     container_name: node2
     privileged: true
-    hostname: node2
+    hostname: SATELIOT_3
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_udp_cgr/node2.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node2.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -43,12 +75,10 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_udp_cgr/node2.toml
+    - /repo/networks/contact_plan_sateliot/node2.toml
     networks:
-      net-node1-node2:
-        mac_address: 00:01:00:02:00:02
-      net-node2-node3:
-        mac_address: 00:02:00:03:00:02
+      net-node2-node4:
+        mac_address: 00:02:00:04:00:02
       net-node2-node5:
         mac_address: 00:02:00:05:00:02
     deploy:
@@ -61,9 +91,9 @@ services:
       dockerfile: Dockerfile.node
     container_name: node3
     privileged: true
-    hostname: node3
+    hostname: SATELIOT_4
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_udp_cgr/node3.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node3.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -73,12 +103,12 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_udp_cgr/node3.toml
+    - /repo/networks/contact_plan_sateliot/node3.toml
     networks:
-      net-node2-node3:
-        mac_address: 00:02:00:03:00:03
       net-node3-node4:
         mac_address: 00:03:00:04:00:03
+      net-node3-node5:
+        mac_address: 00:03:00:05:00:03
     deploy:
       resources:
         limits:
@@ -89,9 +119,9 @@ services:
       dockerfile: Dockerfile.node
     container_name: node4
     privileged: true
-    hostname: node4
+    hostname: GS_Barcelona
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_udp_cgr/node4.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node4.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -101,12 +131,14 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_udp_cgr/node4.toml
+    - /repo/networks/contact_plan_sateliot/node4.toml
     networks:
+      net-node2-node4:
+        mac_address: 00:02:00:04:00:04
       net-node3-node4:
         mac_address: 00:03:00:04:00:04
-      net-node4-node5:
-        mac_address: 00:04:00:05:00:04
+      net-node1-node4:
+        mac_address: 00:01:00:04:00:04
     deploy:
       resources:
         limits:
@@ -117,9 +149,9 @@ services:
       dockerfile: Dockerfile.node
     container_name: node5
     privileged: true
-    hostname: node5
+    hostname: GS_Tokyo
     environment:
-      DTN_CONFIG_PATH: /repo/networks/contact_plan_udp_cgr/node5.toml
+      DTN_CONFIG_PATH: /repo/networks/contact_plan_sateliot/node5.toml
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
     volumes:
     - ../..:/repo
@@ -129,12 +161,16 @@ services:
     entrypoint:
     - python3
     - /repo/init_node.py
-    - /repo/networks/contact_plan_udp_cgr/node5.toml
+    - /repo/networks/contact_plan_sateliot/node5.toml
     networks:
+      net-node0-node5:
+        mac_address: 00:00:00:05:00:05
+      net-node1-node5:
+        mac_address: 00:01:00:05:00:05
       net-node2-node5:
         mac_address: 00:02:00:05:00:05
-      net-node4-node5:
-        mac_address: 00:04:00:05:00:05
+      net-node3-node5:
+        mac_address: 00:03:00:05:00:05
     deploy:
       resources:
         limits:
@@ -149,7 +185,7 @@ services:
     privileged: true
     environment:
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
-      PLAN_NAME: contact_plan_udp_cgr
+      PLAN_NAME: contact_plan_sateliot
     volumes:
     - ../..:/repo
   metrics:
@@ -158,9 +194,9 @@ services:
       dockerfile: Dockerfile.metrics
     container_name: metrics
     environment:
-      PLAN_NAME: contact_plan_udp_cgr
+      PLAN_NAME: contact_plan_sateliot
       TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
-      METRICS_OUT: /repo/networks/contact_plan_udp_cgr/captures/${TEST_CASE_NUMBER}/metrics.jsonl
+      METRICS_OUT: /repo/networks/contact_plan_sateliot/captures/${TEST_CASE_NUMBER}/metrics.jsonl
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
     - ../..:/repo
@@ -168,10 +204,19 @@ services:
     - python3
     - /repo/networks/get_metrics.py
 networks:
-  net-node1-node2:
+  net-node0-node1:
     driver: bridge
     enable_ipv6: true
-  net-node2-node3:
+  net-node0-node5:
+    driver: bridge
+    enable_ipv6: true
+  net-node1-node4:
+    driver: bridge
+    enable_ipv6: true
+  net-node1-node5:
+    driver: bridge
+    enable_ipv6: true
+  net-node2-node4:
     driver: bridge
     enable_ipv6: true
   net-node2-node5:
@@ -180,6 +225,6 @@ networks:
   net-node3-node4:
     driver: bridge
     enable_ipv6: true
-  net-node4-node5:
+  net-node3-node5:
     driver: bridge
     enable_ipv6: true

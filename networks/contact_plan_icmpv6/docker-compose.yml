@@ -120,20 +120,21 @@ services:
       PLAN_NAME: contact_plan_icmpv6
     volumes:
     - ../..:/repo
-  dtn_exporter:
+  metrics:
     build:
       context: ../..
-      dockerfile: Dockerfile.exporter
-    container_name: dtn_exporter
+      dockerfile: Dockerfile.metrics
+    container_name: metrics
     environment:
       PLAN_NAME: contact_plan_icmpv6
+      TEST_CASE_NUMBER: ${TEST_CASE_NUMBER}
       METRICS_OUT: /repo/networks/contact_plan_icmpv6/captures/${TEST_CASE_NUMBER}/metrics.jsonl
     volumes:
     - /var/run/docker.sock:/var/run/docker.sock:ro
     - ../..:/repo
     command:
     - python3
-    - /repo/networks/dtn_exporter.py
+    - /repo/networks/get_metrics.py
 networks:
   net-node1-node2:
     driver: bridge

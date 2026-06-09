@@ -587,7 +587,7 @@ def generate_graph(data: dict, node_data: dict, out_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    plan_path = sys.argv[1] if len(sys.argv) > 1 else "networks/contact-plan-ping.toml"
+    plan_path = sys.argv[1] if len(sys.argv) > 1 else "contact-plan-ping.toml"
 
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
@@ -597,8 +597,12 @@ def main():
 
     contact_plan_name = data["contact_plan"].get("name")
 
-    out_dir = Path(f"networks/{contact_plan_name}")
+    out_dir = Path(__file__).parent / contact_plan_name.replace("-", "_")
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    cp_out = out_dir / "contact-plan.toml"
+    cp_out.write_text(contact_plan_raw)
+    print(f"  wrote {cp_out}")
 
     for nid, node in node_data.items():
         toml = render_toml(node, contact_plan_raw)
