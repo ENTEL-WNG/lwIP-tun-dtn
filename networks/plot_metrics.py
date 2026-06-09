@@ -317,22 +317,6 @@ def plot_db(by_node: dict, t0: float, out: Path, fmt: str) -> None:
     ax.legend(loc="upper right")
     _save(fig, out / "db_packets", fmt)
 
-    nodes = _has(by_node, "db_avg_delivery_sec")
-    if not nodes:
-        return
-    fig, ax = plt.subplots(figsize=(6, 3))
-    for i, node in enumerate(sorted(nodes, key=_node_key)):
-        recs = by_node[node]
-        ts   = _rel(recs, t0)
-        vals = _vals(recs, "db_avg_delivery_sec")
-        pairs = [(t, v) for t, v in zip(ts, vals) if v is not None]
-        if pairs:
-            ax.plot(*zip(*pairs), label=node, color=COLORS[i % len(COLORS)])
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Avg Delivery Time (s)")
-    ax.set_title("DTN Storage — Average Delivery Time per Relay")
-    ax.legend(loc="upper right")
-    _save(fig, out / "db_delivery", fmt)
 
 
 # ---------------------------------------------------------------------------
@@ -382,11 +366,6 @@ def write_csvs(by_node: dict, t0: float, out: Path) -> None:
                 for r in recs if r.get("db_stored_packets") is not None]
         if rows:
             _csv(csv_dir / f"db_packets_{node}.csv", "time,stored_packets", rows)
-
-        rows = [(round(r["ts"] - t0, 3), round(r["db_avg_delivery_sec"], 3))
-                for r in recs if r.get("db_avg_delivery_sec") is not None]
-        if rows:
-            _csv(csv_dir / f"db_delivery_{node}.csv", "time,avg_delivery_sec", rows)
 
         for iface in _dtn_ifaces(recs):
             for direction, key in [("tx", "tx_packets"), ("rx", "rx_packets")]:
