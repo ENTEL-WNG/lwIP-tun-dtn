@@ -2,20 +2,9 @@
 """
 get_metrics.py — Per-container metrics collector for DTN nodes.
 
-Two collection backends are available:
-
-  stats  (default)  — Docker Stats API (container.stats stream).
-                      Single call per container; daemon reads cgroup directly.
-                      Provides CPU, memory, network, blkio, and pids.
-
-  exec   (fallback) — docker exec + cgroup/proc reads inside each container.
-                      Used automatically on macOS/Windows where Docker Stats
-                      may not expose cgroup data from the host.
-
-Backend selection (EXEC_METRICS env var):
-  unset / auto   auto-select: exec on macOS/Windows, stats elsewhere
-  EXEC_METRICS=1 force exec backend
-  EXEC_METRICS=0 force stats backend
+Uses the Docker Stats API (container.stats stream) — single call per
+container; daemon reads cgroup directly. Provides CPU, memory, network,
+blkio, and pids.
 
 JSONL record fields:
   ts                   Unix timestamp
@@ -51,17 +40,6 @@ PLAN_NAME        = os.environ.get("PLAN_NAME",        "")
 TEST_CASE_NUMBER = os.environ.get("TEST_CASE_NUMBER", "0")
 DB_DIR           = f"/repo/dtn_storage/{PLAN_NAME}" if PLAN_NAME else ""
 METRICS_OUT      = os.environ.get("METRICS_OUT",      "")
-
-# exec-backend only: interval between samples (seconds)
-SCRAPE_INTERVAL = float(os.environ.get("SCRAPE_INTERVAL", "1.0"))
-
-_env = os.environ.get("EXEC_METRICS", "").lower()
-if _env in ("1", "true"):
-    EXEC_METRICS = True
-elif _env in ("0", "false"):
-    EXEC_METRICS = False
-else:
-    EXEC_METRICS = platform.system() != "Linux"
 
 _jsonl_lock = threading.Lock()
 
@@ -182,105 +160,6 @@ def _poll_stats(container, stop: threading.Event) -> None:
             print(f"[metrics] {name}: {exc}", flush=True)
 
 
-# ── exec backend (macOS) ──────────────────────────────────────────────────────
-
-def _exec(container, cmd: str) -> str:
-    r = container.exec_run(cmd)
-    return r.output.decode(errors="replace").strip()
-
-
-def _cpu_usec(container) -> int:
-    for line in _exec(container, "cat /sys/fs/cgroup/cpu.stat").splitlines():
-        if line.startswith("usage_usec"):
-            try:
-                return int(line.split()[1])
-            except (IndexError, ValueError):
-                pass
-    return 0
-
-
-def _memory_exec(container) -> tuple[int, int]:
-    """Return (rss_bytes, total_bytes). rss = total − file cache."""
-    try:
-        current = int(_exec(container, "cat /sys/fs/cgroup/memory.current"))
-        stats   = {}
-        for line in _exec(container, "cat /sys/fs/cgroup/memory.stat").splitlines():
-            parts = line.split()
-            if len(parts) == 2:
-                try:
-                    stats[parts[0]] = int(parts[1])
-                except ValueError:
-                    pass
-        rss = max(0, current - stats.get("file", 0))
-        return rss, current
-    except Exception:
-        return 0, 0
-
-
-def _net_iface_stats(container) -> dict[str, dict[str, int]]:
-    """Parse /proc/net/dev, return per-interface counters (excl. lo)."""
-    ifaces: dict[str, dict[str, int]] = {}
-    try:
-        for line in _exec(container, "cat /proc/net/dev").splitlines()[2:]:
-            parts = line.split()
-            if len(parts) < 17:
-                continue
-            name = parts[0].rstrip(":")
-            if name == "lo":
-                continue
-            ifaces[name] = {
-                "rx_bytes":   int(parts[1]),
-                "rx_packets": int(parts[2]),
-                "rx_errors":  int(parts[3]),
-                "rx_drop":    int(parts[4]),
-                "tx_bytes":   int(parts[9]),
-                "tx_packets": int(parts[10]),
-                "tx_errors":  int(parts[11]),
-                "tx_drop":    int(parts[12]),
-            }
-    except Exception:
-        pass
-    return ifaces
-
-
-def _poll_exec(container, stop: threading.Event) -> None:
-    name = container.name
-    print(f"[metrics] polling {name} (exec)", flush=True)
-    while not stop.is_set():
-        t0 = time.monotonic()
-        try:
-            u0 = _cpu_usec(container)
-            stop.wait(1.0)
-            if stop.is_set():
-                break
-            u1      = _cpu_usec(container)
-            elapsed = (time.monotonic() - t0) * 1e6
-            cpu     = (u1 - u0) / elapsed * 100.0 if elapsed > 0 else 0.0
-            rss, total = _memory_exec(container)
-            ifaces = _net_iface_stats(container)
-            rx = sum(s["rx_bytes"] for s in ifaces.values())
-            tx = sum(s["tx_bytes"] for s in ifaces.values())
-            count, avg = _db_stats(name)
-            if METRICS_OUT:
-                _write_jsonl({
-                    "ts":                  time.time(),
-                    "node":                name,
-                    "cpu_pct":             round(cpu, 3),
-                    "mem_rss_bytes":       rss,
-                    "mem_total_bytes":     total,
-                    "net_rx_bytes":        rx,
-                    "net_tx_bytes":        tx,
-                    "net_ifaces":          ifaces,
-                    "db_stored_packets":   count,
-                    "db_avg_delivery_sec": avg,
-                })
-        except Exception as exc:
-            print(f"[metrics] {name}: {exc}", flush=True)
-
-        elapsed_total = time.monotonic() - t0
-        stop.wait(max(0.0, SCRAPE_INTERVAL - elapsed_total))
-
-
 # ── per-node packet capture ───────────────────────────────────────────────────
 
 def _start_node_captures(containers: list) -> None:
@@ -324,8 +203,7 @@ def _start_node_captures(containers: list) -> None:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    backend = "exec" if EXEC_METRICS else "stats"
-    print(f"[metrics] backend={backend} platform={platform.system()}", flush=True)
+    print(f"[metrics] backend=stats platform={platform.system()}", flush=True)
 
     if METRICS_OUT:
         os.makedirs(os.path.dirname(os.path.abspath(METRICS_OUT)), exist_ok=True)
@@ -342,15 +220,8 @@ def main() -> None:
 
     _start_node_captures(containers)
 
-    # Pick backend: stats > exec
-    # stats: Docker Stats API (preferred — CPU, memory, net, blkio, pids in one stream)
-    # exec:  docker exec inside container (fallback on macOS/Windows)
-    if EXEC_METRICS:
-        poll = _poll_exec
-    else:
-        poll = _poll_stats
     for c in containers:
-        threading.Thread(target=poll, args=(c, stop), daemon=True).start()
+        threading.Thread(target=_poll_stats, args=(c, stop), daemon=True).start()
 
     try:
         while True:
