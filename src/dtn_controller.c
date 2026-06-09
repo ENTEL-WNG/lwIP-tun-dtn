@@ -242,7 +242,7 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct 
     }
 
     bool is_next_hop_active;
-    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result.next_hop_node_id, &is_next_hop_active);
+    int active_result = dtn_routing_is_next_hop_active(sys_now(), routing_result, &is_next_hop_active);
 
     // Store
     if (active_result == DTN_ROUTING_OK && !is_next_hop_active) {

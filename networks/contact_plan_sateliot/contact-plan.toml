@@ -1,6 +1,6 @@
 [contact_plan]
 name = "contact-plan-sateliot"
-max_time_in_sec = 858850
+max_time_in_sec = 863080
 
 [contact_plan.defaults]
 rate_in_bits_per_sec = 300000000
@@ -8,473 +8,2641 @@ range = 1
 
 # Node Definitions
 [[nodes]]
-id = 0
+id = 1
 name = "SATELIOT_1"
 isDtnNode = true
 
 [[nodes]]
-id = 1
+id = 2
 name = "SATELIOT_2"
 isDtnNode = true
 
 [[nodes]]
-id = 2
+id = 3
 name = "SATELIOT_3"
 isDtnNode = true
 
 [[nodes]]
-id = 3
+id = 4
 name = "SATELIOT_4"
 isDtnNode = true
 
 [[nodes]]
-id = 4
-name = "GS_Barcelona"
+id = 5
+name = "GS_Antarctica"
 isDtnNode = false
 
 [[nodes]]
-id = 5
-name = "GS_Tokyo"
+id = 6
+name = "GS_SVALBARD"
 isDtnNode = false
 
 # Edge Definitions
 [[edges]]
-from = 0
+from = 1
 to = 5
-start_in_sec = 1670
-end_in_sec = 1730
+start_in_sec = 160
+end_in_sec = 270
+bidirected = true
+range = 0.002154
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 690
+end_in_sec = 790
+bidirected = true
+range = 0.002175
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 2020
+end_in_sec = 2090
+bidirected = true
+range = 0.002303
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 2190
+end_in_sec = 2270
+bidirected = true
+range = 0.002197
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 3340
+end_in_sec = 3400
+bidirected = true
+range = 0.002225
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 3870
+end_in_sec = 3930
+bidirected = true
+range = 0.002283
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 5190
+end_in_sec = 5230
+bidirected = true
+range = 0.002303
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 7910
+end_in_sec = 7940
+bidirected = true
+range = 0.002304
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 9060
+end_in_sec = 9090
+bidirected = true
+range = 0.002293
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 9580
+end_in_sec = 9630
+bidirected = true
+range = 0.002323
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 10890
+end_in_sec = 10940
+bidirected = true
+range = 0.002278
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 13590
+end_in_sec = 13670
 bidirected = true
 range = 0.002205
 
 [[edges]]
 from = 1
-to = 5
-start_in_sec = 2170
-end_in_sec = 2270
+to = 6
+start_in_sec = 14730
+end_in_sec = 14820
+bidirected = true
+range = 0.002156
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 15270
+end_in_sec = 15360
+bidirected = true
+range = 0.002150
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 16570
+end_in_sec = 16680
+bidirected = true
+range = 0.002135
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 19290
+end_in_sec = 19390
 bidirected = true
 range = 0.002066
 
 [[edges]]
-from = 2
-to = 4
-start_in_sec = 35190
-end_in_sec = 35290
+from = 1
+to = 6
+start_in_sec = 20440
+end_in_sec = 20540
 bidirected = true
-range = 0.002053
+range = 0.002099
 
 [[edges]]
 from = 2
-to = 5
-start_in_sec = 48370
-end_in_sec = 48470
+to = 6
+start_in_sec = 20990
+end_in_sec = 21090
 bidirected = true
-range = 0.002038
+range = 0.002175
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 22320
+end_in_sec = 22390
+bidirected = true
+range = 0.002244
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 54470
+end_in_sec = 54550
+bidirected = true
+range = 0.002250
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 80260
-end_in_sec = 80300
-bidirected = true
-range = 0.002308
-
-[[edges]]
-from = 0
 to = 5
-start_in_sec = 88200
-end_in_sec = 88280
+start_in_sec = 57130
+end_in_sec = 57240
 bidirected = true
-range = 0.002162
+range = 0.002151
 
 [[edges]]
 from = 1
 to = 5
-start_in_sec = 88820
-end_in_sec = 88920
+start_in_sec = 58280
+end_in_sec = 58380
 bidirected = true
-range = 0.002087
-
-[[edges]]
-from = 0
-to = 1
-start_in_sec = 0
-end_in_sec = 117890
-bidirected = true
-range = 0.014876
-
-[[edges]]
-from = 2
-to = 4
-start_in_sec = 121740
-end_in_sec = 121840
-bidirected = true
-range = 0.002048
+range = 0.002185
 
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 134920
-end_in_sec = 135020
+start_in_sec = 58890
+end_in_sec = 58970
 bidirected = true
-range = 0.002036
+range = 0.002233
 
 [[edges]]
-from = 3
-to = 4
-start_in_sec = 166880
-end_in_sec = 166950
-bidirected = true
-range = 0.002209
-
-[[edges]]
-from = 0
+from = 4
 to = 5
-start_in_sec = 174730
-end_in_sec = 174820
+start_in_sec = 60210
+end_in_sec = 60250
 bidirected = true
-range = 0.002118
+range = 0.002383
 
 [[edges]]
 from = 1
-to = 5
-start_in_sec = 175470
-end_in_sec = 175560
+to = 6
+start_in_sec = 78460
+end_in_sec = 78490
 bidirected = true
-range = 0.002132
+range = 0.002290
 
 [[edges]]
 from = 2
-to = 4
-start_in_sec = 208290
-end_in_sec = 208390
+to = 6
+start_in_sec = 79070
+end_in_sec = 79140
 bidirected = true
-range = 0.002059
+range = 0.002252
 
 [[edges]]
-from = 2
-to = 5
-start_in_sec = 221470
-end_in_sec = 221570
+from = 4
+to = 6
+start_in_sec = 80360
+end_in_sec = 80460
 bidirected = true
-range = 0.002053
+range = 0.002170
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 82930
+end_in_sec = 83000
+bidirected = true
+range = 0.002318
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 253500
-end_in_sec = 253590
+to = 6
+start_in_sec = 83010
+end_in_sec = 83120
+bidirected = true
+range = 0.002088
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 84150
+end_in_sec = 84260
+bidirected = true
+range = 0.002088
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 84790
+end_in_sec = 84890
+bidirected = true
+range = 0.002117
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 85560
+end_in_sec = 85660
+bidirected = true
+range = 0.002145
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 86090
+end_in_sec = 86180
 bidirected = true
 range = 0.002144
 
 [[edges]]
-from = 0
+from = 1
 to = 5
-start_in_sec = 261260
-end_in_sec = 261360
+start_in_sec = 86700
+end_in_sec = 86800
+bidirected = true
+range = 0.002134
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 87340
+end_in_sec = 87440
+bidirected = true
+range = 0.002197
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 88660
+end_in_sec = 88720
+bidirected = true
+range = 0.002333
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 88740
+end_in_sec = 88810
+bidirected = true
+range = 0.002186
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 89880
+end_in_sec = 89940
+bidirected = true
+range = 0.002230
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 90520
+end_in_sec = 90580
+bidirected = true
+range = 0.002292
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 91820
+end_in_sec = 91860
+bidirected = true
+range = 0.002309
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 94460
+end_in_sec = 94490
+bidirected = true
+range = 0.002303
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 95590
+end_in_sec = 95630
+bidirected = true
+range = 0.002297
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 96230
+end_in_sec = 96280
+bidirected = true
+range = 0.002316
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 97520
+end_in_sec = 97580
+bidirected = true
+range = 0.002281
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 100140
+end_in_sec = 100210
+bidirected = true
+range = 0.002180
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 101270
+end_in_sec = 101360
+bidirected = true
+range = 0.002150
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 101920
+end_in_sec = 102010
+bidirected = true
+range = 0.002138
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 103210
+end_in_sec = 103310
+bidirected = true
+range = 0.002105
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 105840
+end_in_sec = 105940
+bidirected = true
+range = 0.002068
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 106980
+end_in_sec = 107080
+bidirected = true
+range = 0.002106
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 107640
+end_in_sec = 107740
+bidirected = true
+range = 0.002193
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 108960
+end_in_sec = 109020
+bidirected = true
+range = 0.002258
+
+[[edges]]
+from = 1
+to = 2
+start_in_sec = 0
+end_in_sec = 112880
+bidirected = true
+range = 0.014953
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 139840
+end_in_sec = 139860
+bidirected = true
+range = 0.002409
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 141100
+end_in_sec = 141190
+bidirected = true
+range = 0.002235
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 143680
+end_in_sec = 143790
+bidirected = true
+range = 0.002151
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 144820
+end_in_sec = 144920
+bidirected = true
+range = 0.002196
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 145540
+end_in_sec = 145620
+bidirected = true
+range = 0.002264
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 146850
+end_in_sec = 146870
+bidirected = true
+range = 0.002410
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 165000
+end_in_sec = 165040
+bidirected = true
+range = 0.002277
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 165720
+end_in_sec = 165790
+bidirected = true
+range = 0.002223
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 167000
+end_in_sec = 167090
+bidirected = true
+range = 0.002133
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 169560
+end_in_sec = 169640
+bidirected = true
+range = 0.002300
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 169560
+end_in_sec = 169660
+bidirected = true
+range = 0.002062
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 170690
+end_in_sec = 170790
+bidirected = true
+range = 0.002067
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 171430
+end_in_sec = 171540
+bidirected = true
+range = 0.002147
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 172100
+end_in_sec = 172210
+bidirected = true
+range = 0.002163
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 172720
+end_in_sec = 172810
+bidirected = true
+range = 0.002155
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 173230
+end_in_sec = 173340
+bidirected = true
+range = 0.002164
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 173990
+end_in_sec = 174080
+bidirected = true
+range = 0.002202
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 175300
+end_in_sec = 175350
+bidirected = true
+range = 0.002369
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 175290
+end_in_sec = 175360
+bidirected = true
+range = 0.002193
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 176420
+end_in_sec = 176480
+bidirected = true
+range = 0.002235
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 177170
+end_in_sec = 177220
+bidirected = true
+range = 0.002289
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 178460
+end_in_sec = 178500
+bidirected = true
+range = 0.002315
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 181010
+end_in_sec = 181040
+bidirected = true
+range = 0.002303
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 182130
+end_in_sec = 182170
+bidirected = true
+range = 0.002295
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 182880
+end_in_sec = 182930
+bidirected = true
+range = 0.002310
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 184150
+end_in_sec = 184210
+bidirected = true
+range = 0.002271
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 186680
+end_in_sec = 186760
+bidirected = true
+range = 0.002191
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 187800
+end_in_sec = 187890
+bidirected = true
+range = 0.002144
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 188560
+end_in_sec = 188660
+bidirected = true
+range = 0.002150
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 189840
+end_in_sec = 189950
+bidirected = true
+range = 0.002123
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 192380
+end_in_sec = 192490
 bidirected = true
 range = 0.002093
 
 [[edges]]
 from = 1
-to = 5
-start_in_sec = 262130
-end_in_sec = 262200
+to = 6
+start_in_sec = 193520
+end_in_sec = 193610
 bidirected = true
-range = 0.002212
+range = 0.002090
 
 [[edges]]
 from = 2
-to = 4
-start_in_sec = 294840
-end_in_sec = 294930
+to = 6
+start_in_sec = 194300
+end_in_sec = 194380
+bidirected = true
+range = 0.002174
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 195600
+end_in_sec = 195650
+bidirected = true
+range = 0.002276
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 226480
+end_in_sec = 226520
+bidirected = true
+range = 0.002367
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 227730
+end_in_sec = 227830
+bidirected = true
+range = 0.002226
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 230230
+end_in_sec = 230340
+bidirected = true
+range = 0.002153
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 231360
+end_in_sec = 231460
+bidirected = true
+range = 0.002210
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 232190
+end_in_sec = 232260
+bidirected = true
+range = 0.002280
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 251530
+end_in_sec = 251580
+bidirected = true
+range = 0.002267
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 252360
+end_in_sec = 252450
+bidirected = true
+range = 0.002232
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 253630
+end_in_sec = 253730
+bidirected = true
+range = 0.002140
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 254960
+end_in_sec = 254970
+bidirected = true
+range = 0.002407
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 256110
+end_in_sec = 256210
 bidirected = true
 range = 0.002061
 
 [[edges]]
-from = 2
+from = 4
 to = 5
-start_in_sec = 308020
-end_in_sec = 308110
+start_in_sec = 256190
+end_in_sec = 256280
 bidirected = true
-range = 0.002063
+range = 0.002287
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 257230
+end_in_sec = 257330
+bidirected = true
+range = 0.002069
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 258080
+end_in_sec = 258180
+bidirected = true
+range = 0.002133
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 340130
-end_in_sec = 340230
+to = 5
+start_in_sec = 258650
+end_in_sec = 258760
 bidirected = true
-range = 0.002097
+range = 0.002157
 
 [[edges]]
-from = 0
-to = 5
-start_in_sec = 347800
-end_in_sec = 347900
+from = 4
+to = 6
+start_in_sec = 259360
+end_in_sec = 259450
 bidirected = true
-range = 0.002058
+range = 0.002166
 
 [[edges]]
 from = 1
 to = 5
-start_in_sec = 348800
-end_in_sec = 348820
+start_in_sec = 259770
+end_in_sec = 259880
 bidirected = true
-range = 0.002319
-
-[[edges]]
-from = 2
-to = 4
-start_in_sec = 381390
-end_in_sec = 381480
-bidirected = true
-range = 0.002102
+range = 0.002170
 
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 394570
-end_in_sec = 394650
+start_in_sec = 260640
+end_in_sec = 260730
 bidirected = true
-range = 0.002093
+range = 0.002232
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 426770
-end_in_sec = 426870
+to = 6
+start_in_sec = 261830
+end_in_sec = 261910
 bidirected = true
-range = 0.002065
+range = 0.002216
 
 [[edges]]
-from = 0
+from = 4
 to = 5
-start_in_sec = 434330
-end_in_sec = 434440
+start_in_sec = 261950
+end_in_sec = 261970
 bidirected = true
-range = 0.002064
+range = 0.002398
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 262960
+end_in_sec = 263020
+bidirected = true
+range = 0.002243
 
 [[edges]]
 from = 2
-to = 4
-start_in_sec = 467940
-end_in_sec = 468020
+to = 6
+start_in_sec = 263820
+end_in_sec = 263870
 bidirected = true
-range = 0.002136
+range = 0.002296
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 265090
+end_in_sec = 265130
+bidirected = true
+range = 0.002318
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 267550
+end_in_sec = 267590
+bidirected = true
+range = 0.002309
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 268670
+end_in_sec = 268700
+bidirected = true
+range = 0.002284
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 269520
+end_in_sec = 269570
+bidirected = true
+range = 0.002305
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 270780
+end_in_sec = 270850
+bidirected = true
+range = 0.002276
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 273230
+end_in_sec = 273310
+bidirected = true
+range = 0.002182
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 274340
+end_in_sec = 274430
+bidirected = true
+range = 0.002135
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 275210
+end_in_sec = 275310
+bidirected = true
+range = 0.002139
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 276480
+end_in_sec = 276580
+bidirected = true
+range = 0.002094
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 278930
+end_in_sec = 279040
+bidirected = true
+range = 0.002096
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 280050
+end_in_sec = 280150
+bidirected = true
+range = 0.002120
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 280950
+end_in_sec = 281030
+bidirected = true
+range = 0.002197
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 282240
+end_in_sec = 282280
+bidirected = true
+range = 0.002298
 
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 481120
-end_in_sec = 481190
+start_in_sec = 313120
+end_in_sec = 313180
 bidirected = true
-range = 0.002142
+range = 0.002338
 
 [[edges]]
-from = 3
-to = 4
-start_in_sec = 513400
-end_in_sec = 513500
-bidirected = true
-range = 0.002071
-
-[[edges]]
-from = 0
+from = 4
 to = 5
-start_in_sec = 520870
-end_in_sec = 520970
+start_in_sec = 314370
+end_in_sec = 314460
 bidirected = true
-range = 0.002037
+range = 0.002181
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 552320
-end_in_sec = 552380
+to = 5
+start_in_sec = 316780
+end_in_sec = 316890
+bidirected = true
+range = 0.002158
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 317900
+end_in_sec = 317990
+bidirected = true
+range = 0.002202
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 318840
+end_in_sec = 318910
+bidirected = true
+range = 0.002316
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 338070
+end_in_sec = 338120
 bidirected = true
 range = 0.002249
 
 [[edges]]
 from = 2
-to = 4
-start_in_sec = 554490
-end_in_sec = 554560
+to = 6
+start_in_sec = 339010
+end_in_sec = 339100
+bidirected = true
+range = 0.002208
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 340260
+end_in_sec = 340360
+bidirected = true
+range = 0.002130
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 341590
+end_in_sec = 341630
+bidirected = true
+range = 0.002383
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 342650
+end_in_sec = 342760
+bidirected = true
+range = 0.002084
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 342820
+end_in_sec = 342910
+bidirected = true
+range = 0.002259
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 343770
+end_in_sec = 343870
+bidirected = true
+range = 0.002073
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 344730
+end_in_sec = 344830
+bidirected = true
+range = 0.002141
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 345200
+end_in_sec = 345310
+bidirected = true
+range = 0.002153
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 345990
+end_in_sec = 346080
+bidirected = true
+range = 0.002176
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 346310
+end_in_sec = 346420
+bidirected = true
+range = 0.002178
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 347290
+end_in_sec = 347380
+bidirected = true
+range = 0.002268
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 348380
+end_in_sec = 348450
+bidirected = true
+range = 0.002207
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 349490
+end_in_sec = 349550
+bidirected = true
+range = 0.002247
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 350470
+end_in_sec = 350520
+bidirected = true
+range = 0.002306
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 351720
+end_in_sec = 351760
+bidirected = true
+range = 0.002323
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 354100
+end_in_sec = 354130
+bidirected = true
+range = 0.002301
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 355200
+end_in_sec = 355240
+bidirected = true
+range = 0.002289
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 356170
+end_in_sec = 356220
+bidirected = true
+range = 0.002295
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 357420
+end_in_sec = 357480
+bidirected = true
+range = 0.002252
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 359780
+end_in_sec = 359860
+bidirected = true
+range = 0.002175
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 360880
+end_in_sec = 360970
+bidirected = true
+range = 0.002128
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 361860
+end_in_sec = 361960
+bidirected = true
+range = 0.002130
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 363110
+end_in_sec = 363210
+bidirected = true
+range = 0.002090
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 365480
+end_in_sec = 365580
+bidirected = true
+range = 0.002075
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 366590
+end_in_sec = 366690
+bidirected = true
+range = 0.002127
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 367600
+end_in_sec = 367680
+bidirected = true
+range = 0.002222
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 368880
+end_in_sec = 368910
+bidirected = true
+range = 0.002324
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 399760
+end_in_sec = 399830
+bidirected = true
+range = 0.002305
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 401000
+end_in_sec = 401100
+bidirected = true
+range = 0.002180
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 403330
+end_in_sec = 403430
+bidirected = true
+range = 0.002139
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 404430
+end_in_sec = 404530
+bidirected = true
+range = 0.002236
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 405490
+end_in_sec = 405550
+bidirected = true
+range = 0.002338
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 424600
+end_in_sec = 424660
+bidirected = true
+range = 0.002243
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 425660
+end_in_sec = 425750
+bidirected = true
+range = 0.002188
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 426900
+end_in_sec = 427000
+bidirected = true
+range = 0.002117
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 428230
+end_in_sec = 428290
+bidirected = true
+range = 0.002364
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 429200
+end_in_sec = 429310
+bidirected = true
+range = 0.002084
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 429460
+end_in_sec = 429550
+bidirected = true
+range = 0.002233
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 430300
+end_in_sec = 430400
+bidirected = true
+range = 0.002077
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 431380
+end_in_sec = 431480
+bidirected = true
+range = 0.002151
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 431750
+end_in_sec = 431850
+bidirected = true
+range = 0.002127
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 432630
+end_in_sec = 432710
+bidirected = true
+range = 0.002168
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 432850
+end_in_sec = 432950
+bidirected = true
+range = 0.002164
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 433940
+end_in_sec = 434020
+bidirected = true
+range = 0.002288
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 434930
+end_in_sec = 435000
+bidirected = true
+range = 0.002213
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 436030
+end_in_sec = 436090
+bidirected = true
+range = 0.002251
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 437110
+end_in_sec = 437160
+bidirected = true
+range = 0.002311
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 438360
+end_in_sec = 438390
+bidirected = true
+range = 0.002318
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 440650
+end_in_sec = 440680
+bidirected = true
+range = 0.002300
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 441740
+end_in_sec = 441780
+bidirected = true
+range = 0.002286
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 442820
+end_in_sec = 442870
+bidirected = true
+range = 0.002286
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 444050
+end_in_sec = 444120
+bidirected = true
+range = 0.002257
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 446320
+end_in_sec = 446410
+bidirected = true
+range = 0.002186
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 447410
+end_in_sec = 447510
+bidirected = true
+range = 0.002143
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 448500
+end_in_sec = 448610
+bidirected = true
+range = 0.002145
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 449740
+end_in_sec = 449850
+bidirected = true
+range = 0.002110
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 452030
+end_in_sec = 452130
+bidirected = true
+range = 0.002079
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 453130
+end_in_sec = 453220
+bidirected = true
+range = 0.002115
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 454250
+end_in_sec = 454320
+bidirected = true
+range = 0.002230
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 486400
+end_in_sec = 486480
+bidirected = true
+range = 0.002281
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 487630
+end_in_sec = 487740
 bidirected = true
 range = 0.002186
 
 [[edges]]
 from = 3
 to = 5
-start_in_sec = 565510
-end_in_sec = 565560
+start_in_sec = 489870
+end_in_sec = 489980
 bidirected = true
-range = 0.002257
+range = 0.002168
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 490970
+end_in_sec = 491060
+bidirected = true
+range = 0.002231
 
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 567670
-end_in_sec = 567730
+start_in_sec = 492140
+end_in_sec = 492190
 bidirected = true
-range = 0.002208
+range = 0.002364
 
 [[edges]]
 from = 1
-to = 4
-start_in_sec = 598840
-end_in_sec = 598890
+to = 6
+start_in_sec = 511140
+end_in_sec = 511200
 bidirected = true
-range = 0.002272
+range = 0.002227
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 512300
+end_in_sec = 512390
+bidirected = true
+range = 0.002168
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 513530
+end_in_sec = 513630
+bidirected = true
+range = 0.002109
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 514870
+end_in_sec = 514940
+bidirected = true
+range = 0.002340
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 600030
-end_in_sec = 600130
+to = 6
+start_in_sec = 515750
+end_in_sec = 515850
+bidirected = true
+range = 0.002060
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 516090
+end_in_sec = 516180
+bidirected = true
+range = 0.002207
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 516840
+end_in_sec = 516940
+bidirected = true
+range = 0.002079
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 518030
+end_in_sec = 518120
+bidirected = true
+range = 0.002139
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 518290
+end_in_sec = 518400
+bidirected = true
+range = 0.002149
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 519260
+end_in_sec = 519340
+bidirected = true
+range = 0.002180
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 519390
+end_in_sec = 519490
+bidirected = true
+range = 0.002176
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 520590
+end_in_sec = 520660
+bidirected = true
+range = 0.002317
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 521480
+end_in_sec = 521540
+bidirected = true
+range = 0.002205
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 522570
+end_in_sec = 522620
+bidirected = true
+range = 0.002244
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 523760
+end_in_sec = 523810
+bidirected = true
+range = 0.002317
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 524990
+end_in_sec = 525030
+bidirected = true
+range = 0.002328
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 527190
+end_in_sec = 527230
+bidirected = true
+range = 0.002305
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 528270
+end_in_sec = 528310
+bidirected = true
+range = 0.002284
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 529460
+end_in_sec = 529520
+bidirected = true
+range = 0.002289
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 530680
+end_in_sec = 530750
+bidirected = true
+range = 0.002245
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 532870
+end_in_sec = 532950
+bidirected = true
+range = 0.002160
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 533950
+end_in_sec = 534040
 bidirected = true
 range = 0.002116
 
 [[edges]]
-from = 0
-to = 5
-start_in_sec = 607410
-end_in_sec = 607510
+from = 2
+to = 6
+start_in_sec = 535150
+end_in_sec = 535250
 bidirected = true
-range = 0.002049
+range = 0.002114
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 536380
+end_in_sec = 536480
+bidirected = true
+range = 0.002084
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 638940
-end_in_sec = 639020
+to = 6
+start_in_sec = 538570
+end_in_sec = 538680
 bidirected = true
-range = 0.002163
+range = 0.002106
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 539670
+end_in_sec = 539760
+bidirected = true
+range = 0.002124
 
 [[edges]]
 from = 2
-to = 4
-start_in_sec = 641050
-end_in_sec = 641100
+to = 6
+start_in_sec = 540900
+end_in_sec = 540970
+bidirected = true
+range = 0.002259
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 573050
+end_in_sec = 573130
 bidirected = true
 range = 0.002241
 
 [[edges]]
-from = 3
+from = 4
 to = 5
-start_in_sec = 652130
-end_in_sec = 652210
-bidirected = true
-range = 0.002169
-
-[[edges]]
-from = 2
-to = 5
-start_in_sec = 654230
-end_in_sec = 654260
-bidirected = true
-range = 0.002271
-
-[[edges]]
-from = 1
-to = 4
-start_in_sec = 685470
-end_in_sec = 685550
-bidirected = true
-range = 0.002185
-
-[[edges]]
-from = 3
-to = 4
-start_in_sec = 686670
-end_in_sec = 686760
+start_in_sec = 574260
+end_in_sec = 574370
 bidirected = true
 range = 0.002172
 
 [[edges]]
+from = 3
+to = 5
+start_in_sec = 576420
+end_in_sec = 576520
+bidirected = true
+range = 0.002154
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 577510
+end_in_sec = 577600
+bidirected = true
+range = 0.002246
+
+[[edges]]
 from = 2
 to = 5
-start_in_sec = 692910
-end_in_sec = 692940
+start_in_sec = 578790
+end_in_sec = 578830
+bidirected = true
+range = 0.002394
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 597670
+end_in_sec = 597740
+bidirected = true
+range = 0.002224
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 598950
+end_in_sec = 599040
+bidirected = true
+range = 0.002148
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 600160
+end_in_sec = 600270
+bidirected = true
+range = 0.002124
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 601520
+end_in_sec = 601590
+bidirected = true
+range = 0.002306
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 602290
+end_in_sec = 602400
+bidirected = true
+range = 0.002085
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 602720
+end_in_sec = 602820
+bidirected = true
+range = 0.002206
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 603370
+end_in_sec = 603480
+bidirected = true
+range = 0.002107
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 604670
+end_in_sec = 604770
+bidirected = true
+range = 0.002171
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 604840
+end_in_sec = 604950
+bidirected = true
+range = 0.002150
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 605890
+end_in_sec = 605980
+bidirected = true
+range = 0.002209
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 605920
+end_in_sec = 606020
+bidirected = true
+range = 0.002188
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 607250
+end_in_sec = 607300
+bidirected = true
+range = 0.002338
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 608020
+end_in_sec = 608090
+bidirected = true
+range = 0.002226
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 609100
+end_in_sec = 609160
+bidirected = true
+range = 0.002261
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 610410
+end_in_sec = 610450
+bidirected = true
+range = 0.002312
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 611620
+end_in_sec = 611660
+bidirected = true
+range = 0.002330
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 613740
+end_in_sec = 613770
+bidirected = true
+range = 0.002296
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 614810
+end_in_sec = 614850
 bidirected = true
 range = 0.002279
 
 [[edges]]
-from = 0
-to = 5
-start_in_sec = 693940
-end_in_sec = 694040
+from = 2
+to = 6
+start_in_sec = 616110
+end_in_sec = 616160
 bidirected = true
-range = 0.002076
+range = 0.002268
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 617310
+end_in_sec = 617380
+bidirected = true
+range = 0.002235
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 725560
-end_in_sec = 725660
+to = 6
+start_in_sec = 619410
+end_in_sec = 619500
 bidirected = true
-range = 0.002121
-
-[[edges]]
-from = 3
-to = 5
-start_in_sec = 738750
-end_in_sec = 738850
-bidirected = true
-range = 0.002118
+range = 0.002171
 
 [[edges]]
 from = 1
-to = 4
-start_in_sec = 772110
-end_in_sec = 772200
+to = 6
+start_in_sec = 620480
+end_in_sec = 620580
 bidirected = true
-range = 0.002110
+range = 0.002131
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 621800
+end_in_sec = 621900
+bidirected = true
+range = 0.002107
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 623010
+end_in_sec = 623120
+bidirected = true
+range = 0.002108
 
 [[edges]]
 from = 3
-to = 4
-start_in_sec = 773310
-end_in_sec = 773380
+to = 6
+start_in_sec = 625120
+end_in_sec = 625220
 bidirected = true
-range = 0.002247
+range = 0.002088
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 626200
+end_in_sec = 626290
+bidirected = true
+range = 0.002136
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 627550
+end_in_sec = 627610
+bidirected = true
+range = 0.002274
 
 [[edges]]
 from = 2
 to = 5
-start_in_sec = 779440
-end_in_sec = 779500
+start_in_sec = 659690
+end_in_sec = 659780
 bidirected = true
-range = 0.002215
+range = 0.002227
 
 [[edges]]
-from = 0
+from = 4
 to = 5
-start_in_sec = 780480
-end_in_sec = 780570
+start_in_sec = 660900
+end_in_sec = 661000
+bidirected = true
+range = 0.002140
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 662970
+end_in_sec = 663070
+bidirected = true
+range = 0.002162
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 664050
+end_in_sec = 664130
+bidirected = true
+range = 0.002244
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 684200
+end_in_sec = 684270
+bidirected = true
+range = 0.002210
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 685590
+end_in_sec = 685690
+bidirected = true
+range = 0.002153
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 686800
+end_in_sec = 686900
+bidirected = true
+range = 0.002094
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 688160
+end_in_sec = 688240
+bidirected = true
+range = 0.002288
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 688840
+end_in_sec = 688940
+bidirected = true
+range = 0.002063
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 689350
+end_in_sec = 689450
+bidirected = true
+range = 0.002185
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 689910
+end_in_sec = 690010
+bidirected = true
+range = 0.002087
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 691320
+end_in_sec = 691410
+bidirected = true
+range = 0.002160
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 691380
+end_in_sec = 691490
+bidirected = true
+range = 0.002152
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 692460
+end_in_sec = 692560
+bidirected = true
+range = 0.002200
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 692530
+end_in_sec = 692610
+bidirected = true
+range = 0.002203
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 693900
+end_in_sec = 693940
+bidirected = true
+range = 0.002381
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 694570
+end_in_sec = 694630
+bidirected = true
+range = 0.002218
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 695640
+end_in_sec = 695690
+bidirected = true
+range = 0.002254
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 697050
+end_in_sec = 697100
+bidirected = true
+range = 0.002327
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 698260
+end_in_sec = 698290
+bidirected = true
+range = 0.002324
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 700280
+end_in_sec = 700320
+bidirected = true
+range = 0.002302
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 701340
+end_in_sec = 701380
+bidirected = true
+range = 0.002277
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 702750
+end_in_sec = 702810
+bidirected = true
+range = 0.002270
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 703940
+end_in_sec = 704020
+bidirected = true
+range = 0.002240
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 705960
+end_in_sec = 706040
+bidirected = true
+range = 0.002145
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 707020
+end_in_sec = 707110
+bidirected = true
+range = 0.002104
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 708440
+end_in_sec = 708550
+bidirected = true
+range = 0.002124
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 709640
+end_in_sec = 709750
+bidirected = true
+range = 0.002107
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 711670
+end_in_sec = 711770
 bidirected = true
 range = 0.002095
 
 [[edges]]
-from = 3
-to = 4
-start_in_sec = 812190
-end_in_sec = 812290
+from = 1
+to = 6
+start_in_sec = 712740
+end_in_sec = 712830
 bidirected = true
-range = 0.002073
+range = 0.002144
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 714200
+end_in_sec = 714250
+bidirected = true
+range = 0.002294
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 744890
+end_in_sec = 744910
+bidirected = true
+range = 0.002397
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 746340
+end_in_sec = 746430
+bidirected = true
+range = 0.002197
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 747530
+end_in_sec = 747640
+bidirected = true
+range = 0.002158
 
 [[edges]]
 from = 3
 to = 5
-start_in_sec = 825380
-end_in_sec = 825480
+start_in_sec = 749510
+end_in_sec = 749610
+bidirected = true
+range = 0.002173
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 750580
+end_in_sec = 750660
+bidirected = true
+range = 0.002261
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 769700
+end_in_sec = 769720
+bidirected = true
+range = 0.002311
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 770740
+end_in_sec = 770810
+bidirected = true
+range = 0.002193
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 772240
+end_in_sec = 772340
+bidirected = true
+range = 0.002139
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 773430
+end_in_sec = 773530
+bidirected = true
+range = 0.002090
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 774800
+end_in_sec = 774880
+bidirected = true
+range = 0.002256
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 775390
+end_in_sec = 775490
+bidirected = true
+range = 0.002065
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 775980
+end_in_sec = 776080
+bidirected = true
+range = 0.002169
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 776450
+end_in_sec = 776540
 bidirected = true
 range = 0.002070
 
 [[edges]]
-from = 1
-to = 4
-start_in_sec = 858750
-end_in_sec = 858850
+from = 3
+to = 5
+start_in_sec = 777930
+end_in_sec = 778040
 bidirected = true
-range = 0.002077
+range = 0.002153
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 777970
+end_in_sec = 778060
+bidirected = true
+range = 0.002174
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 779000
+end_in_sec = 779090
+bidirected = true
+range = 0.002194
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 779160
+end_in_sec = 779240
+bidirected = true
+range = 0.002213
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 781110
+end_in_sec = 781180
+bidirected = true
+range = 0.002238
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 782170
+end_in_sec = 782230
+bidirected = true
+range = 0.002271
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 783700
+end_in_sec = 783740
+bidirected = true
+range = 0.002321
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 784890
+end_in_sec = 784920
+bidirected = true
+range = 0.002324
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 786830
+end_in_sec = 786860
+bidirected = true
+range = 0.002292
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 787880
+end_in_sec = 787920
+bidirected = true
+range = 0.002273
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 789390
+end_in_sec = 789460
+bidirected = true
+range = 0.002274
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 790570
+end_in_sec = 790650
+bidirected = true
+range = 0.002229
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 792500
+end_in_sec = 792590
+bidirected = true
+range = 0.002157
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 793550
+end_in_sec = 793650
+bidirected = true
+range = 0.002120
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 795090
+end_in_sec = 795190
+bidirected = true
+range = 0.002095
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 796270
+end_in_sec = 796380
+bidirected = true
+range = 0.002109
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 798210
+end_in_sec = 798310
+bidirected = true
+range = 0.002100
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 799280
+end_in_sec = 799360
+bidirected = true
+range = 0.002136
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 800850
+end_in_sec = 800890
+bidirected = true
+range = 0.002318
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 831420
+end_in_sec = 831460
+bidirected = true
+range = 0.002378
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 832980
+end_in_sec = 833080
+bidirected = true
+range = 0.002193
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 834160
+end_in_sec = 834270
+bidirected = true
+range = 0.002155
+
+[[edges]]
+from = 3
+to = 5
+start_in_sec = 836060
+end_in_sec = 836160
+bidirected = true
+range = 0.002182
+
+[[edges]]
+from = 1
+to = 5
+start_in_sec = 837120
+end_in_sec = 837200
+bidirected = true
+range = 0.002278
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 856240
+end_in_sec = 856270
+bidirected = true
+range = 0.002295
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 857270
+end_in_sec = 857350
+bidirected = true
+range = 0.002196
+
+[[edges]]
+from = 2
+to = 6
+start_in_sec = 858880
+end_in_sec = 858980
+bidirected = true
+range = 0.002128
+
+[[edges]]
+from = 4
+to = 6
+start_in_sec = 860060
+end_in_sec = 860170
+bidirected = true
+range = 0.002110
+
+[[edges]]
+from = 2
+to = 5
+start_in_sec = 861440
+end_in_sec = 861530
+bidirected = true
+range = 0.002244
+
+[[edges]]
+from = 3
+to = 6
+start_in_sec = 861930
+end_in_sec = 862030
+bidirected = true
+range = 0.002067
+
+[[edges]]
+from = 4
+to = 5
+start_in_sec = 862610
+end_in_sec = 862720
+bidirected = true
+range = 0.002178
+
+[[edges]]
+from = 1
+to = 6
+start_in_sec = 862980
+end_in_sec = 863080
+bidirected = true
+range = 0.002097
 

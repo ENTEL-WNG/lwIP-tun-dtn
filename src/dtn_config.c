@@ -59,8 +59,7 @@ static int read_bool(toml_table_t* tbl, const char* key, bool* out) {
 }
 
 /* Read a TOML array-of-strings into a char[][LEN] buffer. */
-static int read_str_array(toml_array_t* arr, char dst[][DTN_MAX_ADDR_LEN], int* count,
-                          int max_count) {
+static int read_str_array(toml_array_t* arr, char dst[][DTN_MAX_ADDR_LEN], int* count, int max_count) {
     *count = 0;
     if (!arr)
         return 0;
@@ -99,23 +98,12 @@ static int parse_interfaces(toml_table_t* root, DtnConfig* cfg) {
         copy_str_opt(t, "local_mac", iface->local_mac, DTN_MAX_MAC_LEN);
         copy_str_opt(t, "remote_addr", iface->remote_addr, DTN_MAX_ADDR_LEN);
         copy_str_opt(t, "remote_mac", iface->remote_mac, DTN_MAX_MAC_LEN);
-
         int64_t tmp = 0;
         if (read_int(t, "remote_node_id", &tmp) == 0)
             iface->remote_node_id = (int)tmp;
-        if (read_int(t, "start_in_sec", &tmp) == 0)
-            iface->start_in_sec = tmp;
-        if (read_int(t, "end_in_sec", &tmp) == 0)
-            iface->end_in_sec = tmp;
+        read_str_array(toml_array_in(t, "dtn_addresses"), iface->dtn_addresses, &iface->dtn_address_count, DTN_MAX_ADDRESSES);
 
-        read_double(t, "rate_in_bits_per_sec", &iface->rate_in_bits_per_sec);
-        read_double(t, "range", &iface->range);
-
-        read_str_array(toml_array_in(t, "dtn_addresses"), iface->dtn_addresses,
-                       &iface->dtn_address_count, DTN_MAX_ADDRESSES);
-
-        read_str_array(toml_array_in(t, "addresses"), iface->addresses, &iface->address_count,
-                       DTN_MAX_ADDRESSES);
+        read_str_array(toml_array_in(t, "addresses"), iface->addresses, &iface->address_count, DTN_MAX_ADDRESSES);
 
         cfg->interface_count++;
     }
@@ -240,11 +228,9 @@ int dtn_config_load(DtnConfig* cfg) {
         copy_str(node_tbl, "tun_ipv6_addr", cfg->tun_ipv6_addr, DTN_MAX_ADDR_LEN);
         copy_str(node_tbl, "lwip_ipv6_addr", cfg->lwip_ipv6_addr, DTN_MAX_ADDR_LEN);
 
-        read_str_array(toml_array_in(node_tbl, "dtn_addresses"), cfg->dtn_addresses,
-                       &cfg->dtn_address_count, DTN_MAX_ADDRESSES);
+        read_str_array(toml_array_in(node_tbl, "dtn_addresses"), cfg->dtn_addresses, &cfg->dtn_address_count, DTN_MAX_ADDRESSES);
 
-        read_str_array(toml_array_in(node_tbl, "addresses"), cfg->addresses, &cfg->address_count,
-                       DTN_MAX_ADDRESSES);
+        read_str_array(toml_array_in(node_tbl, "addresses"), cfg->addresses, &cfg->address_count, DTN_MAX_ADDRESSES);
     }
 
     /* ---- [[interface]] ---- */
@@ -291,8 +277,7 @@ void dtn_config_print(const DtnConfig* cfg) {
     DTN_INFO("  storage_path    = %s", cfg->storage_path);
 
     DTN_INFO("  dtn_addresses (%d):", cfg->dtn_address_count);
-    for (int i = 0; i < cfg->dtn_address_count; i++)
-        DTN_INFO("    [%d] %s", i, cfg->dtn_addresses[i]);
+    for (int i = 0; i < cfg->dtn_address_count; i++) DTN_INFO("    [%d] %s", i, cfg->dtn_addresses[i]);
 
     DTN_INFO("  addresses (%d):", cfg->address_count);
     for (int i = 0; i < cfg->address_count; i++) DTN_INFO("    [%d] %s", i, cfg->addresses[i]);
@@ -300,30 +285,26 @@ void dtn_config_print(const DtnConfig* cfg) {
     DTN_INFO("[[interface]] count = %d", cfg->interface_count);
     for (int i = 0; i < cfg->interface_count; i++) {
         const DtnInterface* iface = &cfg->interfaces[i];
-        DTN_INFO("  [%d] name=%s  eth_name=%s  local=%s  remote=%s  node=%d  start=%lld  end=%lld", i,
-                 iface->name, iface->eth_name, iface->local_addr, iface->remote_addr,
-                 iface->remote_node_id, (long long)iface->start_in_sec, (long long)iface->end_in_sec);
+        DTN_INFO("  [%d] name=%s  eth_name=%s  local=%s  remote=%s  node=%d", i, iface->name, iface->eth_name, iface->local_addr,
+                 iface->remote_addr, iface->remote_node_id);
         DTN_INFO("       dtn_addresses (%d):", iface->dtn_address_count);
-        for (int j = 0; j < iface->dtn_address_count; j++)
-            DTN_INFO("         %s", iface->dtn_addresses[j]);
+        for (int j = 0; j < iface->dtn_address_count; j++) DTN_INFO("         %s", iface->dtn_addresses[j]);
     }
 
-    DTN_INFO("[contact_plan] name = \"%s\"  max_time_in_sec = %lld", cfg->contact_plan.name,
-             (long long)cfg->contact_plan.max_time_in_sec);
+    DTN_INFO("[contact_plan] name = \"%s\"  max_time_in_sec = %lld", cfg->contact_plan.name, (long long)cfg->contact_plan.max_time_in_sec);
     DTN_INFO("  [defaults] rate_in_bits_per_sec=%.2f  range=%.2f", cfg->contact_plan.default_rate_in_bits_per_sec,
              cfg->contact_plan.default_range);
 
     DTN_INFO("  [[nodes]] count = %d", cfg->contact_plan.node_count);
     for (int i = 0; i < cfg->contact_plan.node_count; i++) {
         const DtnNodeEntry* n = &cfg->contact_plan.nodes[i];
-        DTN_INFO("    id=%d  name=\"%s\"  isDtnNode=%s", n->id, n->name,
-                 n->is_dtn_node ? "true" : "false");
+        DTN_INFO("    id=%d  name=\"%s\"  isDtnNode=%s", n->id, n->name, n->is_dtn_node ? "true" : "false");
     }
 
     DTN_INFO("  [[edges]] count = %d", cfg->contact_plan.edge_count);
     for (int i = 0; i < cfg->contact_plan.edge_count; i++) {
         const DtnEdge* e = &cfg->contact_plan.edges[i];
-        DTN_INFO("    %d -> %d  start=%lld  end=%lld  bidirected=%s", e->from, e->to,
-                 (long long)e->start, (long long)e->end, e->bidirected ? "true" : "false");
+        DTN_INFO("    %d -> %d  start=%lld  end=%lld  bidirected=%s", e->from, e->to, (long long)e->start, (long long)e->end,
+                 e->bidirected ? "true" : "false");
     }
 }

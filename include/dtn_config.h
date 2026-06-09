@@ -39,10 +39,6 @@ typedef struct {
     char remote_addr[DTN_MAX_ADDR_LEN];
     char remote_mac[DTN_MAX_MAC_LEN];
     int remote_node_id;
-    int64_t start_in_sec;
-    int64_t end_in_sec;
-    double rate_in_bits_per_sec;
-    double range;
 
     char dtn_addresses[DTN_MAX_ADDRESSES][DTN_MAX_ADDR_LEN];
     int dtn_address_count;

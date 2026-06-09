@@ -168,32 +168,33 @@ class Ns3TopologyGenerator:
 
         lines = []
         lines.append("[contact_plan]")
-        lines.append(f'name = "{name}"')
-        lines.append(f"max_time_in_sec = {max_time}")
+        lines.append(f'name                 = "{name}"')
+        lines.append(f"max_time_in_sec      = {max_time}")
         lines.append("")
         lines.append("[contact_plan.defaults]")
         lines.append(f"rate_in_bits_per_sec = {rate_bps}")
-        lines.append(f"range = 1")
+        lines.append(f"range                = 1")
         lines.append("")
         lines.append("# Node Definitions")
+        id_map = {nid: i + 1 for i, nid in enumerate(node_ids)}
         for nid in node_ids:
             node_name = self.node_registry[nid]
             is_dtn = node_name not in self.ground_nodes
             lines.append("[[nodes]]")
-            lines.append(f"id = {nid}")
-            lines.append(f'name = "{node_name}"')
+            lines.append(f"id        = {id_map[nid]}")
+            lines.append(f'name      = "{node_name}"')
             lines.append(f"isDtnNode = {str(is_dtn).lower()}")
             lines.append("")
         lines.append("# Edge Definitions")
         for c in valid:
             range_s = c["distance_km"] / self.speed_of_light_km_s
             lines.append("[[edges]]")
-            lines.append(f"from = {c['u']}")
-            lines.append(f"to = {c['v']}")
+            lines.append(f"from         = {id_map[c['u']]}")
+            lines.append(f"to           = {id_map[c['v']]}")
             lines.append(f"start_in_sec = {int(c['start_rel'])}")
-            lines.append(f"end_in_sec = {int(c['end_rel'])}")
-            lines.append(f"bidirected = {str(bidirected).lower()}")
-            lines.append(f"range = {range_s:.6f}")
+            lines.append(f"end_in_sec   = {int(c['end_rel'])}")
+            lines.append(f"bidirected   = {str(bidirected).lower()}")
+            lines.append(f"range        = {range_s:.6f}")
             lines.append("")
 
         output_path = os.path.join(output_dir, f"{name}.toml")
@@ -202,9 +203,24 @@ class Ns3TopologyGenerator:
 
         print(f"Exported contact plan '{name}' with {len(node_ids)} nodes and {len(valid)} edges to {output_path}")
 
+def dms_to_dd(lat_deg, lat_min, lat_sec, lat_dir, lon_deg, lon_min, lon_sec, lon_dir, height=0):
+    lat = lat_deg + lat_min/60 + lat_sec/3600
+    if lat_dir == 'S':
+        lat = -lat
+    lon = lon_deg + lon_min/60 + lon_sec/3600
+    if lon_dir == 'W':
+        lon = -lon
+    return lat, lon, height
 
 if __name__ == "__main__":
-    stations = {"GS_Barcelona": (41.4, 2.1, 0), "GS_Tokyo": (35.6, 139.6, 0)}
+    # stations = {"GS_Barcelona": (41.4, 2.1, 0), "GS_Tokyo": (35.6, 139.6, 0)}
+    # Antarticaa: 74°31'21.4"S 73°47'56.9"W 
+    # Svalbard: 79°11'55.1"N 11°59'16.1"E
+    antarctica = dms_to_dd(74, 31, 21.4, 'S', 73, 47, 56.9, 'W')
+    svalbard = dms_to_dd(79, 11, 55.1, 'N', 11, 59, 16.1, 'E')
+    stations = {"GS_Antarctica": antarctica, "GS_SVALBARD": svalbard}
+
+    print(stations)
 
     topology = "sateliot"
     gen = Ns3TopologyGenerator(f"topologies/{topology}.tle", stations)

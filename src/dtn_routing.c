@@ -44,7 +44,7 @@ static int py_registry_count = 0;
 #define ROUTE_CACHE_SIZE 32
 
 typedef struct {
-    int  dest_node_id;
+    int dest_node_id;
     long packet_length_in_bits; /* key: packet size used when route was computed */
     double valid_until_sec;     /* entry expires at this contact-plan time */
     DtnRoutingResult result;
@@ -229,24 +229,17 @@ dtn_routing_result_t dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_n
     return DTN_ROUTING_ERR;
 }
 
-dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id, bool* is_next_hop_active) {
+dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, const DtnRoutingResult routing_result,
+                                                    bool* is_next_hop_active) {
     if (current_time_in_ms < 0 || !is_next_hop_active) {
         DTN_ERROR("Invalid arguments to is_next_hop_active.");
         return DTN_ROUTING_ERR;
     }
 
     double current_time_in_sec = current_time_in_ms / 1000;
-
-    for (int i = 0; i < dtn_config.interface_count; i++) {
-        if (dtn_config.interfaces[i].remote_node_id == node_id) {
-            *is_next_hop_active = (current_time_in_sec >= dtn_config.interfaces[i].start_in_sec &&
-                                   current_time_in_sec <= dtn_config.interfaces[i].end_in_sec);
-            DTN_DEBUG("Next hop to node %d is %sactive", node_id, *is_next_hop_active ? "" : "not ");
-            return DTN_ROUTING_OK;
-        }
-    }
-    DTN_WARN("No interface configured for node id %d", node_id);
-    return DTN_ROUTING_ERR;
+    *is_next_hop_active =
+        (current_time_in_sec >= routing_result.min_delivery_time && current_time_in_sec <= routing_result.max_delivery_time);
+    return DTN_ROUTING_OK;
 }
 
 // The last hex group after the final ':' encodes the node id.
@@ -334,11 +327,10 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     /* --- Route cache: skip Python CGR if we already know the answer --- */
     for (int i = 0; i < g_route_cache_count; i++) {
         RouteCacheEntry* e = &g_route_cache[i];
-        if (e->dest_node_id          == dest_node_id          &&
-            e->packet_length_in_bits == package_length_in_bits &&
+        if (e->dest_node_id == dest_node_id && e->packet_length_in_bits == package_length_in_bits &&
             current_time_in_sec < e->valid_until_sec) {
-            DTN_DEBUG("DTN Routing: cache hit for dest %ld len %ld (valid until %.1f)",
-                      dest_node_id, package_length_in_bits, e->valid_until_sec);
+            DTN_DEBUG("DTN Routing: cache hit for dest %ld len %ld (valid until %.1f)", dest_node_id, package_length_in_bits,
+                      e->valid_until_sec);
             *result = e->result;
             return DTN_ROUTING_OK;
         }
@@ -439,8 +431,7 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
      * pair or take a free slot. */
     int cache_idx = -1;
     for (int i = 0; i < g_route_cache_count; i++) {
-        if (g_route_cache[i].dest_node_id          == dest_node_id &&
-            g_route_cache[i].packet_length_in_bits == package_length_in_bits) {
+        if (g_route_cache[i].dest_node_id == dest_node_id && g_route_cache[i].packet_length_in_bits == package_length_in_bits) {
             cache_idx = i;
             break;
         }
@@ -448,12 +439,12 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     if (cache_idx < 0 && g_route_cache_count < ROUTE_CACHE_SIZE)
         cache_idx = g_route_cache_count++;
     if (cache_idx >= 0) {
-        g_route_cache[cache_idx].dest_node_id          = (int)dest_node_id;
+        g_route_cache[cache_idx].dest_node_id = (int)dest_node_id;
         g_route_cache[cache_idx].packet_length_in_bits = package_length_in_bits;
-        g_route_cache[cache_idx].valid_until_sec       = result->max_delivery_time;
-        g_route_cache[cache_idx].result                = *result;
-        DTN_DEBUG("DTN Routing: cached route for dest %ld len %ld until %.1f",
-                  dest_node_id, package_length_in_bits, result->max_delivery_time);
+        g_route_cache[cache_idx].valid_until_sec = result->max_delivery_time;
+        g_route_cache[cache_idx].result = *result;
+        DTN_DEBUG("DTN Routing: cached route for dest %ld len %ld until %.1f", dest_node_id, package_length_in_bits,
+                  result->max_delivery_time);
     }
 
     return py_cgr_clean_all(DTN_ROUTING_OK);

@@ -16,7 +16,7 @@ Usage:
   python3 throughput_test.py [options]
 
 Options:
-  --contact-plan FILE   Contact plan TOML (default: networks/contact-plan-throughput.toml)
+  --contact-plan FILE   Contact plan TOML (default: <plan_dir>/contact-plan.toml)
   --rate N              Packets/second (default: 100)
   --duration N          Sender duration in seconds (default: 30)
   --size N              Payload size in bytes (default: 512)
@@ -37,12 +37,12 @@ One command, fully automated
 
 Skip plots during a run, generate them later
   python3 throughput_test.py --no-plots
-  python3 networks/plot_metrics.py --captures networks/contact_plan_throughput/captures/1
+  python3 plot_metrics.py --captures <plan_dir>/captures/1
 
 Manual workflow (containers already up)
   cd networks/contact_plan_throughput && docker compose up -d --build
   python3 run_traffic.py --rate 200 --duration 60
-  python3 networks/plot_metrics.py --captures networks/contact_plan_throughput/captures/1
+  python3 plot_metrics.py --captures <plan_dir>/captures/1
 """
 
 import argparse
@@ -97,7 +97,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--contact-plan",
-                   default=str(SCRIPT_DIR / "networks/contact-plan-throughput.toml"))
+                   default=str(SCRIPT_DIR / "contact_plan_throughput/contact-plan.toml"))
     p.add_argument("--rate",       type=int, default=100)
     p.add_argument("--duration",   type=int, default=30)
     p.add_argument("--size",       type=int, default=512)
@@ -128,7 +128,7 @@ def main() -> None:
     # -------------------------------------------------------------------------
     print("--- [1/5] Generating network configs ---")
     gen = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "generate-network.py"), str(contact_plan)],
+        [sys.executable, str(SCRIPT_DIR / "generate_network.py"), str(contact_plan)],
         stdout=subprocess.PIPE, text=True, cwd=str(SCRIPT_DIR), check=True,
     )
     print(gen.stdout, end="")

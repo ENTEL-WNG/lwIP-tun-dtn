@@ -151,10 +151,6 @@ def build_node_data(data: dict) -> dict:
     for edge in edges:
         a = edge["from"]
         b = edge["to"]
-        start_in_sec  = edge.get("start_in_sec")
-        end_in_sec    = edge.get("end_in_sec")
-        rate   = edge.get("rate_in_bits_per_sec", default_rate)
-        range  = edge.get("range", default_range)
 
         addr_a, addr_b = link_ipv6(a, b)
         mac_a,  mac_b  = link_mac(a, b)
@@ -166,17 +162,15 @@ def build_node_data(data: dict) -> dict:
             (a, b, addr_a, addr_b, mac_a, mac_b),
             (b, a, addr_b, addr_a, mac_b, mac_a),
         ]:
+            if any(i["iface"] == iface_name(local, remote) for i in iface_map[local]):
+                continue
             iface_map[local].append({
                 "iface":          iface_name(local, remote),
                 "local_addr":     local_addr,
                 "local_mac":      local_mac,
                 "remote_addr":    remote_addr,
-                "remote_mac":  remote_mac,
+                "remote_mac":     remote_mac,
                 "remote_node_id": remote,
-                "start_in_sec":   start_in_sec,
-                "end_in_sec":     end_in_sec,
-                "rate_in_bits_per_sec": rate,
-                "range":          range,
             })
 
     # Now attach per-interface directional reachable address lists
@@ -257,11 +251,11 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
     lines.append(f"# Auto-generated config for node {nid}")
     lines.append("")
     lines.append("[node]")
-    lines.append(f"id     = {nid}")
-    lines.append(f'name   = "{node["name"]}"')
-    lines.append(f"is_dtn        = {str(node['is_dtn']).lower()}")
-    lines.append(f"dtn_addresses = {toml_str_list(node['dtn_addresses'])}")
-    lines.append(f"addresses     = {toml_str_list(node['addresses'])}")
+    lines.append(f"id             = {nid}")
+    lines.append(f'name           = "{node["name"]}"')
+    lines.append(f"is_dtn         = {str(node['is_dtn']).lower()}")
+    lines.append(f"dtn_addresses  = {toml_str_list(node['dtn_addresses'])}")
+    lines.append(f"addresses      = {toml_str_list(node['addresses'])}")
     lines.append(f'tun_ipv6_addr  = "{node["tun_ipv6_addr"]}"')
     lines.append(f'lwip_ipv6_addr = "{node["lwip_ipv6_addr"]}"')
     lines.append("")
@@ -272,12 +266,8 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
         lines.append(f'local_addr     = "{iface["local_addr"]}"')
         lines.append(f'local_mac      = "{iface["local_mac"]}"')
         lines.append(f'remote_addr    = "{iface["remote_addr"]}"')
-        lines.append(f'remote_mac  = "{iface["remote_mac"]}"')
+        lines.append(f'remote_mac     = "{iface["remote_mac"]}"')
         lines.append(f"remote_node_id = {iface['remote_node_id']}")
-        lines.append(f"start_in_sec   = {iface['start_in_sec']}")
-        lines.append(f"end_in_sec     = {iface['end_in_sec']}")
-        lines.append(f"rate_in_bits_per_sec = {iface['rate_in_bits_per_sec']}")
-        lines.append(f"range          = {iface['range']}")
         lines.append(f"dtn_addresses  = {toml_str_list(iface['dtn_addresses'])}")
         lines.append(f"addresses      = {toml_str_list(iface['addresses'])}")
         lines.append("")

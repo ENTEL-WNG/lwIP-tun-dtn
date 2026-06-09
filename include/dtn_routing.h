@@ -53,7 +53,8 @@ typedef struct {
 Routing_Function* dtn_routing_create(DTN_Module* parent);
 void dtn_routing_destroy(Routing_Function* routing);
 dtn_routing_result_t dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node);
-dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, int node_id, bool* is_next_hop_active);
+dtn_routing_result_t dtn_routing_is_next_hop_active(double current_time_in_ms, const DtnRoutingResult routing_result,
+                                                    bool* is_next_hop_active);
 dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, double current_time_in_ms, struct ip6_hdr* ip6h,
                                                       DtnRoutingResult* result);
 dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_sec, long current_node_id, long src_node_id,

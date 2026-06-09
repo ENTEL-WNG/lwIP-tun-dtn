@@ -3,7 +3,7 @@
 run_traffic.py — Traffic generation/collection for a DTN throughput experiment.
 
 Assumes the docker compose stack is already running:
-    cd networks/<plan_dir> && docker compose up -d --build
+    cd <plan_dir>/contact-plan.toml && docker compose up -d --build
 
 This script only:
   1. Starts traffic_recv.py inside the receiver container (background)
@@ -15,7 +15,7 @@ Usage:
     python3 run_traffic.py [options]
 
 Options:
-    --contact-plan FILE   Contact plan TOML (default: networks/contact-plan-throughput.toml)
+    --contact-plan FILE   Contact plan TOML (default: <plan_dir>/contact-plan.toml)
     --rate N              Packets/second (default: 100)
     --duration N          Sender duration in seconds (default: 30)
     --size N              Payload size in bytes (default: 512)
@@ -91,7 +91,7 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--contact-plan",
-                   default=str(SCRIPT_DIR / "networks/contact-plan-throughput.toml"))
+                   default=str(SCRIPT_DIR / "contact_plan_throughput/contact-plan.toml"))
     p.add_argument("--rate",       type=int, default=100)
     p.add_argument("--duration",   type=int, default=30)
     p.add_argument("--size",       type=int, default=512)
@@ -114,7 +114,7 @@ def main() -> None:
     with open(contact_plan, "rb") as f:
         plan_data = tomllib.load(f)
     plan_name    = plan_data["contact_plan"]["name"]
-    compose_dir  = SCRIPT_DIR / "networks" / plan_name
+    compose_dir  = SCRIPT_DIR / plan_name
     compose_file = compose_dir / "docker-compose.yml"
     if not compose_file.is_file():
         sys.exit(f"ERROR: docker-compose.yml not found at {compose_file}\n"
@@ -240,13 +240,13 @@ def main() -> None:
         if not args.no_analyze:
             print()
             subprocess.run(
-                [sys.executable, str(SCRIPT_DIR / "networks/analyze.py"),
+                [sys.executable, str(SCRIPT_DIR / "analyze.py"),
                  str(captures_dir)],
                 check=False,
             )
             if not args.no_plots:
                 subprocess.run(
-                    [sys.executable, str(SCRIPT_DIR / "networks/plot_metrics.py"),
+                    [sys.executable, str(SCRIPT_DIR / "plot_metrics.py"),
                      "--captures", str(captures_dir),
                      "--fmt",      args.plot_fmt],
                     check=False,
