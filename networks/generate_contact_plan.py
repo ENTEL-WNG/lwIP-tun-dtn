@@ -1,8 +1,11 @@
+import sys
+import time
 import numpy as np
 from skyfield.api import load, wgs84, Distance
 from datetime import timedelta, datetime, timezone
 from itertools import combinations
 import os
+from pathlib import Path
 
 # Data rate of the links
 RATE_MBPS = 300 # Mbps
@@ -44,16 +47,35 @@ class Ns3TopologyGenerator:
             times.append(curr)
             curr = self.ts.from_datetime(curr.utc_datetime() + timedelta(seconds=step_seconds))
 
-        print(f"Computing topology for {self.num_nodes} nodes over {len(times)} steps...")
-        
+        n_steps = len(times)
+        n_gs = len(self.ground_nodes)
+        n_sat = len(self.satellites)
+        n_isl_pairs = len(self.satellites) * (len(self.satellites) - 1) // 2 if compute_isl else 0
+        print(f"Computing topology: {self.num_nodes} nodes, {n_steps} steps "
+              f"({duration_hours}h @ {step_seconds}s)  "
+              f"GS={n_gs}  SAT={n_sat}"
+              + (f"  ISL pairs/step={n_isl_pairs}" if compute_isl else ""))
+
+        report_every = max(1, n_steps // 20)   # ~5% intervals
+        wall_start = time.monotonic()
+
         # Tracking active links to merge time steps
         # Value is now tuple: (start_time, list_of_distances)
-        active_links = {} 
+        active_links = {}
         completed_contacts = []
 
-        for t in times:
+        for i, t in enumerate(times):
+            if i % report_every == 0:
+                elapsed = time.monotonic() - wall_start
+                eta = (elapsed / i * (n_steps - i)) if i > 0 else 0.0
+                print(f"  {i / n_steps * 100:5.1f}%  "
+                      f"step {i}/{n_steps}  "
+                      f"elapsed {elapsed:6.1f}s  eta {eta:6.1f}s  "
+                      f"contacts={len(completed_contacts)}",
+                      flush=True)
+
             utc_t = t.utc_datetime()
-            current_connectivity = {} # Key: link_tuple, Value: distance_km
+            current_connectivity = {}  # Key: link_tuple, Value: distance_km
 
             # A. GS <-> SAT
             for gs_name, gs_obj in self.ground_nodes.items():
@@ -116,7 +138,11 @@ class Ns3TopologyGenerator:
                 "start": start_t, "end": final_time,
                 "distance_km": avg_dist
             })
-            
+
+        total_elapsed = time.monotonic() - wall_start
+        print(f"  100.0%  done in {total_elapsed:.1f}s  "
+              f"contacts={len(completed_contacts)}")
+
         return completed_contacts
 
     def export_ns3(self, contacts, start_time_ref, topology, output_dir="topologies"):
@@ -213,6 +239,8 @@ def dms_to_dd(lat_deg, lat_min, lat_sec, lat_dir, lon_deg, lon_min, lon_sec, lon
     return lat, lon, height
 
 if __name__ == "__main__":
+    topology_path = sys.argv[1] if len(sys.argv) > 1 else "topologies/sateliot.tle"
+
     # stations = {"GS_Barcelona": (41.4, 2.1, 0), "GS_Tokyo": (35.6, 139.6, 0)}
     # Antarticaa: 74°31'21.4"S 73°47'56.9"W 
     # Svalbard: 79°11'55.1"N 11°59'16.1"E
@@ -220,12 +248,11 @@ if __name__ == "__main__":
     svalbard = dms_to_dd(79, 11, 55.1, 'N', 11, 59, 16.1, 'E')
     stations = {"GS_Antarctica": antarctica, "GS_SVALBARD": svalbard}
 
-    print(stations)
-
-    topology = "sateliot"
-    gen = Ns3TopologyGenerator(f"topologies/{topology}.tle", stations)
+    topology_name = name = Path(topology_path).stem
+    print(topology_path)
+    gen = Ns3TopologyGenerator(topology_path, stations)
     
     start = datetime.now(timezone.utc)
-    contacts = gen.generate(start, duration_hours=24*10, step_seconds=10, compute_isl=True)
-    gen.export_ns3(contacts, start, topology)
-    gen.export_contact_plan(contacts, start, topology)
+    contacts = gen.generate(start, duration_hours=25, step_seconds=10, compute_isl=True)
+    gen.export_ns3(contacts, start, topology_name)
+    gen.export_contact_plan(contacts, start, topology_name)

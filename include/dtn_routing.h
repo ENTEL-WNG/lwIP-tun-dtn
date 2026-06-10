@@ -50,6 +50,12 @@ typedef struct {
     double best_delivery_time;
 } DtnRoutingResult;
 
+typedef struct {
+    int dest_node_id;
+    long packet_length_in_bits;
+    DtnRoutingResult result;
+} RouteCacheEntry;
+
 Routing_Function* dtn_routing_create(DTN_Module* parent);
 void dtn_routing_destroy(Routing_Function* routing);
 dtn_routing_result_t dtn_routing_is_node_id_dtn_node(int node_id, bool* is_dtn_node);

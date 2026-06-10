@@ -36,7 +36,7 @@
 #include "lwip/prot/ip6.h"
 #include "raw_socket.h"
 
-#define USE_AF_INET6
+// #define USE_AF_INET6
 
 #ifdef USE_AF_INET6
 dtn_socket_result_t dtn_init_raw_socket(void) {
@@ -204,15 +204,31 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnI
         return DTN_SOCKET_ERR_COPY;
     }
 
-    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
-    ip6_addr_t dest_addr;
-    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+    /* Use the interface's direct neighbour as the sendto() address.
+     * With IPV6_HDRINCL the kernel uses sa6 only to resolve the next-hop
+     * and outgoing device — the IPv6 header in buf already carries the
+     * correct final destination.  Using the final destination here would
+     * require a gateway route in table 200 for every reachable subnet,
+     * which creates ECMP conflicts and ENETUNREACH for multi-hop paths. */
+    char remote_host[INET6_ADDRSTRLEN];
+    const char* slash = strchr(dtn_interface->remote_addr, '/');
+    if (slash) {
+        size_t len = (size_t)(slash - dtn_interface->remote_addr);
+        if (len >= sizeof(remote_host))
+            len = sizeof(remote_host) - 1;
+        memcpy(remote_host, dtn_interface->remote_addr, len);
+        remote_host[len] = '\0';
+    } else {
+        strncpy(remote_host, dtn_interface->remote_addr, sizeof(remote_host) - 1);
+        remote_host[sizeof(remote_host) - 1] = '\0';
+    }
 
     struct sockaddr_in6 sa6 = {0};
     sa6.sin6_family = AF_INET6;
-    /* lwIP stores addr[4] in network byte order — same layout as in6_addr. */
-    memcpy(&sa6.sin6_addr, dest_addr.addr, sizeof(sa6.sin6_addr));
-    /* Link-local destinations need a scope id to select the outgoing interface. */
+    if (inet_pton(AF_INET6, remote_host, &sa6.sin6_addr) != 1) {
+        DTN_ERROR("Failed to parse remote_addr '%s' for interface %s", dtn_interface->remote_addr, dtn_interface->name);
+        return DTN_SOCKET_ERR_SEND;
+    }
     if (IN6_IS_ADDR_LINKLOCAL(&sa6.sin6_addr)) {
         const char* kname = dtn_interface->eth_name[0] ? dtn_interface->eth_name : dtn_interface->name;
         sa6.sin6_scope_id = if_nametoindex(kname);

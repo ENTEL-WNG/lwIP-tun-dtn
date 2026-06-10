@@ -29,6 +29,7 @@ import re
 import sqlite3
 import threading
 import time
+import tomllib
 from datetime import datetime
 
 import docker
@@ -42,6 +43,25 @@ DB_DIR           = f"/repo/dtn_storage/{PLAN_NAME}" if PLAN_NAME else ""
 METRICS_OUT      = os.environ.get("METRICS_OUT",      "")
 
 _jsonl_lock = threading.Lock()
+_NODE_NAME_MAP: dict[str, str] = {}
+
+
+def _load_node_name_map() -> dict[str, str]:
+    """Map container name (node{id}) → node name from the contact plan."""
+    if not PLAN_NAME:
+        return {}
+    plan_path = f"/repo/networks/{PLAN_NAME}/contact-plan.toml"
+    try:
+        with open(plan_path, "rb") as f:
+            data = tomllib.load(f)
+        return {
+            f"node{node['id']}": node.get("name") or f"node{node['id']}"
+            for node in data.get("nodes", [])
+            if node.get("id") is not None
+        }
+    except Exception as exc:
+        print(f"[metrics] could not load contact plan for name map: {exc}", flush=True)
+        return {}
 
 
 # ── shared helpers ────────────────────────────────────────────────────────────
@@ -57,7 +77,7 @@ def _db_stats(name: str) -> tuple[int | None, float | None]:
         uri = f"file:{db_path}?mode=ro&nolock=1"
         con = sqlite3.connect(uri, uri=True, timeout=1)
         row = con.execute(
-            "SELECT COUNT(*), AVG(best_delivery_time_in_sec) FROM stored_packets"
+            "SELECT COUNT(*), AVG(min_delivery_time_in_sec) FROM stored_packets"
         ).fetchone()
         con.close()
         count = int(row[0])   if row[0] is not None else 0
@@ -139,7 +159,7 @@ def _poll_stats(container, stop: threading.Event) -> None:
             # PIDs
             pids = (raw.get("pids_stats") or {}).get("current")
 
-            count, avg = _db_stats(name)
+            count, avg = _db_stats(_NODE_NAME_MAP.get(name, name))
             if METRICS_OUT:
                 _write_jsonl({
                     "ts":                  time.time(),
@@ -209,6 +229,11 @@ def main() -> None:
         os.makedirs(os.path.dirname(os.path.abspath(METRICS_OUT)), exist_ok=True)
         open(METRICS_OUT, "w").close()
         print(f"[metrics] metrics → {METRICS_OUT}", flush=True)
+
+    global _NODE_NAME_MAP
+    _NODE_NAME_MAP = _load_node_name_map()
+    if _NODE_NAME_MAP:
+        print(f"[metrics] node name map: {_NODE_NAME_MAP}", flush=True)
 
     client = docker.from_env(version="auto")
     stop   = threading.Event()

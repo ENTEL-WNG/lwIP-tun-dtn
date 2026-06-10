@@ -33,6 +33,7 @@ import re
 import shutil
 import sys
 from collections import defaultdict
+from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +273,139 @@ _STATS_RE = re.compile(
 )
 _ICMP_RE = re.compile(r"ICMPv6\|\|.*?type\s+(\d+)")
 
+# Docker log line:  "node2 | 2026-06-09T14:45:49.341953343Z <message>"
+_LOG_LINE_RE = re.compile(r"^(\S+)\s*\|\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)Z\s*(.*)")
+
+
+def _parse_docker_ts(date_str: str, frac_str: str) -> datetime:
+    """Parse Docker timestamp string, truncating sub-microsecond digits."""
+    micros = frac_str[:6].ljust(6, "0")
+    return datetime.fromisoformat(f"{date_str}.{micros}+00:00")
+
+
+def _parse_rfc3339(ts_str: str) -> datetime:
+    """Parse a RFC3339 timestamp as returned by docker inspect (e.g. State.StartedAt)."""
+    # "2026-06-09T14:45:49.341953343Z" — strip nanosecond precision to microseconds
+    m = re.match(r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)Z", ts_str)
+    if m:
+        return _parse_docker_ts(m.group(1), m.group(2))
+    return datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+
+
+def load_container_started(capture_dir: str) -> dict[str, datetime]:
+    """Read container_inspect.json and return {node_name: State.StartedAt datetime}."""
+    path = os.path.join(capture_dir, "container_inspect.json")
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as f:
+            entries = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+    result = {}
+    for entry in entries:
+        name = entry.get("Name", "").lstrip("/")
+        started_at = (entry.get("State") or {}).get("StartedAt", "")
+        if name and started_at:
+            try:
+                result[name] = _parse_rfc3339(started_at)
+            except ValueError:
+                pass
+    return result
+
+
+def load_build_ms(capture_dir: str) -> float | None:
+    """Read build_time.json and return build duration in ms, or None if absent."""
+    path = os.path.join(capture_dir, "build_time.json")
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return float(json.load(f).get("build_ms", 0)) or None
+    except (json.JSONDecodeError, OSError, TypeError):
+        return None
+
+
+def analyze_startup_times(
+    lines: list[str],
+    container_started: dict[str, datetime] | None = None,
+    build_ms: float | None = None,
+) -> dict:
+    """
+    Parse per-node startup milestones from docker compose logs.
+
+    Phases tracked per node:
+      docker_started    — State.StartedAt from container_inspect.json (if available)
+      container_start   — first log line  (=== Node N ...)
+      init_done         — init_node.py finished
+      app_ready         — lwip_tun entered main loop  (DTN nodes only)
+
+    Derived durations (ms, all relative to docker_started when available, else first log line):
+      time_to_first_log_ms — docker_started → first log line
+      node_init_ms         — first log line → init_done
+      app_start_ms         — init_done → app_ready
+      total_ms             — docker_started (or first log) → last milestone
+    """
+    container_started = container_started or {}
+    milestones: dict[str, dict] = {}
+
+    for raw in lines:
+        m = _LOG_LINE_RE.match(raw)
+        if not m:
+            continue
+        node, date_s, frac_s, msg = m.group(1), m.group(2), m.group(3), m.group(4).strip()
+        ts = _parse_docker_ts(date_s, frac_s)
+        entry = milestones.setdefault(node, {})
+
+        if "container_start" not in entry and re.search(r"=== Node \d+", msg):
+            entry["container_start"] = ts
+        if "init_done" not in entry and (
+            "Setup Complete. Starting LwIP binary" in msg
+            or re.search(r"Node \d+ Setup Complete\. Keeping container alive", msg)
+        ):
+            entry["init_done"] = ts
+        if "app_ready" not in entry and "Entering main loop" in msg:
+            entry["app_ready"] = ts
+
+    result = {}
+    for node, ev in milestones.items():
+        t_log   = ev.get("container_start")
+        t_docker = container_started.get(node)
+        t_origin = t_docker or t_log
+        if t_origin is None:
+            continue
+
+        row: dict = {}
+        if t_docker and t_log:
+            row["time_to_first_log_ms"] = round((t_log - t_docker).total_seconds() * 1000, 1)
+        if t_log and "init_done" in ev:
+            row["node_init_ms"] = round((ev["init_done"] - t_log).total_seconds() * 1000, 1)
+        if "init_done" in ev and "app_ready" in ev:
+            row["app_start_ms"] = round((ev["app_ready"] - ev["init_done"]).total_seconds() * 1000, 1)
+
+        last = ev.get("app_ready") or ev.get("init_done") or t_log
+        if last is None:
+            continue
+        row["total_ms"] = round((last - t_origin).total_seconds() * 1000, 1)
+        result[node] = row
+
+    # Overall: time from the earliest origin to the last milestone across all nodes
+    origins = [container_started.get(n) or ev.get("container_start")
+               for n, ev in milestones.items()]
+    ends    = [ev.get("app_ready") or ev.get("init_done")
+               for ev in milestones.values()
+               if ev.get("app_ready") or ev.get("init_done")]
+    origins = [t for t in origins if t]
+    if origins and ends:
+        result["_all_nodes_ready_ms"] = round(
+            (max(ends) - min(origins)).total_seconds() * 1000, 1
+        )
+
+    if build_ms is not None:
+        result["_build_ms"] = build_ms
+
+    return result
+
 
 def analyze_logs(lines: list[str]) -> dict:
     stats_snapshots = []
@@ -311,7 +445,7 @@ def _fmt(v, fmt=".2f", unit="") -> str:
     return f"{v:{fmt}}{unit}" if v is not None else "n/a"
 
 
-def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict) -> str:
+def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict, startup: dict) -> str:
     lines = []
     lines.append("=" * 60)
     lines.append("DTN THROUGHPUT EXPERIMENT REPORT")
@@ -380,6 +514,39 @@ def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict) -> st
     else:
         lines.append(f"  {resources['error']}")
 
+    lines.append("\n--- Startup Times ---")
+    build_ms  = startup.pop("_build_ms", None)
+    all_ready = startup.pop("_all_nodes_ready_ms", None)
+    if build_ms is not None:
+        lines.append(f"  Build:           {build_ms:>10.0f} ms")
+    node_rows = {k: v for k, v in startup.items() if not k.startswith("_")}
+    if node_rows:
+        has_ttfl = any("time_to_first_log_ms" in s for s in node_rows.values())
+        has_app  = any("app_start_ms"         in s for s in node_rows.values())
+        hdr = f"  {'node':<12}"
+        if has_ttfl:
+            hdr += f"  {'to_1st_log':>12}"
+        hdr += f"  {'init_node':>10}  {'app_start':>10}  {'total':>10}"
+        hdr += "  (ms)"
+        lines.append(hdr)
+        for node, s in sorted(node_rows.items()):
+            row = f"  {node:<12}"
+            if has_ttfl:
+                row += f"  {_fmt(s.get('time_to_first_log_ms'), '.1f'):>12}"
+            row += (
+                f"  {_fmt(s.get('node_init_ms'), '.1f'):>10}"
+                f"  {_fmt(s.get('app_start_ms'), '.1f'):>10}"
+                f"  {_fmt(s.get('total_ms'),     '.1f'):>10}"
+            )
+            lines.append(row)
+        if all_ready is not None:
+            lines.append(f"  all nodes ready: {all_ready:.1f} ms")
+    else:
+        lines.append("  (no startup milestones found in logs.txt)")
+    # restore for callers
+    startup["_build_ms"] = build_ms
+    startup["_all_nodes_ready_ms"] = all_ready
+
     lines.append("\n--- Controller Counters (from logs) ---")
     fc = logs.get("final_counters", {})
     if fc:
@@ -415,12 +582,15 @@ def main():
     metrics = load_jsonl(os.path.join(d, "metrics.jsonl"))
     logs    = load_text(os.path.join(d, "logs.txt"))
 
-    traffic   = analyze_traffic(sent, recv)
-    resources = analyze_metrics(metrics)
-    log_data  = analyze_logs(logs)
-    hw        = collect_hardware(d)
+    traffic            = analyze_traffic(sent, recv)
+    resources          = analyze_metrics(metrics)
+    log_data           = analyze_logs(logs)
+    container_started  = load_container_started(d)
+    build_ms           = load_build_ms(d)
+    startup            = analyze_startup_times(logs, container_started, build_ms)
+    hw                 = collect_hardware(d)
 
-    txt = make_text_report(traffic, resources, log_data, hw)
+    txt = make_text_report(traffic, resources, log_data, hw, startup)
     print(txt)
 
     report_txt = os.path.join(d, "report.txt")

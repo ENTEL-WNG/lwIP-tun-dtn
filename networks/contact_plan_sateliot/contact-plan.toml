@@ -1,5 +1,5 @@
 [contact_plan]
-name = "contact-plan-sateliot"
+name = "contact_plan_sateliot"
 max_time_in_sec = 863080
 
 [contact_plan.defaults]
@@ -30,12 +30,12 @@ isDtnNode = true
 [[nodes]]
 id = 5
 name = "GS_Antarctica"
-isDtnNode = false
+isDtnNode = true
 
 [[nodes]]
 id = 6
 name = "GS_SVALBARD"
-isDtnNode = false
+isDtnNode = true
 
 # Edge Definitions
 [[edges]]

@@ -32,8 +32,9 @@
 #include "dtn_routing.h"
 
 #define MAX_LENGTH 5000
-
+#define ROUTE_CACHE_SIZE 32
 #define MAX_PY_OBJECTS 100
+
 static PyObject* py_registry[MAX_PY_OBJECTS];
 static int py_registry_count = 0;
 
@@ -41,17 +42,9 @@ static int py_registry_count = 0;
  * and packet size.  packet_length_in_bits is part of the key because CGR may
  * select different routes depending on available volume.
  * A cached entry is valid until its contact window expires (max_delivery_time). */
-#define ROUTE_CACHE_SIZE 32
 
-typedef struct {
-    int dest_node_id;
-    long packet_length_in_bits; /* key: packet size used when route was computed */
-    double valid_until_sec;     /* entry expires at this contact-plan time */
-    DtnRoutingResult result;
-} RouteCacheEntry;
-
-static RouteCacheEntry g_route_cache[ROUTE_CACHE_SIZE];
-static int g_route_cache_count = 0;
+static RouteCacheEntry route_cache[ROUTE_CACHE_SIZE];
+static int route_cache_count = 0;
 
 /* Module-level pointer to the active Routing_Function so that
  * _dtn_routing_get_next_hop_node_id can reach the cached Python objects
@@ -134,7 +127,7 @@ void dtn_routing_destroy(Routing_Function* routing) {
         return;
 
     DTN_INFO("Destroying DTN Routing Function...");
-    g_route_cache_count = 0;
+    route_cache_count = 0;
     Py_XDECREF((PyObject*)routing->py_contact_plan);
     Py_XDECREF((PyObject*)routing->py_ipv6_packet);
     Py_XDECREF((PyObject*)routing->py_fwd_candidate);
@@ -325,36 +318,15 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
     /* --- Route cache: skip Python CGR if we already know the answer --- */
-    for (int i = 0; i < g_route_cache_count; i++) {
-        RouteCacheEntry* e = &g_route_cache[i];
-        if (e->dest_node_id == dest_node_id && e->packet_length_in_bits == package_length_in_bits &&
-            current_time_in_sec < e->valid_until_sec) {
-            DTN_DEBUG("DTN Routing: cache hit for dest %ld len %ld (valid until %.1f)", dest_node_id, package_length_in_bits,
-                      e->valid_until_sec);
-            *result = e->result;
+    for (int i = 0; i < route_cache_count; i++) {
+        RouteCacheEntry* cache_entry = &route_cache[i];
+        if (cache_entry->dest_node_id == dest_node_id && cache_entry->packet_length_in_bits == package_length_in_bits &&
+            current_time_in_sec < cache_entry->result.max_delivery_time) {
+            *result = cache_entry->result;
             return DTN_ROUTING_OK;
         }
     }
 
-    /* Reference-counting rule for this function:
-     *   - Objects tracked in py_registry must NOT also be stolen by a tuple via
-     *     PyTuple_SetItem, because SetItem does not increment the refcount (it
-     *     steals the caller's reference).  Double-tracking causes use-after-free
-     *     when py_cgr_clean_all decrefs the registry entry after the owning
-     *     tuple has already freed the object.
-     *
-     *   - contact_plan is persistent (owned by g_routing).  Before each
-     *     PyTuple_SetItem call we Py_INCREF it so the tuple steals a freshly
-     *     bumped reference; the struct's reference is left intact.
-     *
-     *   - routes, ipv6pkt and excluded_nodes are per-call objects that will be
-     *     owned by args_fwd via SetItem.  They are NOT added to py_registry;
-     *     args_fwd (which IS tracked) frees them when it is itself freed.
-     *     On error paths that occur before args_fwd has taken ownership we
-     *     call Py_XDECREF explicitly.
-     */
-
-    /* --- cgr_yen: compute routes for this packet's destination --- */
     PyObject* args_yen = track_obj(PyTuple_New(6));
     PyTuple_SetItem(args_yen, 0, PyFloat_FromDouble(current_time_in_sec));
     PyTuple_SetItem(args_yen, 1, PyLong_FromLong(current_node_id));
@@ -424,27 +396,33 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
         return py_cgr_clean_all(DTN_ROUTING_ERR);
 
     result->next_hop_node_id = (int)next_hop_node_id;
-    DTN_DEBUG("DTN Routing|| next_hop_node_id: %d | min_delivery_time: %f | best_delivery_time: %f | max_delivery_time: %f||",
-              result->next_hop_node_id, result->min_delivery_time, result->best_delivery_time, result->max_delivery_time);
+    DTN_DEBUG(
+        "Packet|| src_id: %ld -> dest_id: %ld | length_in_bits: %ld | min_delivery_time: %.2f | max_delivery_time: %.2f | "
+        "best_delivery_time: "
+        "%.2f || SUCCESSFULLY found next_hop_node_id: %d",
+        src_node_id, dest_node_id, package_length_in_bits, result->min_delivery_time, result->max_delivery_time, result->best_delivery_time,
+        result->next_hop_node_id);
 
-    /* Store in route cache; replace an existing entry for the same (dest, size)
-     * pair or take a free slot. */
     int cache_idx = -1;
-    for (int i = 0; i < g_route_cache_count; i++) {
-        if (g_route_cache[i].dest_node_id == dest_node_id && g_route_cache[i].packet_length_in_bits == package_length_in_bits) {
+    for (int i = 0; i < route_cache_count; i++) {
+        if (route_cache[i].dest_node_id == dest_node_id && route_cache[i].packet_length_in_bits == package_length_in_bits) {
             cache_idx = i;
             break;
         }
     }
-    if (cache_idx < 0 && g_route_cache_count < ROUTE_CACHE_SIZE)
-        cache_idx = g_route_cache_count++;
+    if (cache_idx < 0 && route_cache_count < ROUTE_CACHE_SIZE) {
+        cache_idx = route_cache_count++;
+    }
     if (cache_idx >= 0) {
-        g_route_cache[cache_idx].dest_node_id = (int)dest_node_id;
-        g_route_cache[cache_idx].packet_length_in_bits = package_length_in_bits;
-        g_route_cache[cache_idx].valid_until_sec = result->max_delivery_time;
-        g_route_cache[cache_idx].result = *result;
-        DTN_DEBUG("DTN Routing: cached route for dest %ld len %ld until %.1f", dest_node_id, package_length_in_bits,
-                  result->max_delivery_time);
+        route_cache[cache_idx].dest_node_id = (int)dest_node_id;
+        route_cache[cache_idx].packet_length_in_bits = package_length_in_bits;
+        route_cache[cache_idx].result = *result;
+        DTN_DEBUG(
+            "Packet|| src_id: %ld -> dest_id: %ld | length_in_bits: %ld | min_delivery_time: %.2f | max_delivery_time: %.2f | "
+            "best_delivery_time: "
+            "%.2f || SUCCESSFULLY cached",
+            src_node_id, dest_node_id, package_length_in_bits, result->min_delivery_time, result->max_delivery_time,
+            result->best_delivery_time);
     }
 
     return py_cgr_clean_all(DTN_ROUTING_OK);

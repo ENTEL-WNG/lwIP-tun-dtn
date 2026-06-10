@@ -14,6 +14,7 @@ The script must run as root (or with CAP_NET_ADMIN) inside the container.
 
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -247,7 +248,7 @@ def init_regular_node(cfg: dict, toml_path: str) -> None:
 # DTN-node init  (replaces init_dtn_node.sh)
 # ---------------------------------------------------------------------------
 
-def init_dtn_node(cfg: dict, toml_path: str) -> None:
+def init_dtn_node(cfg: dict, toml_path: str, af_inet6: bool = False) -> None:
     node_id       = cfg["node"]["id"]
     tun_addr      = cfg["node"]["tun_ipv6_addr"].split("/")[0]
     lwip_addr     = cfg["node"]["lwip_ipv6_addr"].split("/")[0]
@@ -292,7 +293,9 @@ def init_dtn_node(cfg: dict, toml_path: str) -> None:
 
     # fwmark 2 = raw socket egress; skip the mark-1 rule to avoid looping
     # packets back through tun0 (table 100 default → tun0).
-    ip6tables("-A", "OUTPUT", "-m", "mark", "--mark", "2", "-j", "RETURN", table="mangle")
+    # Only needed for AF_INET6 raw sockets (AF_PACKET bypasses netfilter entirely).
+    if af_inet6:
+        ip6tables("-A", "OUTPUT", "-m", "mark", "--mark", "2", "-j", "RETURN", table="mangle")
     ip6tables("-A", "OUTPUT", "-j", "MARK", "--set-mark", "1", table="mangle")
 
     # ---- 6. Docker fix: demote 'local' table to prio 1000 ---------------
@@ -313,26 +316,28 @@ def init_dtn_node(cfg: dict, toml_path: str) -> None:
     # ---- 8. Policy routing: fwmark 2 -> table 200 -> physical egress ----
     # AF_INET6 raw sockets in lwip_tun carry fwmark 2 (SO_MARK). They need
     # a routing table with direct per-interface routes.
-    ip("-6", "rule", "del", "fwmark", "2", "table", "200", ignore_errors=True)
-    ip("-6", "rule", "add", "fwmark", "2", "table", "200", "priority", "1")
-    for iface in cfg.get("interface", []):
-        int_name    = iface.get("eth_name", iface["name"])
-        local_net   = ipaddress.ip_interface(iface["local_addr"]).network
-        remote_addr = iface["remote_addr"].split("/")[0]
-        # Directly-connected /64
-        ip("-6", "route", "replace", str(local_net), "dev", int_name, "table", "200",
-           ignore_errors=True)
-        # Non-local reachable prefixes — one /64 per listed DTN/regular address
-        added_nets_200: set[str] = set()
-        for addr_str in iface.get("dtn_addresses", []) + iface.get("addresses", []):
-            addr = ipaddress.ip_address(addr_str.split("/")[0])
-            if addr in local_net:
-                continue
-            net = str(ipaddress.ip_interface(f"{addr}/64").network)
-            if net not in added_nets_200:
-                ip("-6", "route", "replace", net, "via", remote_addr, "dev", int_name,
-                   "table", "200", ignore_errors=True)
-                added_nets_200.add(net)
+    # Skipped when using AF_PACKET (bypasses IP routing entirely).
+    if af_inet6:
+        ip("-6", "rule", "del", "fwmark", "2", "table", "200", ignore_errors=True)
+        ip("-6", "rule", "add", "fwmark", "2", "table", "200", "priority", "1")
+        for iface in cfg.get("interface", []):
+            int_name    = iface.get("eth_name", iface["name"])
+            local_net   = ipaddress.ip_interface(iface["local_addr"]).network
+            remote_addr = iface["remote_addr"].split("/")[0]
+            # Directly-connected /64
+            ip("-6", "route", "replace", str(local_net), "dev", int_name, "table", "200",
+               ignore_errors=True)
+            # Non-local reachable prefixes — one /64 per listed DTN/regular address
+            added_nets_200: set[str] = set()
+            for addr_str in iface.get("dtn_addresses", []) + iface.get("addresses", []):
+                addr = ipaddress.ip_address(addr_str.split("/")[0])
+                if addr in local_net:
+                    continue
+                net = str(ipaddress.ip_interface(f"{addr}/64").network)
+                if net not in added_nets_200:
+                    ip("-6", "route", "replace", net, "via", remote_addr, "dev", int_name,
+                       "table", "200", ignore_errors=True)
+                    added_nets_200.add(net)
 
     # ---- 9. Hand off to LwIP binary --------------------------------------
     log.info("--- Setup Complete. Starting LwIP binary ---")
@@ -349,7 +354,15 @@ def init_dtn_node(cfg: dict, toml_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    toml_path = sys.argv[1] if len(sys.argv) > 1 else "node.toml"
+    p = argparse.ArgumentParser(description="Node initialisation script.")
+    p.add_argument("toml", nargs="?", default="node.toml",
+                   help="path to node TOML config (default: node.toml)")
+    p.add_argument("--af-inet6", action="store_true",
+                   help="set up fwmark 2 / table 200 routing for AF_INET6 raw sockets "
+                        "(omit when using AF_PACKET)")
+    args = p.parse_args()
+
+    toml_path = args.toml
     cfg = load_config(toml_path)
 
     node = cfg.get("node", {})
@@ -363,7 +376,7 @@ def main() -> None:
     )
 
     if is_dtn:
-        init_dtn_node(cfg, toml_path)
+        init_dtn_node(cfg, toml_path, af_inet6=args.af_inet6)
     else:
         init_regular_node(cfg, toml_path)
 

@@ -3,7 +3,7 @@
 run_traffic.py — Traffic generation/collection for a DTN throughput experiment.
 
 Assumes the docker compose stack is already running:
-    cd <plan_dir>/contact-plan.toml && docker compose up -d --build
+    cd <network_dir> && docker compose up -d --build
 
 This script only:
   1. Starts traffic_recv.py inside the receiver container (background)
@@ -15,15 +15,14 @@ Usage:
     python3 run_traffic.py [options]
 
 Options:
-    --contact-plan FILE   Contact plan TOML (default: <plan_dir>/contact-plan.toml)
+    --network DIR         Network directory containing contact-plan.toml and docker-compose.yml
+                          (default: contact_plan_throughput)
     --rate N              Packets/second (default: 100)
     --duration N          Sender duration in seconds (default: 30)
     --size N              Payload size in bytes (default: 512)
     --port N              UDP port (default: 5005)
-    --sender NODE         Override sender container name
-    --receiver NODE       Override receiver container name
-    --relay NODES         Comma-separated relay names (override)
-    --dst-addr ADDR       Override IPv6 destination address
+    --sender-id N         Override sender node ID (e.g. 1)
+    --receiver-id N       Override receiver node ID (e.g. 3)
     --wait-after N        Seconds to wait after sender finishes (default: 15)
     --no-analyze          Skip analyze.py
 """
@@ -49,37 +48,17 @@ def run(cmd: list, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kwargs)
 
 
-def node_roles(contact_plan: Path) -> dict:
+def get_dst_addr(contact_plan: Path, receiver_id: int) -> str:
     with open(contact_plan, "rb") as f:
         data = tomllib.load(f)
 
-    nodes = data.get("nodes", [])
     edges = data.get("edges", [])
+    for edge in edges:
+        if edge["to"] == receiver_id:
+            low, high = min(edge["from"], edge["to"]), max(edge["from"], edge["to"])
+            return f"fd00:{low:02x}:{high:02x}::{receiver_id:x}"
 
-    non_dtn = sorted(n["id"] for n in nodes if not n.get("isDtnNode", False))
-    dtn     = sorted(n["id"] for n in nodes if n.get("isDtnNode", False))
-    all_ids = sorted(n["id"] for n in nodes)
-
-    sender_id = non_dtn[0]  if non_dtn  else all_ids[0]
-    recv_id   = non_dtn[-1] if non_dtn  else all_ids[-1]
-
-    recv_edges = [(e["from"], e["to"]) for e in edges
-                  if e["from"] == recv_id or e["to"] == recv_id]
-    if recv_edges:
-        a, b = recv_edges[0]
-        lo, hi = min(a, b), max(a, b)
-        dst = f"fd00:{lo:02x}:{hi:02x}::{recv_id:x}"
-    else:
-        dst = ""
-
-    return {
-        "sender":   f"node{sender_id}",
-        "receiver": f"node{recv_id}",
-        "relays":   [f"node{n}" for n in dtn],
-        "all":      [f"node{n}" for n in all_ids],
-        "dst_addr": dst,
-    }
-
+    return None
 
 # ---------------------------------------------------------------------------
 # Main
@@ -90,38 +69,35 @@ def main() -> None:
         description="DTN traffic generation against a running compose stack",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--contact-plan",
-                   default=str(SCRIPT_DIR / "contact_plan_throughput/contact-plan.toml"))
-    p.add_argument("--rate",       type=int, default=100)
-    p.add_argument("--duration",   type=int, default=30)
-    p.add_argument("--size",       type=int, default=512)
-    p.add_argument("--port",       type=int, default=5005)
-    p.add_argument("--sender",     default="", metavar="NODE")
-    p.add_argument("--receiver",   default="", metavar="NODE")
-    p.add_argument("--relay",      default="", metavar="NODES")
-    p.add_argument("--dst-addr",   default="", metavar="ADDR")
-    p.add_argument("--wait-after", type=int, default=15)
-    p.add_argument("--no-analyze", action="store_true")
-    p.add_argument("--no-plots",   action="store_true")
-    p.add_argument("--plot-fmt",   default="svg", choices=["pdf", "svg", "png"])
+    p.add_argument("--network",
+                   default="contact_plan_throughput", metavar="DIR")
+    p.add_argument("--rate",        type=int, default=100)
+    p.add_argument("--duration",    type=int, default=30)
+    p.add_argument("--size",        type=int, default=512)
+    p.add_argument("--port",        type=int, default=5005)
+    p.add_argument("--sender-id",   type=int, required=True, metavar="N")
+    p.add_argument("--receiver-id", type=int, required=True, metavar="N")
+    p.add_argument("--wait-after",  type=int, default=15)
+    p.add_argument("--no-analyze",  action="store_true")
+    p.add_argument("--no-plots",    action="store_true")
+    p.add_argument("--plot-fmt",    default="svg", choices=["pdf", "svg", "png"])
     args = p.parse_args()
 
-    contact_plan = Path(args.contact_plan)
+    network_dir = Path(args.network)
+    if not network_dir.is_absolute():
+        network_dir = SCRIPT_DIR / network_dir
+    contact_plan = network_dir / "contact-plan.toml"
+
     if not contact_plan.is_file():
         sys.exit(f"ERROR: contact plan not found: {contact_plan}")
 
-    # Derive compose dir and captures dir from the contact plan name
-    with open(contact_plan, "rb") as f:
-        plan_data = tomllib.load(f)
-    plan_name    = plan_data["contact_plan"]["name"]
-    compose_dir  = SCRIPT_DIR / plan_name
-    compose_file = compose_dir / "docker-compose.yml"
+    compose_file = network_dir / "docker-compose.yml"
     if not compose_file.is_file():
         sys.exit(f"ERROR: docker-compose.yml not found at {compose_file}\n"
-                 f"       Run: python3 generate-network.py {contact_plan}")
+                 f"       Run: python3 generate_network.py --network {network_dir}")
 
     test_case_number = 0
-    env_file = compose_dir / ".env"
+    env_file = network_dir / ".env"
     if env_file.is_file():
         for line in env_file.read_text().splitlines():
             if line.startswith("TEST_CASE_NUMBER="):
@@ -130,26 +106,21 @@ def main() -> None:
                 except ValueError:
                     pass
 
-    captures_dir = compose_dir / "captures" / str(test_case_number)
+    captures_dir = network_dir / "captures" / str(test_case_number)
     captures_dir.mkdir(parents=True, exist_ok=True)
 
-    # Node roles
-    roles       = node_roles(contact_plan)
-    sender_node = args.sender   or roles["sender"]
-    recv_node   = args.receiver or roles["receiver"]
-    relay_nodes = (
-        [r.strip() for r in args.relay.split(",") if r.strip()]
-        if args.relay else roles["relays"]
-    )
-    dst_addr = args.dst_addr or roles["dst_addr"]
+    sender_node = f"node{args.sender_id}"
+    recv_node   = f"node{args.receiver_id}"
+    dst_addr    = get_dst_addr(contact_plan, args.receiver_id)
+    if dst_addr == None:
+        sys.exit(f"ERROR: destination address not found: {args.receiver_id}")
 
     print()
-    print(f"=== Traffic test: {contact_plan.name} ===")
+    print(f"=== Traffic test: {network_dir.name} ===")
     print(f"    rate={args.rate} pkt/s  duration={args.duration}s"
           f"  size={args.size}B  port={args.port}")
     print(f"    Sender      : {sender_node}")
     print(f"    Receiver    : {recv_node}  (dst [{dst_addr}]:{args.port})")
-    print(f"    Relays      : {' '.join(relay_nodes)}")
     print(f"    Captures dir: {captures_dir}")
     print()
 

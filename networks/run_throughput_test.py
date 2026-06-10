@@ -16,15 +16,14 @@ Usage:
   python3 throughput_test.py [options]
 
 Options:
-  --contact-plan FILE   Contact plan TOML (default: <plan_dir>/contact-plan.toml)
+  --network DIR         Network directory containing contact-plan.toml and docker-compose.yml
+                        (default: contact_plan_throughput)
   --rate N              Packets/second (default: 100)
   --duration N          Sender duration in seconds (default: 30)
   --size N              Payload size in bytes (default: 512)
   --port N              UDP port (default: 5005)
-  --sender NODE         Override sender container name
-  --receiver NODE       Override receiver container name
-  --relay NODES         Comma-separated relay names (override)
-  --dst-addr ADDR       Override IPv6 destination address
+  --sender-id N         Override sender node ID (e.g. 1)
+  --receiver-id N       Override receiver node ID (e.g. 3)
   --wait-after N        Seconds to wait after sender finishes (default: 15)
   --no-analyze          Skip analyze.py
   --no-plots            Skip plot_metrics.py
@@ -46,6 +45,7 @@ Manual workflow (containers already up)
 """
 
 import argparse
+import json
 import shlex
 import subprocess
 import sys
@@ -64,8 +64,8 @@ def run(cmd: list, **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, **kwargs)
 
 
-def wait_containers(compose_file: Path, timeout: int = 120) -> None:
-    """Poll until all containers in the compose file are running."""
+def wait_containers(compose_file: Path, captures_dir: Path, timeout: int = 120) -> None:
+    """Poll until all containers in the compose file are running, then save inspect data."""
     elapsed = 0
     while True:
         total = subprocess.run(
@@ -78,6 +78,11 @@ def wait_containers(compose_file: Path, timeout: int = 120) -> None:
         ).stdout.strip().splitlines()
         if total and len(running) == len(total):
             print(f"    All {len(total)} container(s) running.")
+            inspect = subprocess.run(
+                ["docker", "inspect"] + total,
+                capture_output=True, text=True,
+            )
+            (captures_dir / "container_inspect.json").write_text(inspect.stdout)
             return
         if elapsed >= timeout:
             raise TimeoutError(
@@ -96,29 +101,31 @@ def main() -> None:
         description="End-to-end DTN throughput experiment",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--contact-plan",
-                   default=str(SCRIPT_DIR / "contact_plan_throughput/contact-plan.toml"))
-    p.add_argument("--rate",       type=int, default=100)
-    p.add_argument("--duration",   type=int, default=30)
-    p.add_argument("--size",       type=int, default=512)
-    p.add_argument("--port",       type=int, default=5005)
-    p.add_argument("--sender",     default="", metavar="NODE")
-    p.add_argument("--receiver",   default="", metavar="NODE")
-    p.add_argument("--relay",      default="", metavar="NODES")
-    p.add_argument("--dst-addr",   default="", metavar="ADDR")
-    p.add_argument("--wait-after", type=int, default=5)
-    p.add_argument("--no-analyze", action="store_true")
-    p.add_argument("--no-plots",   action="store_true")
-    p.add_argument("--keep-up",    action="store_true")
-    p.add_argument("--plot-fmt",   default="svg", choices=["pdf", "svg", "png"])
+    p.add_argument("--network",
+                   default="contact_plan_throughput", metavar="DIR")
+    p.add_argument("--rate",        type=int, default=100)
+    p.add_argument("--duration",    type=int, default=30)
+    p.add_argument("--size",        type=int, default=512)
+    p.add_argument("--port",        type=int, default=5005)
+    p.add_argument("--sender-id",   type=int, required=True, metavar="N")
+    p.add_argument("--receiver-id", type=int, required=True, metavar="N")
+    p.add_argument("--wait-after",  type=int, default=5)
+    p.add_argument("--no-analyze",  action="store_true")
+    p.add_argument("--no-plots",    action="store_true")
+    p.add_argument("--keep-up",     action="store_true")
+    p.add_argument("--plot-fmt",    default="svg", choices=["pdf", "svg", "png"])
     args = p.parse_args()
 
-    contact_plan = Path(args.contact_plan)
+    network_dir = Path(args.network)
+    if not network_dir.is_absolute():
+        network_dir = SCRIPT_DIR / network_dir
+    contact_plan = network_dir / "contact-plan.toml"
+
     if not contact_plan.is_file():
         sys.exit(f"ERROR: contact plan not found: {contact_plan}")
 
     print()
-    print(f"=== Throughput test: {contact_plan.name} ===")
+    print(f"=== Throughput test: {network_dir} ===")
     print(f"    rate={args.rate} pkt/s  duration={args.duration}s"
           f"  size={args.size}B  port={args.port}")
     print()
@@ -128,25 +135,17 @@ def main() -> None:
     # -------------------------------------------------------------------------
     print("--- [1/5] Generating network configs ---")
     gen = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "generate_network.py"), str(contact_plan)],
+        [sys.executable, str(SCRIPT_DIR / "generate_network.py"), f"{network_dir}/contact-plan.toml"],
         stdout=subprocess.PIPE, text=True, cwd=str(SCRIPT_DIR), check=True,
     )
     print(gen.stdout, end="")
 
-    compose_dir = next(
-        (Path(line.split("=", 1)[1]) for line in gen.stdout.splitlines()
-         if line.startswith("OUTPUT_DIR=")),
-        None,
-    )
-    if compose_dir is None:
-        sys.exit("ERROR: generate-network.py did not print OUTPUT_DIR=...")
-
-    compose_file = compose_dir / "docker-compose.yml"
+    compose_file = network_dir / "docker-compose.yml"
     if not compose_file.is_file():
         sys.exit(f"ERROR: docker-compose.yml not found: {compose_file}")
 
     test_case_number = 0
-    env_file = compose_dir / ".env"
+    env_file = network_dir / ".env"
     if env_file.is_file():
         for line in env_file.read_text().splitlines():
             if line.startswith("TEST_CASE_NUMBER="):
@@ -155,7 +154,7 @@ def main() -> None:
                 except ValueError:
                     pass
 
-    captures_dir = compose_dir / "captures" / str(test_case_number)
+    captures_dir = network_dir / "captures" / str(test_case_number)
     captures_dir.mkdir(parents=True, exist_ok=True)
 
     # -------------------------------------------------------------------------
@@ -180,17 +179,22 @@ def main() -> None:
         # -------------------------------------------------------------------------
         print()
         print("--- [2/5] Starting docker compose ---")
-        run(["docker", "compose", "-f", str(compose_file), "up", "-d", "--build"])
+        print("    building images...")
+        build_start = time.monotonic()
+        run(["docker", "compose", "-f", str(compose_file), "build"])
+        build_ms = (time.monotonic() - build_start) * 1000
+        (captures_dir / "build_time.json").write_text(json.dumps({"build_ms": round(build_ms)}))
+        print(f"    build time: {build_ms / 1000:.1f}s")
+        run(["docker", "compose", "-f", str(compose_file), "up", "-d"])
 
         # -------------------------------------------------------------------------
         # Step 3 — Wait for containers
         # -------------------------------------------------------------------------
         print()
         print("--- [3/5] Waiting for containers ---")
-        wait_containers(compose_file)
+        wait_containers(compose_file, captures_dir)
         time.sleep(3)  # let lwip_tun finish initialising
-        print("    Grafana   : http://localhost:3000  (admin/admin)")
-        print("    Prometheus: http://localhost:9090")
+
 
         # -------------------------------------------------------------------------
         # Step 4 — Run traffic (via run_traffic.py)
@@ -199,21 +203,15 @@ def main() -> None:
         print("--- [4/5] Running traffic ---")
         traffic_cmd = [
             sys.executable, str(SCRIPT_DIR / "run_traffic.py"),
-            "--contact-plan", str(contact_plan),
-            "--rate",         str(args.rate),
-            "--duration",     str(args.duration),
-            "--size",         str(args.size),
-            "--port",         str(args.port),
-            "--wait-after",   str(args.wait_after),
+            "--network",    str(network_dir),
+            "--rate",       str(args.rate),
+            "--duration",   str(args.duration),
+            "--size",       str(args.size),
+            "--port",       str(args.port),
+            "--wait-after", str(args.wait_after),
         ]
-        if args.sender:
-            traffic_cmd += ["--sender",   args.sender]
-        if args.receiver:
-            traffic_cmd += ["--receiver", args.receiver]
-        if args.relay:
-            traffic_cmd += ["--relay",    args.relay]
-        if args.dst_addr:
-            traffic_cmd += ["--dst-addr", args.dst_addr]
+        traffic_cmd += ["--sender-id",   str(args.sender_id)]
+        traffic_cmd += ["--receiver-id", str(args.receiver_id)]
         if args.no_analyze:
             traffic_cmd += ["--no-analyze"]
         if args.no_plots:
@@ -233,7 +231,7 @@ def main() -> None:
         print("=" * 60)
         print("  Throughput test complete")
         print("=" * 60)
-        print(f"  Contact plan : {contact_plan.name}")
+        print(f"  Network      : {network_dir}")
         print(f"  Run index    : {test_case_number}")
         print(f"  Captures dir : {captures_dir}")
         print()

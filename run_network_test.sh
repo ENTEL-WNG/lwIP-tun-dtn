@@ -67,10 +67,18 @@ echo "--- Run index: $TEST_CASE_NUMBER (output: $CAPTURES_DIR) ---"
 # rm -rf "${SCRIPT_DIR}/dtn_storage"
 # echo "dtn_storage cleaned."
 
-# --- Step 2: docker compose up ---
+# --- Step 2a: docker compose build (timed) ---
+echo "--- Building images ---"
+BUILD_START_NS=$(date +%s%N)
+docker compose -f "$COMPOSE_FILE" build
+BUILD_END_NS=$(date +%s%N)
+BUILD_MS=$(( (BUILD_END_NS - BUILD_START_NS) / 1000000 ))
+echo "{\"build_ms\": $BUILD_MS}" > "${CAPTURES_DIR}/build_time.json"
+echo "Build time: ${BUILD_MS} ms"
+
+# --- Step 2b: docker compose up (no build) ---
 echo "--- Starting docker compose ---"
-docker compose -f "$COMPOSE_FILE" up -d --build
-# docker compose -f "$COMPOSE_FILE" up --build
+docker compose -f "$COMPOSE_FILE" up -d
 
 # Wait until all containers are running
 echo "--- Waiting for all containers to be running ---"
@@ -81,6 +89,8 @@ while true; do
     RUNNING=$(docker compose -f "$COMPOSE_FILE" ps --status running -q | wc -l | tr -d ' ')
     if [ "$TOTAL" -gt 0 ] && [ "$RUNNING" -eq "$TOTAL" ]; then
         echo "All $TOTAL container(s) running."
+        docker inspect $(docker compose -f "$COMPOSE_FILE" ps -q) \
+            > "${CAPTURES_DIR}/container_inspect.json"
         break
     fi
     if [ "$ELAPSED" -ge "$TIMEOUT" ]; then

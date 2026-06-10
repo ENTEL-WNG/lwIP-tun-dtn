@@ -3,9 +3,9 @@
 gen_node_configs.py - Generate per-node TOML config files from a contact-plan JSON.
 
 Usage:
-    python3 gen_node_configs.py [contact-plan.json]
+    python3 generate_network.py [--network DIR]
 
-If no argument is given, defaults to 'contact-plan.json' in the current directory.
+If no argument is given, defaults to 'contact_plan_throughput'.
 
 Address scheme (IPv6 ULA):
     For an edge between node A and node B (lo = min(A,B), hi = max(A,B)):
@@ -30,6 +30,7 @@ Per-interface reachable addresses (directional BFS excluding the local node):
     addresses      - same but for isDtnNode == false nodes
 """
 
+import argparse
 import sys
 import tomllib
 from collections import deque
@@ -155,8 +156,10 @@ def build_node_data(data: dict) -> dict:
         addr_a, addr_b = link_ipv6(a, b)
         mac_a,  mac_b  = link_mac(a, b)
 
-        node_addrs[a].append(strip_prefix(addr_a))
-        node_addrs[b].append(strip_prefix(addr_b))
+        if strip_prefix(addr_a) not in node_addrs[a]:
+            node_addrs[a].append(strip_prefix(addr_a))
+        if strip_prefix(addr_b) not in node_addrs[b]:
+            node_addrs[b].append(strip_prefix(addr_b))
 
         for local, remote, local_addr, remote_addr, local_mac, remote_mac in [
             (a, b, addr_a, addr_b, mac_a, mac_b),
@@ -230,7 +233,7 @@ def build_node_data(data: dict) -> dict:
             "dtn_addresses":       dtn_addrs,
             "addresses":           plain_addrs,
             "tun_ipv6_addr":  f"fd00:ffff:{nid_hex}::1/64",
-            "lwip_ipv6_addr": f"fd00:ffff:{nid_hex}::{nid_hex}/64",
+            "lwip_ipv6_addr": f"fd00:ffff:{nid_hex}::{nid + 1:x}/64",
         }
 
     return result
@@ -577,22 +580,26 @@ def generate_graph(data: dict, node_data: dict, out_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def main():
-    plan_path = sys.argv[1] if len(sys.argv) > 1 else "contact-plan-ping.toml"
+    p = argparse.ArgumentParser(description="Generate per-node configs and docker-compose.yml")
+    p.add_argument("plan", nargs="?",
+                   default=str(Path(__file__).parent / "contact_plan_throughput" / "contact-plan.toml"),
+                   metavar="CONTACT_PLAN",
+                   help="path to contact-plan.toml (default: contact_plan_throughput/contact-plan.toml)")
+    args = p.parse_args()
+
+    plan_path = Path(args.plan)
+    if not plan_path.is_absolute():
+        plan_path = Path(__file__).parent / plan_path
+    network_dir = plan_path.parent
 
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
 
-    contact_plan_raw = Path(plan_path).read_text()
+    contact_plan_raw = plan_path.read_text()
     node_data = build_node_data(data)
 
-    contact_plan_name = data["contact_plan"].get("name")
-
-    out_dir = Path(__file__).parent / contact_plan_name.replace("-", "_")
+    out_dir = network_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-
-    cp_out = out_dir / "contact-plan.toml"
-    cp_out.write_text(contact_plan_raw)
-    print(f"  wrote {cp_out}")
 
     for nid, node in node_data.items():
         toml = render_toml(node, contact_plan_raw)
