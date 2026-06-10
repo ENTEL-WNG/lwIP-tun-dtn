@@ -22,6 +22,24 @@ sudo ./run_throughput_test.py \
   --receiver-id 6 \
   --wait-after 10
 
+sudo ./run_throughput_test.py \
+  --network contact_plan_sateliot \
+  --rate 1 \
+  --duration 86400 \
+  --size 1024 \
+  --sender-id 6 \
+  --receiver-id 5 \
+  --wait-after 120
+
+sudo ./run_throughput_test.py \
+  --network contact_plan_sateliot \
+  --rate 100 \
+  --duration 30 \
+  --size 1024 \
+  --sender-id 6 \
+  --receiver-id 5 \
+  --wait-after 5
+
 ## `AF_PACKET` vs `AF_INET6` raw sockets
 
 ### How they differ

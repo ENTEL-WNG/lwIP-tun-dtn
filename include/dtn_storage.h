@@ -27,7 +27,7 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
-#define MAX_STORED_PACKETS 2048
+#define MAX_STORED_PACKETS 1024 * 1024
 #define MAX_PATH_LENGTH 512
 
 // A single loaded packet entry returned by dtn_storage_get_ready_entries.
@@ -38,7 +38,7 @@ typedef struct Stored_Packet_Entry {
     double best_delivery_time_in_sec;
     double max_delivery_time_in_sec;
     double min_delivery_time_in_sec;
-    int    next_hop_node_id;
+    int next_hop_node_id;
     char src_addr[IP6ADDR_STRLEN_MAX];        // human-readable IPv6 string
     char dest_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
     char custodian_addr[IP6ADDR_STRLEN_MAX];  // valid only when has_custodian is true

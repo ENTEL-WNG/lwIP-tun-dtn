@@ -47,6 +47,7 @@ Manual workflow (containers already up)
 import argparse
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -143,6 +144,11 @@ def main() -> None:
     compose_file = network_dir / "docker-compose.yml"
     if not compose_file.is_file():
         sys.exit(f"ERROR: docker-compose.yml not found: {compose_file}")
+
+    storage_dir = SCRIPT_DIR / "../dtn_storage" / args.network
+    if storage_dir.exists():
+        print(f"    Removing old storage: {storage_dir}")
+        shutil.rmtree(storage_dir)
 
     test_case_number = 0
     env_file = network_dir / ".env"

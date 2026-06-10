@@ -268,7 +268,7 @@ void dtn_controller_process_stored(void) {
     // Load a small batch per callback to avoid exhausting the lwIP heap
     // (MEM_SIZE) and the stack.  The timer fires again shortly so any
     // remaining ready packets are forwarded in the next call.
-    int max_stored_packets = MAX_STORED_PACKETS * 0.25;
+    int max_stored_packets = 1024;
     Stored_Packet_Entry entries[max_stored_packets];
     int n = dtn_storage_get_ready_entries(storage, now_sec, entries, max_stored_packets);
 
