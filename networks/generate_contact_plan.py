@@ -178,7 +178,7 @@ class Ns3TopologyGenerator:
     def export_contact_plan(self, contacts, start_time_ref, topology, output_dir="topologies", bidirected=True):
         os.makedirs(output_dir, exist_ok=True)
 
-        name = f"contact-plan-{topology}"
+        name = f"contact_plan_{topology}"
         ref_ts = start_time_ref.timestamp()
 
         valid = []
@@ -223,7 +223,7 @@ class Ns3TopologyGenerator:
             lines.append(f"range        = {range_s:.6f}")
             lines.append("")
 
-        output_path = os.path.join(output_dir, f"{name}.toml")
+        output_path = os.path.join(output_dir, f"contact-plan-{topology}.toml")
         with open(output_path, "w") as f:
             f.write("\n".join(lines) + "\n")
 

@@ -590,10 +590,12 @@ def main():
     plan_path = Path(args.plan)
     if not plan_path.is_absolute():
         plan_path = Path(__file__).parent / plan_path
-    network_dir = plan_path.parent
 
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
+
+    plan_name = data.get("contact_plan", {}).get("name", plan_path.parent.name)
+    network_dir = Path(__file__).parent / plan_name
 
     contact_plan_raw = plan_path.read_text()
     node_data = build_node_data(data)
