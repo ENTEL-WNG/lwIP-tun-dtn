@@ -28,6 +28,7 @@
 #include "lwip/pbuf.h"
 
 #define MAX_STORED_PACKETS 1024 * 1024
+#define MAX_STORED_PACKETS_FORWARD 1024 * 8
 #define MAX_PATH_LENGTH 512
 
 // A single loaded packet entry returned by dtn_storage_get_ready_entries.

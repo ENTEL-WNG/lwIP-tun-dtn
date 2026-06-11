@@ -43,7 +43,7 @@
 #define IP_FORWARD_ALLOW_TX_ON_RX_NETIF 1
 
 // Memory Configuration
-#define MEM_SIZE (1024 * 1024)  /* 1 MiB */
+#define MEM_SIZE (1024 * 1024 * 128) /* 1 MiB */
 // lwIP uses 2 slots internally (nd6_tmr + mld6_tmr with this IPv6-only config).
 // Add headroom for application timers (e.g. dtn_controller stats heartbeat).
 #define MEMP_NUM_SYS_TIMEOUT 8

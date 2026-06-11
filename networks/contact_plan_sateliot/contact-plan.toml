@@ -41,7 +41,7 @@ isDtnNode = true
 [[edges]]
 from         = 1
 to           = 6
-start_in_sec = 180
+start_in_sec = 10
 end_in_sec   = 280
 bidirected   = true
 range        = 0.002065

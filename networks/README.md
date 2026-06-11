@@ -22,6 +22,7 @@ sudo ./run_throughput_test.py \
   --receiver-id 6 \
   --wait-after 10
 
+systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
 sudo ./run_throughput_test.py \
   --network contact_plan_sateliot \
   --rate 1 \
@@ -39,6 +40,17 @@ sudo ./run_throughput_test.py \
   --sender-id 6 \
   --receiver-id 5 \
   --wait-after 5
+
+tmux new -s dtn-test
+systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
+  sudo python3 ./run_throughput_test.py \
+    --network contact_plan_sateliot \
+    --rate 1 \
+    --duration 86400 \
+    --size 1024 \
+    --sender-id 5 \
+    --receiver-id 6 \
+    --wait-after 300
 
 ## `AF_PACKET` vs `AF_INET6` raw sockets
 
