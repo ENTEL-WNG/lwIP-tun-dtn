@@ -286,7 +286,7 @@ def render_toml(node: dict, contact_plan_text: str) -> str:
 # Docker Compose generator
 # ---------------------------------------------------------------------------
 
-def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: str = "1.0", memory: str = "") -> None:
+def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: str = "1.0", memory: str = "", capture_interval: int = 30) -> None:
     """
     Write a docker-compose.yml that models the contact-plan topology.
 
@@ -432,9 +432,10 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
         },
         "container_name": "metrics",
         "environment": {
-            "PLAN_NAME":   plan_subdir,
+            "PLAN_NAME":        plan_subdir,
             "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
-            "METRICS_OUT": f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
+            "METRICS_OUT":      f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
+            "CAPTURE_INTERVAL": str(capture_interval),
         },
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock:ro",
@@ -585,6 +586,8 @@ def main():
                    default=str(Path(__file__).parent / "contact_plan_throughput" / "contact-plan.toml"),
                    metavar="CONTACT_PLAN",
                    help="path to contact-plan.toml (default: contact_plan_throughput/contact-plan.toml)")
+    p.add_argument("--capture-interval", type=int, default=30, metavar="N",
+                   help="log capture interval in seconds baked into docker-compose.yml (default: 30)")
     args = p.parse_args()
 
     plan_path = Path(args.plan)
@@ -613,7 +616,8 @@ def main():
 
     cpus   = str(data.get("contact_plan", {}).get("cpus",   "1.0"))
     memory = str(data.get("contact_plan", {}).get("memory", ""))
-    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus, memory=memory)
+    generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus, memory=memory,
+                     capture_interval=args.capture_interval)
 
     test_script = out_dir / "test.sh"
     if not test_script.exists():

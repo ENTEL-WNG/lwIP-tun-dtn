@@ -391,7 +391,7 @@ def main() -> None:
         description="Generate paper-quality plots from metrics.jsonl",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    p.add_argument("--captures", required=True,
+    p.add_argument("captures",
                    help="Capture directory containing metrics.jsonl")
     p.add_argument("--out",      default="",
                    help="Output directory (default: <captures>/plots)")

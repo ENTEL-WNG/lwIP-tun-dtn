@@ -110,7 +110,9 @@ def main() -> None:
     p.add_argument("--port",        type=int, default=5005)
     p.add_argument("--sender-id",   type=int, required=True, metavar="N")
     p.add_argument("--receiver-id", type=int, required=True, metavar="N")
-    p.add_argument("--wait-after",  type=int, default=5)
+    p.add_argument("--wait-after",       type=int, default=5)
+    p.add_argument("--capture-interval", type=int, default=30, metavar="N",
+                   help="Log capture interval in seconds (default: 30)")
     p.add_argument("--no-analyze",  action="store_true")
     p.add_argument("--no-plots",    action="store_true")
     p.add_argument("--keep-up",     action="store_true")
@@ -136,7 +138,8 @@ def main() -> None:
     # -------------------------------------------------------------------------
     print("--- [1/5] Generating network configs ---")
     gen = subprocess.run(
-        [sys.executable, str(SCRIPT_DIR / "generate_network.py"), f"{network_dir}/contact-plan.toml"],
+        [sys.executable, str(SCRIPT_DIR / "generate_network.py"), f"{network_dir}/contact-plan.toml",
+         "--capture-interval", str(args.capture_interval)],
         stdout=subprocess.PIPE, text=True, cwd=str(SCRIPT_DIR), check=True,
     )
     print(gen.stdout, end="")
@@ -161,10 +164,13 @@ def main() -> None:
                     pass
 
     captures_dir = network_dir / "captures" / str(test_case_number)
-    captures_dir.mkdir(parents=True, exist_ok=True)
+    if captures_dir.exists():
+        print(f"    Removing old captures: {captures_dir}")
+        shutil.rmtree(captures_dir)
+    captures_dir.mkdir(parents=True)
 
     # -------------------------------------------------------------------------
-    # Teardown helper
+    # Teardown helpers
     # -------------------------------------------------------------------------
     _compose_down_done = False
 
@@ -201,7 +207,6 @@ def main() -> None:
         wait_containers(compose_file, captures_dir)
         time.sleep(3)  # let lwip_tun finish initialising
 
-
         # -------------------------------------------------------------------------
         # Step 4 — Run traffic (via run_traffic.py)
         # -------------------------------------------------------------------------
@@ -218,20 +223,34 @@ def main() -> None:
         ]
         traffic_cmd += ["--sender-id",   str(args.sender_id)]
         traffic_cmd += ["--receiver-id", str(args.receiver_id)]
-        if args.no_analyze:
-            traffic_cmd += ["--no-analyze"]
-        if args.no_plots:
-            traffic_cmd += ["--no-plots"]
-        traffic_cmd += ["--plot-fmt", args.plot_fmt]
 
         run(traffic_cmd)
 
         # -------------------------------------------------------------------------
-        # Step 5 — Compose down + plots
+        # Step 6 — Stop log collection + compose down
         # -------------------------------------------------------------------------
         print()
         print("--- [5/5] Tearing down ---")
         do_compose_down()
+
+        # -------------------------------------------------------------------------
+        # Step 7 — Analyze + plots
+        # -------------------------------------------------------------------------
+        if not args.no_analyze:
+            print()
+            print("--- Analyzing results ---")
+            subprocess.run(
+                [sys.executable, str(SCRIPT_DIR / "analyze.py"),
+                 str(captures_dir)],
+                check=False,
+            )
+            if not args.no_plots:
+                subprocess.run(
+                    [sys.executable, str(SCRIPT_DIR / "plot_metrics.py"),
+                     str(captures_dir),
+                     "--fmt", args.plot_fmt],
+                    check=False,
+                )
 
         print()
         print("=" * 60)
@@ -242,13 +261,13 @@ def main() -> None:
         print(f"  Captures dir : {captures_dir}")
         print()
         print("  Files:")
-        print("    sent.csv       — per-packet send timestamps")
-        print("    recv.csv       — per-packet receive timestamps")
-        print("    metrics.jsonl  — per-second CPU / mem / net / DB snapshots")
-        print("    logs.txt       — docker compose logs")
-        print("    tcpdump.txt    — merged per-node traffic (time-sorted)")
-        print("    report.*       — PDR / latency / throughput summary")
-        print(f"    plots/         — line graphs ({args.plot_fmt})")
+        print("    sent.csv          — per-packet send timestamps")
+        print("    recv.csv          — per-packet receive timestamps")
+        print("    metrics.jsonl     — per-second CPU / mem / net / DB snapshots")
+        print("    logs_*_HH.txt     — docker compose logs (hourly, via collect_logs.py)")
+        print("    tcpdump.txt       — merged per-node traffic (via collect_logs.py)")
+        print("    report.*          — PDR / latency / throughput summary")
+        print(f"    plots/            — line graphs ({args.plot_fmt})")
         print("=" * 60)
 
     finally:

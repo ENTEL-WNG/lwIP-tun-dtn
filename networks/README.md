@@ -15,12 +15,13 @@ sudo ./run_throughput_test.py \
 
 sudo ./run_throughput_test.py \
   --network contact_plan_sateliot \
-  --rate 1 \
+  --rate 100 \
   --duration 60 \
   --size 1024 \
   --sender-id 5 \
   --receiver-id 6 \
-  --wait-after 10
+  --wait-after 10 \
+  --capture-interval 10 
 
 systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
 sudo ./run_throughput_test.py \
@@ -50,7 +51,8 @@ systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
     --size 1024 \
     --sender-id 5 \
     --receiver-id 6 \
-    --wait-after 300
+    --wait-after 300 \
+  --capture-interval 60
 
 ## `AF_PACKET` vs `AF_INET6` raw sockets
 

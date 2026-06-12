@@ -34,6 +34,7 @@ import shutil
 import sys
 from collections import defaultdict
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +581,8 @@ def main():
     sent    = load_csv(os.path.join(d, "sent.csv"))
     recv    = load_csv(os.path.join(d, "recv.csv"))
     metrics = load_jsonl(os.path.join(d, "metrics.jsonl"))
-    logs    = load_text(os.path.join(d, "logs.txt"))
+    log_files = sorted(Path(d).glob("logs_*.txt")) or [Path(d) / "logs.txt"]
+    logs = [line for f in log_files for line in load_text(str(f))]
 
     traffic            = analyze_traffic(sent, recv)
     resources          = analyze_metrics(metrics)

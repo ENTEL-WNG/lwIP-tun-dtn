@@ -24,11 +24,9 @@ Options:
     --sender-id N         Override sender node ID (e.g. 1)
     --receiver-id N       Override receiver node ID (e.g. 3)
     --wait-after N        Seconds to wait after sender finishes (default: 15)
-    --no-analyze          Skip analyze.py
 """
 
 import argparse
-import re
 import shlex
 import subprocess
 import sys
@@ -78,9 +76,6 @@ def main() -> None:
     p.add_argument("--sender-id",   type=int, required=True, metavar="N")
     p.add_argument("--receiver-id", type=int, required=True, metavar="N")
     p.add_argument("--wait-after",  type=int, default=15)
-    p.add_argument("--no-analyze",  action="store_true")
-    p.add_argument("--no-plots",    action="store_true")
-    p.add_argument("--plot-fmt",    default="svg", choices=["pdf", "svg", "png"])
     args = p.parse_args()
 
     network_dir = Path(args.network)
@@ -185,44 +180,6 @@ def main() -> None:
             else:
                 print(f"  {name} → {captures_dir / name}")
 
-        log_result = subprocess.run(
-            ["docker", "compose", "-f", str(compose_file),
-             "logs", "--no-color", "--timestamps"],
-            capture_output=True, text=True,
-        )
-        log_lines = [
-            re.sub(r"(\S+)\s*\|", r"\1 |", line, count=1)
-            for line in (log_result.stdout + log_result.stderr).splitlines()
-        ]
-        log_lines.sort(key=lambda l: l.split()[2] if len(l.split()) >= 3 else l)
-        (captures_dir / "logs.txt").write_text("\n".join(log_lines) + "\n")
-        print(f"  logs.txt → {captures_dir}/logs.txt")
-
-        tcpdump_lines: list[str] = []
-        for txt in sorted(captures_dir.glob("node*.txt")):
-            for line in txt.read_text(errors="replace").splitlines():
-                if len(line) >= 4 and line[:4].isdigit():
-                    tcpdump_lines.append(line)
-        if tcpdump_lines:
-            tcpdump_lines.sort()
-            (captures_dir / "tcpdump.txt").write_text("\n".join(tcpdump_lines) + "\n")
-            print(f"  tcpdump.txt → {captures_dir}/tcpdump.txt")
-
-        if not args.no_analyze:
-            print()
-            subprocess.run(
-                [sys.executable, str(SCRIPT_DIR / "analyze.py"),
-                 str(captures_dir)],
-                check=False,
-            )
-            if not args.no_plots:
-                subprocess.run(
-                    [sys.executable, str(SCRIPT_DIR / "plot_metrics.py"),
-                     "--captures", str(captures_dir),
-                     "--fmt",      args.plot_fmt],
-                    check=False,
-                )
-
         print()
         print("=" * 60)
         print("  Traffic test complete")
@@ -230,12 +187,12 @@ def main() -> None:
         print(f"  Captures dir : {captures_dir}")
         print()
         print("  Files:")
-        print("    sent.csv    — per-packet send timestamps")
-        print("    recv.csv    — per-packet receive timestamps")
-        print("    logs.txt    — docker compose logs")
-        print("    tcpdump.txt — merged per-node traffic (time-sorted)")
-        print("    report.*    — PDR / latency / throughput summary")
+        print("    sent.csv      — per-packet send timestamps")
+        print("    recv.csv      — per-packet receive timestamps")
+        print("    report.*      — PDR / latency / throughput summary")
         print("    metrics.jsonl — per-container resource metrics")
+        print()
+        print("  Run collect_logs.py to gather docker logs and tcpdump.")
         print("=" * 60)
 
     finally:

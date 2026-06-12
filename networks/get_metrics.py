@@ -22,6 +22,7 @@ JSONL record fields:
   db_avg_delivery_sec  AVG(delivery_time_in_sec) (null if no DB)
 """
 
+import heapq
 import json
 import os
 import platform
@@ -30,7 +31,8 @@ import sqlite3
 import threading
 import time
 import tomllib
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
 
 import docker
 
@@ -41,6 +43,7 @@ PLAN_NAME        = os.environ.get("PLAN_NAME",        "")
 TEST_CASE_NUMBER = os.environ.get("TEST_CASE_NUMBER", "0")
 DB_DIR           = f"/repo/dtn_storage/{PLAN_NAME}" if PLAN_NAME else ""
 METRICS_OUT      = os.environ.get("METRICS_OUT",      "")
+CAPTURE_INTERVAL = int(os.environ.get("CAPTURE_INTERVAL", "30"))
 
 _jsonl_lock = threading.Lock()
 _NODE_NAME_MAP: dict[str, str] = {}
@@ -220,6 +223,68 @@ def _start_node_captures(containers: list) -> None:
             print(f"[metrics] capture start failed for {c.name}: {exc}", flush=True)
 
 
+# ── log collection ───────────────────────────────────────────────────────────
+
+def _log_file(captures_dir: Path, dt: datetime) -> Path:
+    return captures_dir / f"logs_{dt.strftime('%Y-%m-%d_%H')}.txt"
+
+
+def _collect_once(client, captures_dir: Path, since: datetime | None) -> None:
+    lines: list[str] = []
+    for c in client.containers.list():
+        try:
+            raw = c.logs(timestamps=True, since=since, stream=False)
+            for line in raw.decode(errors="replace").splitlines():
+                if line.strip():
+                    lines.append(f"{c.name} | {line}")
+        except Exception as exc:
+            print(f"[metrics] log collection failed for {c.name}: {exc}", flush=True)
+    if not lines:
+        return
+    lines.sort(key=lambda l: l.split(" | ", 1)[1] if " | " in l else l)
+    out = _log_file(captures_dir, datetime.now(timezone.utc))
+    with out.open("a") as f:
+        f.write("\n".join(lines) + "\n")
+    print(f"[metrics] +{len(lines)} log lines → {out.name}", flush=True)
+
+
+def _merge_tcpdump(captures_dir: Path) -> None:
+    files = sorted(captures_dir.glob("node*.txt"))
+    if not files:
+        return
+
+    def _valid_lines(path: Path):
+        with path.open(errors="replace") as fh:
+            for line in fh:
+                line = line.rstrip("\n")
+                if len(line) >= 4 and line[:4].isdigit():
+                    yield line
+
+    out = captures_dir / "tcpdump.txt"
+    count = 0
+    with out.open("w") as fh:
+        for line in heapq.merge(*(_valid_lines(p) for p in files)):
+            fh.write(line + "\n")
+            count += 1
+    if count == 0:
+        out.unlink(missing_ok=True)
+        return
+    print(f"[metrics] tcpdump.txt → {out}  ({count} lines)", flush=True)
+
+
+def _collect_logs_thread(stop: threading.Event, captures_dir: Path) -> None:
+    client = docker.from_env(version="auto")
+    since: datetime | None = None
+    print(f"[metrics] log collection every {CAPTURE_INTERVAL}s → {captures_dir}", flush=True)
+    while not stop.wait(timeout=CAPTURE_INTERVAL):
+        now = datetime.now(timezone.utc)
+        _collect_once(client, captures_dir, since)
+        since = now
+        _merge_tcpdump(captures_dir)
+    _collect_once(client, captures_dir, since)
+    _merge_tcpdump(captures_dir)
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -248,11 +313,18 @@ def main() -> None:
     for c in containers:
         threading.Thread(target=_poll_stats, args=(c, stop), daemon=True).start()
 
+    if METRICS_OUT:
+        captures_dir = Path(METRICS_OUT).parent
+        threading.Thread(
+            target=_collect_logs_thread, args=(stop, captures_dir), daemon=True
+        ).start()
+
     try:
         while True:
             time.sleep(60)
     except KeyboardInterrupt:
         stop.set()
+        time.sleep(CAPTURE_INTERVAL + 5)  # let log thread finish final collection
 
 
 if __name__ == "__main__":
