@@ -43,7 +43,7 @@ DTN_Module* dtn_module_init(void) {
         return NULL;
     }
 
-    // dtn_controller_stats_timer_start();
+    dtn_controller_stats_timer_start();
     DTN_INFO("DTN Module initialized successfully.");
     return module;
 }

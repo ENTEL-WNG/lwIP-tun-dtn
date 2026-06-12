@@ -34,6 +34,7 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/netif.h"
 #include "lwip/pbuf.h"
+#include "lwip/stats.h"
 #include "lwip/sys.h"
 #include "raw_socket.h"
 
@@ -51,8 +52,12 @@ static uint32_t stat_dropped = 0;        // packets discarded (no route / send e
 static void stats_timer_cb(void* arg) {
     (void)arg;
     int db_count = (global_dtn_module && global_dtn_module->storage) ? dtn_storage_count(global_dtn_module->storage) : -1;
-    DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u dropped=%u db=%d", stat_fwd_immediate, stat_fwd_stored, stat_stored, stat_dropped,
-             db_count);
+    DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u cur_stored=%u dropped=%u db=%d", stat_fwd_immediate, stat_fwd_stored, stat_stored,
+             stat_stored - stat_fwd_stored, stat_dropped, db_count);
+#if MEM_STATS
+    DTN_INFO("[MEM]   used=%" U32_F " max=%" U32_F " avail=%" U32_F " err=%" U16_F, (u32_t)lwip_stats.mem.used, (u32_t)lwip_stats.mem.max,
+             (u32_t)lwip_stats.mem.avail, (u16_t)lwip_stats.mem.err);
+#endif
     sys_timeout(DTN_STATS_INTERVAL_MS, stats_timer_cb, NULL);
 }
 

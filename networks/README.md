@@ -7,15 +7,18 @@ sudo ./run_throughput_test.py --sender-id 1 --receiver-id 6
 ## Contact Plan Sateliot
 
 sudo ./run_throughput_test.py \
-  --network contact_plan_sateliot \
-  --rate 1 \
+  --network contact_plan_throughput \
+  --rate 100 \
   --size 1024 \
-  --sender-id 5 \
-  --receiver-id 6
+  --sender-id 1 \
+  --receiver-id 6 \
+  --duration 30 \
+  --wait-after 10 \
+  --capture-interval 10 
 
 sudo ./run_throughput_test.py \
   --network contact_plan_sateliot \
-  --rate 100 \
+  --rate 1000 \
   --duration 60 \
   --size 1024 \
   --sender-id 5 \
@@ -23,26 +26,7 @@ sudo ./run_throughput_test.py \
   --wait-after 10 \
   --capture-interval 10 
 
-systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
-sudo ./run_throughput_test.py \
-  --network contact_plan_sateliot \
-  --rate 1 \
-  --duration 86400 \
-  --size 1024 \
-  --sender-id 6 \
-  --receiver-id 5 \
-  --wait-after 120
 
-sudo ./run_throughput_test.py \
-  --network contact_plan_sateliot \
-  --rate 100 \
-  --duration 30 \
-  --size 1024 \
-  --sender-id 6 \
-  --receiver-id 5 \
-  --wait-after 5
-
-tmux new -s dtn-test
 systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
   sudo python3 ./run_throughput_test.py \
     --network contact_plan_sateliot \
@@ -52,7 +36,7 @@ systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
     --sender-id 5 \
     --receiver-id 6 \
     --wait-after 300 \
-  --capture-interval 60
+    --capture-interval 60
 
 ## `AF_PACKET` vs `AF_INET6` raw sockets
 
