@@ -129,6 +129,7 @@ def build_node_data(data: dict) -> dict:
     default_range = defaults.get("range", 1)
 
     # Node metadata lookup
+    print("  parsing node metadata...")
     node_meta = {}
     for n in data.get("nodes", []):
         node_meta[n["id"]] = {
@@ -137,6 +138,7 @@ def build_node_data(data: dict) -> dict:
         }
 
     edges = data.get("edges", [])
+    print(f"  building adjacency from {len(edges)} edge(s)...")
     adj = build_adjacency(edges)
 
     all_ids = set(node_meta.keys())
@@ -149,6 +151,7 @@ def build_node_data(data: dict) -> dict:
     # Temporary storage for interface dicts before directional BFS is run
     iface_map: dict[int, list] = {nid: [] for nid in all_ids}
 
+    print("  assigning IPv6/MAC addresses per link...")
     for edge in edges:
         a = edge["from"]
         b = edge["to"]
@@ -177,6 +180,7 @@ def build_node_data(data: dict) -> dict:
             })
 
     # Now attach per-interface directional reachable address lists
+    print(f"  computing directional reachability for {len(all_ids)} node(s)...")
     for nid in all_ids:
         local_meta = node_meta.get(nid, {"is_dtn": False})
         for iface in iface_map[nid]:
@@ -208,6 +212,7 @@ def build_node_data(data: dict) -> dict:
             iface["addresses"]     = plain_addrs
 
     # Build node-level reachable address lists (union across all directions + self)
+    print("  building per-node reachable address lists...")
     result = {}
     for nid in sorted(all_ids):
         reachable = reachable_nodes(nid, adj)
@@ -232,8 +237,8 @@ def build_node_data(data: dict) -> dict:
             "interfaces":          iface_map[nid],
             "dtn_addresses":       dtn_addrs,
             "addresses":           plain_addrs,
-            "tun_ipv6_addr":  f"fd00:ffff:{nid_hex}::1/64",
-            "lwip_ipv6_addr": f"fd00:ffff:{nid_hex}::{nid + 1:x}/64",
+            "tun_ipv6_addr":  f"fd00:ffff:{nid_hex}::ffff/64",
+            "lwip_ipv6_addr": f"fd00:ffff:{nid_hex}::{nid:x}/64",
         }
 
     return result
@@ -594,26 +599,35 @@ def main():
     if not plan_path.is_absolute():
         plan_path = Path(__file__).parent / plan_path
 
+    print(f"Loading contact plan: {plan_path}")
     with open(plan_path, "rb") as f:
         data = tomllib.load(f)
 
     plan_name = data.get("contact_plan", {}).get("name", plan_path.parent.name)
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+    print(f"  plan '{plan_name}': {len(nodes)} node(s), {len(edges)} edge(s)")
+
     network_dir = Path(__file__).parent / plan_name
 
     contact_plan_raw = plan_path.read_text()
+
+    print("Building node configurations...")
     node_data = build_node_data(data)
 
     out_dir = network_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"Writing node TOML files to {out_dir}/")
     for nid, node in node_data.items():
         toml = render_toml(node, contact_plan_raw)
         out_file = out_dir / f"node{nid}.toml"
         out_file.write_text(toml)
         print(f"  wrote {out_file}")
 
-    generate_graph(data, node_data, out_dir / "topology.png")
+    # generate_graph(data, node_data, out_dir / "topology.png")
 
+    print("Generating docker-compose.yml...")
     cpus   = str(data.get("contact_plan", {}).get("cpus",   "1.0"))
     memory = str(data.get("contact_plan", {}).get("memory", ""))
     generate_compose(node_data, out_dir, out_dir / "docker-compose.yml", cpus=cpus, memory=memory,
@@ -627,7 +641,7 @@ def main():
     else:
         print(f"  skipped {test_script} (already exists)")
 
-    print(f"\nGenerated {len(node_data)} config(s) + docker-compose.yml in '{out_dir}/'")
+    print(f"\nDone: generated {len(node_data)} node config(s) + docker-compose.yml in '{out_dir}/'")
     print(f"OUTPUT_DIR={out_dir}")
 
 

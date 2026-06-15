@@ -408,6 +408,28 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
     return n;
 }
 
+int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec) {
+    if (!storage || !storage->db)
+        return 0;
+
+    const char* sql =
+        "SELECT 1 FROM stored_packets"
+        " WHERE " READY_TIME_COL " <= ?"
+        " LIMIT 1;";
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare any-ready query: %s", sqlite3_errmsg(storage->db));
+        return 0;
+    }
+
+    sqlite3_bind_double(stmt, 1, now_sec);
+    int has_ready = (sqlite3_step(stmt) == SQLITE_ROW);
+    sqlite3_finalize(stmt);
+    return has_ready;
+}
+
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     if (!storage || !storage->db || db_id < 0)
         return;

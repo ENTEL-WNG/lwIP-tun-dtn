@@ -265,10 +265,10 @@ void dtn_controller_process_stored(void) {
     Storage_Function* storage = global_dtn_module->storage;
 
     double now_sec = sys_now() / 1000.0;
-    int number_of_stored_packages = dtn_storage_count(storage);
-    if (number_of_stored_packages == 0) {
+    if (!dtn_storage_any_ready_entries(storage, now_sec)) {
         return;
     }
+    int number_of_stored_packages = dtn_storage_count(storage);
 
     // Load a small batch per callback to avoid exhausting the lwIP heap
     // (MEM_SIZE) and the stack.  The timer fires again shortly so any

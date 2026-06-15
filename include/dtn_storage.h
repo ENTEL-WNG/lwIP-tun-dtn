@@ -70,6 +70,8 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
 // Query
 int dtn_storage_is_full(Storage_Function* storage);
 int dtn_storage_count(Storage_Function* storage);
+// Returns 1 if at least one stored packet is ready to forward (READY_TIME_COL <= now_sec), 0 otherwise.
+int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec);
 
 // Read packets whose best_delivery_time_in_sec <= now_sec into out[].
 // Returns number of entries filled. Caller must pbuf_free each entry's p.

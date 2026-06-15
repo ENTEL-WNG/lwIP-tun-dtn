@@ -20,9 +20,9 @@
 /* -------------------------------------------------------------------------
  * Limits
  * ---------------------------------------------------------------------- */
-#define DTN_MAX_ADDRESSES 16
-#define DTN_MAX_INTERFACES 16
-#define DTN_MAX_NODES 64
+#define DTN_MAX_ADDRESSES 64
+#define DTN_MAX_INTERFACES 64
+#define DTN_MAX_NODES 128
 #define DTN_MAX_EDGES 128
 #define DTN_MAX_ADDR_LEN 48 /* enough for a full IPv6 address + /prefix */
 #define DTN_MAX_NAME_LEN 64

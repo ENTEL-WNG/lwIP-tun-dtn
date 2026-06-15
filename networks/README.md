@@ -6,15 +6,17 @@ sudo ./run_throughput_test.py --sender-id 1 --receiver-id 6
 
 ## Contact Plan Sateliot
 
+### Test Paper
+
 sudo ./run_throughput_test.py \
   --network contact_plan_throughput \
-  --rate 100 \
+  --rate 128 \
   --size 1024 \
   --sender-id 1 \
   --receiver-id 6 \
   --duration 30 \
   --wait-after 10 \
-  --capture-interval 10 
+  --capture-interval 5 
 
 sudo ./run_throughput_test.py \
   --network contact_plan_sateliot \
