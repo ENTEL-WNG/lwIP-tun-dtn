@@ -181,21 +181,23 @@ class Ns3TopologyGenerator:
         name = f"contact_plan_{topology}"
         ref_ts = start_time_ref.timestamp()
 
-        valid = []
+        edges = []
         for c in contacts:
             start_rel = max(0.0, c["start"].timestamp() - ref_ts)
             end_rel   = max(0.0, c["end"].timestamp()   - ref_ts)
             if end_rel > start_rel:
-                valid.append({**c, "start_rel": start_rel, "end_rel": end_rel})
+                edges.append({**c, "start_rel": start_rel, "end_rel": end_rel})
 
-        max_time = int(max((c["end_rel"] for c in valid), default=0))
-        node_ids = sorted({nid for c in valid for nid in (c["u"], c["v"])})
+        max_time = int(max((c["end_rel"] for c in edges), default=0))
+        node_ids = sorted({nid for c in edges for nid in (c["u"], c["v"])})
         rate_bps = RATE_MBPS * 1_000_000
 
         lines = []
         lines.append("[contact_plan]")
         lines.append(f'name                 = "{name}"')
         lines.append(f"max_time_in_sec      = {max_time}")
+        lines.append(f"number_of_nodes      = {len(node_ids)}")
+        lines.append(f"number_of_edges      = {len(edges)}")
         lines.append("")
         lines.append("[contact_plan.defaults]")
         lines.append(f"rate_in_bits_per_sec = {rate_bps}")
@@ -212,7 +214,7 @@ class Ns3TopologyGenerator:
             lines.append(f"isDtnNode = {str(is_dtn).lower()}")
             lines.append("")
         lines.append("# Edge Definitions")
-        for c in valid:
+        for c in edges:
             range_s = c["distance_km"] / self.speed_of_light_km_s
             lines.append("[[edges]]")
             lines.append(f"from         = {id_map[c['u']]}")
@@ -227,7 +229,7 @@ class Ns3TopologyGenerator:
         with open(output_path, "w") as f:
             f.write("\n".join(lines) + "\n")
 
-        print(f"Exported contact plan '{name}' with {len(node_ids)} nodes and {len(valid)} edges to {output_path}")
+        print(f"Exported contact plan '{name}' with {len(node_ids)} nodes and {len(edges)} edges to {output_path}")
 
 def dms_to_dd(lat_deg, lat_min, lat_sec, lat_dir, lon_deg, lon_min, lon_sec, lon_dir, height=0):
     lat = lat_deg + lat_min/60 + lat_sec/3600

@@ -60,6 +60,16 @@ docker install
 
 git submodule
 
+Edit /etc/docker/daemon.json (create it if it doesn't exist):
+
+{
+  "default-address-pools": [
+    {"base": "10.0.0.0/8", "size": 28}
+  ]
+}
+Then restart Docker:
+sudo systemctl restart docker
+
 ## PROJECT STRUCTURE
 
 ```

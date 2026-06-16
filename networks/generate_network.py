@@ -436,6 +436,7 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
             "dockerfile": "Dockerfile.metrics",
         },
         "container_name": "metrics",
+        "depends_on": {f"node{nid}": {"condition": "service_started"} for nid in sorted(node_data)},
         "environment": {
             "PLAN_NAME":        plan_subdir,
             "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",

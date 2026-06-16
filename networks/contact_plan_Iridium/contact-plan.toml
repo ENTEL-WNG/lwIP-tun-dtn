@@ -1,6 +1,8 @@
 [contact_plan]
 name                 = "contact_plan_Iridium"
 max_time_in_sec      = 90000
+number_of_nodes      = 33
+number_of_edges      = 5066
 
 [contact_plan.defaults]
 rate_in_bits_per_sec = 300000000
@@ -165,12 +167,12 @@ isDtnNode = true
 [[nodes]]
 id        = 32
 name      = "GS_Antarctica"
-isDtnNode = false
+isDtnNode = true
 
 [[nodes]]
 id        = 33
 name      = "GS_SVALBARD"
-isDtnNode = false
+isDtnNode = true
 
 # Edge Definitions
 [[edges]]
