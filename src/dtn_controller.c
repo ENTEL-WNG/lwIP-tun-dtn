@@ -313,6 +313,8 @@ void dtn_controller_process_stored(void) {
                              custodian_str);
                     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
                         dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                    } else {
+                        dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                     }
                     if (!has_custodian) {
                         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.",

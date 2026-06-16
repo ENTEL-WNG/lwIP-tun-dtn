@@ -34,7 +34,7 @@
 
 // Bump this whenever the schema changes. On mismatch the table is dropped and
 // recreated so old DBs don't cause INSERT/SELECT failures.
-#define SCHEMA_VERSION 2
+#define SCHEMA_VERSION 1
 
 static const char* CREATE_TABLE_SQL =
     "CREATE TABLE IF NOT EXISTS stored_packets ("
@@ -45,6 +45,7 @@ static const char* CREATE_TABLE_SQL =
     "  best_delivery_time_in_sec REAL    NOT NULL,"
     "  max_delivery_time_in_sec  REAL    NOT NULL,"
     "  min_delivery_time_in_sec  REAL    NOT NULL,"
+    "  number_of_forward_attempts INTEGER NOT NULL DEFAULT 0,"
     "  src_addr                  TEXT    NOT NULL,"
     "  dest_addr                 TEXT    NOT NULL,"
     "  custodian_addr            TEXT,"
@@ -336,6 +337,7 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         " FROM stored_packets"
         " WHERE " READY_TIME_COL
         " <= ?"
+        " AND number_of_forward_attempts == 0"
         " ORDER BY " READY_TIME_COL " ASC;";
 
     sqlite3_stmt* stmt = NULL;
@@ -415,6 +417,7 @@ int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec) {
     const char* sql =
         "SELECT 1 FROM stored_packets"
         " WHERE " READY_TIME_COL " <= ?"
+        " AND number_of_forward_attempts == 0"
         " LIMIT 1;";
 
     sqlite3_stmt* stmt = NULL;
@@ -468,6 +471,28 @@ void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash) {
         DTN_ERROR("DELETE by hash failed: %s", sqlite3_errmsg(storage->db));
     } else {
         DTN_INFO("Deleted stored packet(s) with hash 0x%08x (%d rows)", packet_hash, sqlite3_changes(storage->db));
+    }
+    sqlite3_finalize(stmt);
+}
+
+void dtn_storage_increment_forward_attempts(Storage_Function* storage, int64_t db_id) {
+    if (!storage || !storage->db || db_id < 0)
+        return;
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(
+        storage->db,
+        "UPDATE stored_packets SET number_of_forward_attempts = number_of_forward_attempts + 1 WHERE id = ?;", -1, &stmt,
+        NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare UPDATE forward attempts: %s", sqlite3_errmsg(storage->db));
+        return;
+    }
+
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)db_id);
+    rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        DTN_ERROR("UPDATE forward attempts failed: %s", sqlite3_errmsg(storage->db));
     }
     sqlite3_finalize(stmt);
 }

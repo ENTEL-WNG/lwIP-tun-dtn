@@ -28,7 +28,7 @@
 #include "lwip/pbuf.h"
 
 #define MAX_STORED_PACKETS 1024 * 1024
-#define MAX_STORED_PACKETS_FORWARD 1024 * 8
+#define MAX_STORED_PACKETS_FORWARD 128
 #define MAX_PATH_LENGTH 512
 
 // A single loaded packet entry returned by dtn_storage_get_ready_entries.
@@ -80,5 +80,8 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
 // Delete
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);
 void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash);
+
+// Increment the forward-attempt counter for a stored packet (by row id).
+void dtn_storage_increment_forward_attempts(Storage_Function* storage, int64_t db_id);
 
 #endif
