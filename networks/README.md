@@ -50,6 +50,18 @@ systemd-inhibit --what=sleep --who="dtn-test" --why="24h experiment" \
     --wait-after 300 \
     --capture-interval 60
 
+#### Contact Plan Storage
+
+sudo ./run_throughput_test.py \
+  --network contact_plan_storage \
+  --rate 512 \
+  --size 1024 \
+  --sender-id 1 \
+  --receiver-id 3 \
+  --duration 60 \
+  --wait-after 70 \
+  --capture-interval 5
+
 ## `AF_PACKET` vs `AF_INET6` raw sockets
 
 ### How they differ

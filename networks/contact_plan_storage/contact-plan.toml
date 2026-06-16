@@ -1,0 +1,50 @@
+[contact_plan]
+name = "contact_plan_storage"
+max_time_in_sec = 120
+cpus   = "1.0"   
+memory = "1g"
+
+[contact_plan.defaults]
+rate_in_bits_per_sec = 300000000
+range = 1
+
+# Node Definitions
+[[nodes]]
+id = 1
+isDtnNode = true
+
+[[nodes]]
+id = 2
+isDtnNode = true
+
+[[nodes]]
+id = 3
+isDtnNode = true
+
+[[edges]]
+from         = 1
+to           = 2
+start_in_sec = 40
+end_in_sec   = 50
+bidirected   = true
+
+[[edges]]
+from         = 2
+to           = 3
+start_in_sec = 60
+end_in_sec   = 70
+bidirected   = true
+
+[[edges]]
+from         = 1
+to           = 2
+start_in_sec = 80
+end_in_sec   = 100
+bidirected   = true
+
+[[edges]]
+from         = 2
+to           = 3
+start_in_sec = 110
+end_in_sec   = 120
+bidirected   = true
