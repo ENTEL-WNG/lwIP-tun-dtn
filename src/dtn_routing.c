@@ -312,10 +312,6 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
         DTN_ERROR("DTN Routing: Python not initialised — call dtn_routing_create first");
         return DTN_ROUTING_ERR;
     }
-    PyObject* py_cgr_yen = (PyObject*)g_routing->py_cgr_yen;
-    PyObject* py_fwd_candidate = (PyObject*)g_routing->py_fwd_candidate;
-    PyObject* py_ipv6_packet = (PyObject*)g_routing->py_ipv6_packet;
-    PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
     /* --- Route cache: skip Python CGR if we already know the answer --- */
     for (int i = 0; i < route_cache_count; i++) {
@@ -326,6 +322,11 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
             return DTN_ROUTING_OK;
         }
     }
+
+    PyObject* py_cgr_yen = (PyObject*)g_routing->py_cgr_yen;
+    PyObject* py_fwd_candidate = (PyObject*)g_routing->py_fwd_candidate;
+    PyObject* py_ipv6_packet = (PyObject*)g_routing->py_ipv6_packet;
+    PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
     PyObject* args_yen = track_obj(PyTuple_New(6));
     PyTuple_SetItem(args_yen, 0, PyFloat_FromDouble(current_time_in_sec));

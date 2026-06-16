@@ -112,6 +112,7 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 
     DtnRoutingResult routing_result;
     dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(complete_pkt, &routing_result);
+    // dtn_controller_process_outgoing_result_t outgoing_result = DTN_CONTROLLER_PROCESS_OUTGOING_OK;
 
     dtn_icmpv6_send_message_result_t result;
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
@@ -153,6 +154,15 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 
 static dtn_icmpv6_send_message_result_t dtn_icmpv6_send_message(const struct pbuf* p, dtn_icmpv6_msg_type_t type, u8_t code, u8_t reason) {
     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
+        return DTN_ICMPV6_SEND_MESSAGE_DISABLED;
+    }
+    if (IS_DTN_ICMPV6_RECEIVED_DISABLED && type == ICMP6_TYPE_DTN_PCK_RECEIVED) {
+        return DTN_ICMPV6_SEND_MESSAGE_DISABLED;
+    }
+    if (IS_DTN_ICMPV6_FORWARDED_DISABLED && type == ICMP6_TYPE_DTN_PCK_FORWARDED) {
+        return DTN_ICMPV6_SEND_MESSAGE_DISABLED;
+    }
+    if (IS_DTN_ICMPV6_DELIVERED_DISABLED && type == ICMP6_TYPE_DTN_PCK_DELIVERED) {
         return DTN_ICMPV6_SEND_MESSAGE_DISABLED;
     }
 
@@ -213,7 +223,11 @@ dtn_icmpv6_send_message_result_t dtn_icmpv6_send_pck_deleted(const struct pbuf* 
 
 // Process incoming DTN ICMPv6 message
 dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
-    if (!p || !p->payload || p->tot_len < IP6_HLEN || !global_dtn_module || !global_dtn_module->storage) {
+    if (!p || !p->payload || !global_dtn_module || !global_dtn_module->storage) {
+        return DTN_ICMPV6_PROCESS_ERR;
+    }
+    // Need at least the IPv6 header + ICMPv6 header before dereferencing icmp6hdr.
+    if (p->tot_len < IP6_HLEN + sizeof(struct icmp6_hdr)) {
         return DTN_ICMPV6_PROCESS_ERR;
     }
 
@@ -228,9 +242,15 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
     struct icmp6_hdr* icmp6hdr = (struct icmp6_hdr*)((u8_t*)p->payload + IP6_HLEN);
     dtn_icmpv6_payload_t* dtn_payload;
 
+    DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d || process ICMPv6", src_str, dest_str, icmp6hdr->type, icmp6hdr->code);
+
     // Check if this is a DTN ICMPv6 message
     switch ((dtn_icmpv6_msg_type_t)icmp6hdr->type) {
         case ICMP6_TYPE_DTN_PCK_RECEIVED: {
+            if (p->tot_len < IP6_HLEN + sizeof(struct icmp6_hdr) + sizeof(dtn_icmpv6_payload_t)) {
+                DTN_WARN("ICMPv6|| src: %s -> dest: %s || PCK_RECEIVED too short for DTN payload", src_str, dest_str);
+                return DTN_ICMPV6_PROCESS_ERR;
+            }
             dtn_payload = (dtn_icmpv6_payload_t*)(icmp6hdr + 1);
             u32_t hash = lwip_ntohl(dtn_payload->packet_hash);
             DTN_INFO("ICMPv6|| src: %s -> dest: %s | type %d | code %d | hash: 0x%08x || process PCK_RECEIVED", src_str, dest_str,

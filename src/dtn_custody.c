@@ -50,6 +50,13 @@ static void hbh_fill(struct hbh_hdr* hbh, uint8_t next_header, const ip6_addr_t*
     memset(hbh->pad, 0, sizeof(hbh->pad));
 }
 
+// True only if the first (contiguous) pbuf holds at least @min_len bytes.
+// Guards both out-of-bounds header reads and the unsigned `tot_len - N`
+// length math below from underflowing on runt / malformed packets.
+static bool pbuf_has_bytes(const struct pbuf* p, size_t min_len) {
+    return p->len >= min_len && p->tot_len >= min_len;
+}
+
 // ---------------------------------------------------------------------------
 // Public custody-option API
 // ---------------------------------------------------------------------------
@@ -58,6 +65,8 @@ bool dtn_add_custodian_option(struct pbuf** p, const ip6_addr_t* custodian) {
     if (!p || !*p || !custodian)
         return false;
     struct pbuf* orig = *p;
+    if (!pbuf_has_bytes(orig, IP6_HLEN))
+        return false;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)orig->payload;
 
     uint8_t  old_nexth  = IP6H_NEXTH(ip6hdr);
@@ -92,21 +101,19 @@ bool dtn_extract_custodian_option(const struct pbuf* p, ip6_addr_t* custodian_ou
     if (!p || !custodian_out)
         return false;
 
-    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
-    uint8_t nexth = IP6H_NEXTH(ip6hdr);
-    const uint8_t* ptr = (const uint8_t*)ip6hdr + IP6_HLEN;
-
-    // Walk extension headers until we find the Hop-by-Hop header (type 0).
-    while (nexth != IP6_NEXTH_HOPOPTS && nexth != IP6_NEXTH_NONE) {
-        const uint8_t* ext = ptr;
-        nexth = ext[0];
-        uint8_t elen = (uint8_t)((ext[1] + 1) * 8);
-        ptr += elen;
-    }
-    if (nexth != IP6_NEXTH_HOPOPTS)
+    // The Hop-by-Hop Options header, if present, MUST immediately follow the
+    // IPv6 header (RFC 8200) — and that is exactly where dtn_add_custodian_option
+    // inserts it. So there is no extension-header chain to walk: just check the
+    // next-header field directly. (The previous walk had no bounds check and
+    // could spin forever when a length byte truncated to 0.)
+    if (p->len < IP6_HLEN + sizeof(struct hbh_hdr))
         return false;
 
-    const struct hbh_hdr* hbh = (const struct hbh_hdr*)ptr;
+    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+    if (IP6H_NEXTH(ip6hdr) != IP6_NEXTH_HOPOPTS)
+        return false;
+
+    const struct hbh_hdr* hbh = (const struct hbh_hdr*)((const uint8_t*)ip6hdr + IP6_HLEN);
     if (hbh->cust_opt_type != CUSTODY_OPTION_TYPE || hbh->cust_opt_data_len != 16)
         return false;
 
@@ -118,6 +125,8 @@ bool dtn_strip_custodian_option(struct pbuf** p) {
     if (!p || !*p)
         return false;
     struct pbuf* orig = *p;
+    if (!pbuf_has_bytes(orig, IP6_HLEN + sizeof(struct hbh_hdr)))
+        return false;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)orig->payload;
 
     if (IP6H_NEXTH(ip6hdr) != IP6_NEXTH_HOPOPTS)
@@ -151,10 +160,14 @@ struct pbuf* dtn_update_or_add_custodian_option(const struct pbuf* orig,
                                                 const ip6_addr_t* custodian) {
     if (!orig || !custodian)
         return NULL;
+    if (!pbuf_has_bytes(orig, IP6_HLEN))
+        return NULL;
 
     const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)orig->payload;
 
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_HOPOPTS) {
+        if (!pbuf_has_bytes(orig, IP6_HLEN + sizeof(struct hbh_hdr)))
+            return NULL;
         const struct hbh_hdr* hbh =
             (const struct hbh_hdr*)((const uint8_t*)orig->payload + IP6_HLEN);
 

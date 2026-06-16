@@ -31,7 +31,7 @@ isDtnNode = true
 
 [[nodes]]
 id = 6
-isDtnNode = false
+isDtnNode = true
 
 [[edges]]
 from         = 1

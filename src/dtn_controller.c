@@ -127,6 +127,7 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
 
     // Check if this is ICMPv6 and process it
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_ICMP6) {
+        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process as ICMPv6.", src_str, dest_str, custodian_str);
         dtn_icmpv6_process_result_t result = dtn_controller_process_icmpv6(p);
         if (result == DTN_ICMPV6_PROCESS_OK) {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL processed as ICMPv6.", src_str, dest_str, custodian_str);
@@ -301,8 +302,17 @@ void dtn_controller_process_stored(void) {
 
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
-        DtnRoutingResult routing_result;
-        dtn_controller_process_outgoing_result_t result = dtn_controller_process_outgoing(p, &routing_result);
+        // Reuse the routing decision computed when the packet was stored instead of
+        // re-running CGR. The contact window is already enforced by the
+        // READY_TIME_COL <= now filter in dtn_storage_get_ready_entries.
+        DtnRoutingResult routing_result = {
+            .next_hop_node_id = entry->next_hop_node_id,
+            .min_delivery_time = entry->min_delivery_time_in_sec,
+            .max_delivery_time = entry->max_delivery_time_in_sec,
+            .best_delivery_time = entry->best_delivery_time_in_sec,
+        };
+
+        dtn_controller_process_outgoing_result_t result = DTN_CONTROLLER_PROCESS_OUTGOING_OK;
         switch (result) {
             case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
@@ -312,8 +322,10 @@ void dtn_controller_process_stored(void) {
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
                              custodian_str);
                     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
-                        dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                        // dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                        dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                     } else {
+                        // dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                         dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                     }
                     if (!has_custodian) {
