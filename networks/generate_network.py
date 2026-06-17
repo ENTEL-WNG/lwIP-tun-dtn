@@ -446,6 +446,8 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
             "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
             "METRICS_OUT":      f"{repo_root_container}/networks/{plan_subdir}/captures/${{TEST_CASE_NUMBER}}/metrics.jsonl",
             "CAPTURE_INTERVAL": str(capture_interval),
+            # Per-node pcap + netfilter trace captures are emitted only at DEBUG.
+            "DTN_LOG_LEVEL":    "${DTN_LOG_LEVEL:-INFO}",
         },
         "volumes": [
             "/var/run/docker.sock:/var/run/docker.sock:ro",

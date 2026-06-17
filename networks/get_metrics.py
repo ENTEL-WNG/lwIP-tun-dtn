@@ -45,6 +45,11 @@ DB_DIR           = f"/repo/dtn_storage/{PLAN_NAME}" if PLAN_NAME else ""
 METRICS_OUT      = os.environ.get("METRICS_OUT",      "")
 CAPTURE_INTERVAL = int(os.environ.get("CAPTURE_INTERVAL", "30"))
 
+# Per-node pcap and netfilter trace captures are expensive (disk + CPU) and
+# only useful when debugging. Enable them only at DTN_LOG_LEVEL=DEBUG.
+DTN_LOG_LEVEL    = os.environ.get("DTN_LOG_LEVEL", "INFO").upper()
+CAPTURE_DEBUG    = DTN_LOG_LEVEL == "DEBUG"
+
 _jsonl_lock = threading.Lock()
 _NODE_NAME_MAP: dict[str, str] = {}
 
@@ -206,19 +211,20 @@ def _start_node_captures(containers: list) -> None:
             # Create output directory and remove stale files from a previous run
             c.exec_run(["sh", "-c",
                         f"mkdir -p {out_dir} && rm -f {base}.pcap {base}.txt {base}_trace.txt"])
-            # Binary pcap — written directly by tcpdump, no shell needed
-            c.exec_run(["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
-                       detach=True)
             # Human-readable text — needs shell for stdout redirect
             c.exec_run(["sh", "-c",
                         f"tcpdump -i any ip6 -nn -e -l -tttt > {base}.txt 2>&1"],
                        detach=True)
-            # Netfilter trace
-            c.exec_run(["sh", "-c",
-                        f"xtables-monitor --trace > {base}_trace.txt 2>&1"],
-                       detach=True)
-            print(f"[metrics] started capture for {c.name} (run={TEST_CASE_NUMBER})",
-                  flush=True)
+            if CAPTURE_DEBUG:
+                # Binary pcap — written directly by tcpdump, no shell needed
+                c.exec_run(["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
+                           detach=True)
+                # Netfilter trace
+                c.exec_run(["sh", "-c",
+                            f"xtables-monitor --trace > {base}_trace.txt 2>&1"],
+                           detach=True)
+            print(f"[metrics] started capture for {c.name} (run={TEST_CASE_NUMBER}, "
+                  f"pcap/trace={'on' if CAPTURE_DEBUG else 'off'})", flush=True)
         except Exception as exc:
             print(f"[metrics] capture start failed for {c.name}: {exc}", flush=True)
 
@@ -288,7 +294,9 @@ def _collect_logs_thread(stop: threading.Event, captures_dir: Path) -> None:
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    print(f"[metrics] backend=stats platform={platform.system()}", flush=True)
+    print(f"[metrics] backend=stats platform={platform.system()} "
+          f"log_level={DTN_LOG_LEVEL} pcap/trace={'on' if CAPTURE_DEBUG else 'off'}",
+          flush=True)
 
     if METRICS_OUT:
         os.makedirs(os.path.dirname(os.path.abspath(METRICS_OUT)), exist_ok=True)
