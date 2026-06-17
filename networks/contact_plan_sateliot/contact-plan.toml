@@ -37,7 +37,20 @@ id        = 6
 name      = "GS_SVALBARD"
 isDtnNode = true
 
+[[nodes]]
+id        = 7
+name      = "GS_Antarctica_"
+isDtnNode = false
+
 # Edge Definitions
+[[edges]]
+from         = 5
+to           = 7
+start_in_sec = 0
+end_in_sec   = 90000
+bidirected   = true
+range        = 0.00001
+
 [[edges]]
 from         = 2
 to           = 6
@@ -322,7 +335,174 @@ range        = 0.002109
 from         = 2
 to           = 5
 start_in_sec = 89940
-end_in_sec   = 90000
+end_in_sec   = 90030
 bidirected   = true
-range        = 0.002192
+range        = 0.002217
 
+[[edges]]
+from         = 3
+to           = 6
+start_in_sec = 90330
+end_in_sec   = 90430
+bidirected   = true
+range        = 0.002069
+
+[[edges]]
+from         = 4
+to           = 5
+start_in_sec = 91090
+end_in_sec   = 91200
+bidirected   = true
+range        = 0.002168
+
+[[edges]]
+from         = 1
+to           = 6
+start_in_sec = 91370
+end_in_sec   = 91460
+bidirected   = true
+range        = 0.002080
+
+[[edges]]
+from         = 3
+to           = 5
+start_in_sec = 92870
+end_in_sec   = 92980
+bidirected   = true
+range        = 0.002163
+
+[[edges]]
+from         = 2
+to           = 6
+start_in_sec = 93110
+end_in_sec   = 93200
+bidirected   = true
+range        = 0.002195
+
+[[edges]]
+from         = 1
+to           = 5
+start_in_sec = 93920
+end_in_sec   = 94010
+bidirected   = true
+range        = 0.002226
+
+[[edges]]
+from         = 4
+to           = 6
+start_in_sec = 94280
+end_in_sec   = 94350
+bidirected   = true
+range        = 0.002219
+
+[[edges]]
+from         = 3
+to           = 6
+start_in_sec = 96060
+end_in_sec   = 96120
+bidirected   = true
+range        = 0.002237
+
+[[edges]]
+from         = 1
+to           = 6
+start_in_sec = 97100
+end_in_sec   = 97140
+bidirected   = true
+range        = 0.002258
+
+[[edges]]
+from         = 2
+to           = 6
+start_in_sec = 98840
+end_in_sec   = 98880
+bidirected   = true
+range        = 0.002328
+
+[[edges]]
+from         = 4
+to           = 6
+start_in_sec = 100000
+end_in_sec   = 100040
+bidirected   = true
+range        = 0.002331
+
+[[edges]]
+from         = 3
+to           = 6
+start_in_sec = 101770
+end_in_sec   = 101800
+bidirected   = true
+range        = 0.002288
+
+[[edges]]
+from         = 1
+to           = 6
+start_in_sec = 102790
+end_in_sec   = 102840
+bidirected   = true
+range        = 0.002275
+
+[[edges]]
+from         = 2
+to           = 6
+start_in_sec = 104530
+end_in_sec   = 104600
+bidirected   = true
+range        = 0.002252
+
+[[edges]]
+from         = 4
+to           = 6
+start_in_sec = 105690
+end_in_sec   = 105770
+bidirected   = true
+range        = 0.002209
+
+[[edges]]
+from         = 3
+to           = 6
+start_in_sec = 107440
+end_in_sec   = 107530
+bidirected   = true
+range        = 0.002144
+
+[[edges]]
+from         = 1
+to           = 6
+start_in_sec = 108470
+end_in_sec   = 108570
+bidirected   = true
+range        = 0.002109
+
+[[edges]]
+from         = 2
+to           = 6
+start_in_sec = 110230
+end_in_sec   = 110330
+bidirected   = true
+range        = 0.002089
+
+[[edges]]
+from         = 4
+to           = 6
+start_in_sec = 111390
+end_in_sec   = 111500
+bidirected   = true
+range        = 0.002115
+
+[[edges]]
+from         = 3
+to           = 6
+start_in_sec = 113160
+end_in_sec   = 113250
+bidirected   = true
+range        = 0.002092
+
+[[edges]]
+from         = 1
+to           = 6
+start_in_sec = 114200
+end_in_sec   = 114280
+bidirected   = true
+range        = 0.002160

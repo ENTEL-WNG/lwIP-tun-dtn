@@ -36,6 +36,19 @@
 // recreated so old DBs don't cause INSERT/SELECT failures.
 #define SCHEMA_VERSION 1
 
+// FORWARD_BEST_DELIVERY_TIME selects which delivery-time column governs when a
+// stored packet becomes forwardable. READY_TIME_COL (the SQL column name) and
+// READY_TIME_FIELD (the matching Routing_Result field) must always agree, and
+// every place that filters, orders, indexes, or logs the readiness time must go
+// through these macros so the choice stays consistent.
+#if FORWARD_BEST_DELIVERY_TIME
+#define READY_TIME_COL "best_delivery_time_in_sec"
+#define READY_TIME_FIELD best_delivery_time
+#else
+#define READY_TIME_COL "min_delivery_time_in_sec"
+#define READY_TIME_FIELD min_delivery_time
+#endif
+
 static const char* CREATE_TABLE_SQL =
     "CREATE TABLE IF NOT EXISTS stored_packets ("
     "  id                        INTEGER PRIMARY KEY AUTOINCREMENT,"
@@ -53,7 +66,8 @@ static const char* CREATE_TABLE_SQL =
     "  packet_data               BLOB    NOT NULL"
     ");"
     "CREATE INDEX IF NOT EXISTS idx_delivery_time"
-    " ON stored_packets(best_delivery_time_in_sec);"
+    " ON stored_packets(" READY_TIME_COL
+    ");"
     "CREATE INDEX IF NOT EXISTS idx_packet_hash"
     " ON stored_packets(packet_hash);";
 
@@ -187,6 +201,15 @@ static int dtn_storage_init_db(Storage_Function* storage) {
         sqlite3_exec(storage->db, pragma, NULL, NULL, NULL);
     }
 
+    // Seed the cached row count from the (freshly created/recreated) table.
+    storage->packet_count = 0;
+    sqlite3_stmt* cnt_stmt = NULL;
+    if (sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &cnt_stmt, NULL) == SQLITE_OK) {
+        if (sqlite3_step(cnt_stmt) == SQLITE_ROW)
+            storage->packet_count = sqlite3_column_int(cnt_stmt, 0);
+        sqlite3_finalize(cnt_stmt);
+    }
+
     DTN_INFO("SQLite DB ready: %s", db_path);
     return 1;
 }
@@ -206,6 +229,7 @@ Storage_Function* dtn_storage_create(DTN_Module* parent) {
     storage->max_storage_bytes = 1024 * 1024;  // 1 MB limit (informational)
     storage->db = NULL;
     storage->stmt_cache_count = 0;
+    storage->packet_count = 0;
 
     DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).", storage->max_storage_bytes, MAX_STORED_PACKETS);
 
@@ -239,16 +263,8 @@ void dtn_storage_destroy(Storage_Function* storage) {
 int dtn_storage_count(Storage_Function* storage) {
     if (!storage || !storage->db)
         return 0;
-
-    sqlite3_stmt* stmt = db_stmt(storage, "SELECT COUNT(*) FROM stored_packets;");
-    if (!stmt)
-        return 0;
-
-    int count = 0;
-    if (sqlite3_step(stmt) == SQLITE_ROW)
-        count = sqlite3_column_int(stmt, 0);
-    sqlite3_reset(stmt);
-    return count;
+    // O(1): maintained in sync on insert/delete/purge (see Storage_Function).
+    return storage->packet_count;
 }
 
 int dtn_storage_is_full(Storage_Function* storage) { return dtn_storage_count(storage) >= MAX_STORED_PACKETS; }
@@ -265,26 +281,14 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         return DTN_STORAGE_STORE_FULL;
     }
 
-    // Copy the packet so we can strip headers without touching the caller's pbuf.
-    struct pbuf* p_to_store = pbuf_alloc(PBUF_RAW, p->tot_len, PBUF_RAM);
-    if (!p_to_store) {
-        DTN_ERROR("Failed to allocate pbuf for storage copy");
-        return DTN_STORAGE_STORE_ERR;
-    }
-    if (pbuf_copy(p_to_store, p) != ERR_OK) {
-        DTN_ERROR("Failed to copy packet for storage");
-        pbuf_free(p_to_store);
-        return DTN_STORAGE_STORE_ERR;
-    }
-    // dtn_strip_custodian_option(&p_to_store);
-
-    // Extract source address from the IPv6 header.
-    if (p_to_store->len < IP6_HLEN) {
+    // Extract source/dest address from the IPv6 header. We serialise the caller's
+    // pbuf directly (no intermediate copy): header stripping is disabled, so the
+    // caller's pbuf is never mutated. If stripping is reinstated, operate on `buf`.
+    if (p->len < IP6_HLEN) {
         DTN_ERROR("Packet too short to extract src address");
-        pbuf_free(p_to_store);
         return DTN_STORAGE_STORE_ERR;
     }
-    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p_to_store->payload;
+    struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
     ip6_addr_t src_addr, dest_addr;
     ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
     ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
@@ -299,20 +303,17 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
     if (has_custodian)
         ip6addr_ntoa_r(&custodian_addr, custodian_str, sizeof(custodian_str));
 
-    u16_t pkt_len = p_to_store->tot_len;
+    u16_t pkt_len = p->tot_len;
     char* buf = malloc(pkt_len);
     if (!buf) {
         DTN_ERROR("Failed to allocate serialisation buffer");
-        pbuf_free(p_to_store);
         return DTN_STORAGE_STORE_ERR;
     }
-    if (pbuf_copy_partial(p_to_store, buf, pkt_len, 0) != pkt_len) {
+    if (pbuf_copy_partial(p, buf, pkt_len, 0) != pkt_len) {
         DTN_ERROR("pbuf_copy_partial failed");
         free(buf);
-        pbuf_free(p_to_store);
         return DTN_STORAGE_STORE_ERR;
     }
-    pbuf_free(p_to_store);
 
     // Compute FNV-1a hash for per-packet identification (used to delete the stored
     // row when an ICMPv6 RECEIVED ACK arrives from the next hop).
@@ -344,29 +345,26 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         sqlite3_bind_text(stmt, 9, custodian_str, -1, SQLITE_TRANSIENT);
     else
         sqlite3_bind_null(stmt, 9);
-    sqlite3_bind_blob(stmt, 10, buf, pkt_len, SQLITE_TRANSIENT);
+    // SQLITE_STATIC: buf outlives sqlite3_step() (freed below), so SQLite need
+    // not take its own copy.
+    sqlite3_bind_blob(stmt, 10, buf, pkt_len, SQLITE_STATIC);
 
     rc = sqlite3_step(stmt);
     int ok = (rc == SQLITE_DONE);
     if (!ok) {
         DTN_ERROR("INSERT failed: %s", sqlite3_errmsg(storage->db));
     } else {
+        storage->packet_count++;
         char addr_str[IP6ADDR_STRLEN_MAX];
         ip6addr_ntoa_r(&dest_addr, addr_str, sizeof(addr_str));
         DTN_INFO("Packet for %s stored (rowid %" PRId64 ", delivery_time=%.2f). Total stored: %d", addr_str,
-                 (int64_t)sqlite3_last_insert_rowid(storage->db), routing_result->best_delivery_time, dtn_storage_count(storage));
+                 (int64_t)sqlite3_last_insert_rowid(storage->db), routing_result->READY_TIME_FIELD, dtn_storage_count(storage));
     }
 
     sqlite3_reset(stmt);
     free(buf);
     return ok ? DTN_STORAGE_STORE_OK : DTN_STORAGE_STORE_ERR;
 }
-
-#if FORWARD_BEST_DELIVERY_TIME
-#define READY_TIME_COL "best_delivery_time_in_sec"
-#else
-#define READY_TIME_COL "min_delivery_time_in_sec"
-#endif
 
 // A stored packet is (re)forwardable when its contact window is open (?1 = now_sec)
 // AND it has not exhausted its retransmission budget (?2 = DTN_MAX_FORWARD_ATTEMPTS)
@@ -454,7 +452,7 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         }
 
         DTN_INFO("Ready entry: dest=%s custodian=%s delivery_time=%.2f (rowid %" PRId64 ")", e->dest_addr,
-                 e->has_custodian ? e->custodian_addr : "NONE", deliv, db_id);
+                 e->has_custodian ? e->custodian_addr : "NONE", e->routing_result.READY_TIME_FIELD, db_id);
         n++;
     }
 
@@ -485,20 +483,24 @@ int dtn_storage_update_routing_result(Storage_Function* storage, int64_t db_id, 
     if (!storage || !storage->db || db_id < 0 || !routing_result)
         return 0;
 
+    // A routing-result update means the packet missed its previous contact window
+    // and has been re-routed onto a new contact. Reset the retransmission state so
+    // the prior window's attempts don't count against the new one (and don't cause
+    // premature purging). last_attempt_ms = 0 + attempts = 0 also makes it eligible
+    // immediately once the new window opens (see RETRY_PREDICATE).
     const char* sql =
         "UPDATE stored_packets"
         " SET next_hop_node_id = ?,"
         "     best_delivery_time_in_sec = ?,"
         "     max_delivery_time_in_sec = ?,"
-        "     min_delivery_time_in_sec = ?"
+        "     min_delivery_time_in_sec = ?,"
+        "     number_of_forward_attempts = 0,"
+        "     last_attempt_ms = 0"
         " WHERE id = ?;";
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare UPDATE routing result: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, sql);
+    if (!stmt)
         return 0;
-    }
 
     sqlite3_bind_int(stmt, 1, routing_result->next_hop_node_id);
     sqlite3_bind_double(stmt, 2, routing_result->best_delivery_time);
@@ -506,16 +508,16 @@ int dtn_storage_update_routing_result(Storage_Function* storage, int64_t db_id, 
     sqlite3_bind_double(stmt, 4, routing_result->min_delivery_time);
     sqlite3_bind_int64(stmt, 5, (sqlite3_int64)db_id);
 
-    rc = sqlite3_step(stmt);
+    int rc = sqlite3_step(stmt);
     int ok = (rc == SQLITE_DONE);
     if (!ok) {
         DTN_ERROR("UPDATE routing result failed for row %" PRId64 ": %s", db_id, sqlite3_errmsg(storage->db));
     } else {
         DTN_INFO("Updated routing result for row %" PRId64 " (next_hop=%d, delivery_time=%.2f)", db_id, routing_result->next_hop_node_id,
-                 routing_result->best_delivery_time);
+                 routing_result->min_delivery_time);
     }
 
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     return ok;
 }
 
@@ -532,6 +534,7 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     if (rc != SQLITE_DONE) {
         DTN_ERROR("DELETE by id failed: %s", sqlite3_errmsg(storage->db));
     } else {
+        storage->packet_count -= sqlite3_changes(storage->db);
         DTN_INFO("Deleted DB row %" PRId64, db_id);
     }
     sqlite3_reset(stmt);
@@ -550,6 +553,7 @@ void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash) {
     if (rc != SQLITE_DONE) {
         DTN_ERROR("DELETE by hash failed: %s", sqlite3_errmsg(storage->db));
     } else {
+        storage->packet_count -= sqlite3_changes(storage->db);
         DTN_INFO("Deleted stored packet(s) with hash 0x%08x (%d rows)", packet_hash, sqlite3_changes(storage->db));
     }
     sqlite3_reset(stmt);
@@ -585,6 +589,7 @@ int dtn_storage_purge_exhausted(Storage_Function* storage) {
     sqlite3_bind_int(stmt, 1, DTN_MAX_FORWARD_ATTEMPTS);
     int rc = sqlite3_step(stmt);
     int purged = (rc == SQLITE_DONE) ? sqlite3_changes(storage->db) : 0;
+    storage->packet_count -= purged;
     if (rc != SQLITE_DONE) {
         DTN_ERROR("purge-exhausted failed: %s", sqlite3_errmsg(storage->db));
     } else if (purged > 0) {

@@ -15,8 +15,14 @@ typedef enum {
 
 typedef enum { DATE = 0, SYS_TIME = 1 } dtn_time_t;
 
+#include <stdbool.h>
+
 void dtn_log_init(dtn_log_level_t level);
 void dtn_log_write(dtn_log_level_t level, const char* file, int line, const char* fmt, ...);
+
+// True if a message at @level would be emitted at the current log level. Lets the
+// hot path skip building log-only strings (e.g. ip6addr_ntoa_r) when suppressed.
+bool dtn_log_enabled(dtn_log_level_t level);
 
 #define DTN_FATAL(fmt, ...) dtn_log_write(DTN_LOG_LEVEL_FATAL, __FILE__, __LINE__, fmt, ##__VA_ARGS__)
 #define DTN_ERROR(fmt, ...) dtn_log_write(DTN_LOG_LEVEL_ERROR, __FILE__, __LINE__, fmt, ##__VA_ARGS__)

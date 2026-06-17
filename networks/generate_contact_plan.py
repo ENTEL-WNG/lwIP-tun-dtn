@@ -255,6 +255,6 @@ if __name__ == "__main__":
     gen = Ns3TopologyGenerator(topology_path, stations)
     
     start = datetime(2026, 6, 19, 12, 0, 0, tzinfo=timezone.utc)
-    contacts = gen.generate(start, duration_hours=25, step_seconds=10, compute_isl=True)
+    contacts = gen.generate(start, duration_hours=36, step_seconds=10, compute_isl=True)
     gen.export_ns3(contacts, start, topology_name)
     gen.export_contact_plan(contacts, start, topology_name)

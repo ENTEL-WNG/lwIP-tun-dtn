@@ -54,6 +54,11 @@ typedef struct Storage_Function {
     const char* stmt_sql[DB_STMT_CACHE_SIZE];
     sqlite3_stmt* stmt_cache[DB_STMT_CACHE_SIZE];
     int stmt_cache_count;
+
+    // Cached row count, kept in sync on insert/delete/purge so the per-packet
+    // ingest and forward paths avoid an O(N) SELECT COUNT(*). Seeded once in
+    // dtn_storage_init_db().
+    int packet_count;
 } Storage_Function;
 
 // Lifecycle

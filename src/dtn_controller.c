@@ -36,9 +36,27 @@
 #include "lwip/pbuf.h"
 #include "lwip/stats.h"
 #include "lwip/sys.h"
+#include "lwip/timeouts.h"  // sys_timeout
 #include "raw_socket.h"
 
 extern DTN_Module* global_dtn_module;
+
+// Format the src/dest/custodian address strings used only by log lines. Kept
+// separate so the hot path can build them lazily (skipping ip6addr_ntoa_r when
+// the relevant log level is suppressed). custodian_addr is read only when
+// has_custodian is true.
+static void dtn_controller_format_addr_strings(const struct ip6_hdr* ip6hdr, bool has_custodian, const ip6_addr_t* custodian_addr,
+                                               char* src_str, char* dest_str, char* custodian_str) {
+    ip6_addr_t src_addr, dest_addr;
+    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
+    ip6addr_ntoa_r(&src_addr, src_str, IP6ADDR_STRLEN_MAX);
+    ip6addr_ntoa_r(&dest_addr, dest_str, IP6ADDR_STRLEN_MAX);
+    if (has_custodian)
+        ip6addr_ntoa_r(custodian_addr, custodian_str, IP6ADDR_STRLEN_MAX);
+    else
+        strncpy(custodian_str, "NONE", IP6ADDR_STRLEN_MAX);
+}
 
 // ---------------------------------------------------------------------------
 // Per-node throughput stats
@@ -73,11 +91,18 @@ static dtn_socket_result_t dtn_controller_send(struct pbuf* p, DtnRoutingResult 
     }
 
     struct pbuf* send_p = p;
-    ip6_addr_t local_addr;
-    ip6addr_aton(dtn_interface->local_addr, &local_addr);
-    struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
-    if (p_custodian)
-        send_p = p_custodian;
+    if (dtn_interface->local_addr_valid) {
+        // local_addr was parsed once at init (dtn_interface_cache_parsed); rebuild
+        // the ip6_addr_t from the cached bytes instead of re-parsing the string.
+        ip6_addr_t local_addr;
+        memcpy(local_addr.addr, dtn_interface->local_addr_bytes, sizeof(local_addr.addr));
+#if LWIP_IPV6_SCOPES
+        ip6_addr_clear_zone(&local_addr);
+#endif
+        struct pbuf* p_custodian = dtn_update_or_add_custodian_option(p, &local_addr);
+        if (p_custodian)
+            send_p = p_custodian;
+    }
 
     dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(send_p, dtn_interface);
 
@@ -105,18 +130,18 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
     }
 
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX], custodian_str[IP6ADDR_STRLEN_MAX];
-    ip6_addr_t src_addr, dest_addr, custodian_addr;
-    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
-    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
-    ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
-
+    ip6_addr_t dest_addr, custodian_addr;
+    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);  // needed below for the local-address check
     bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
-    if (has_custodian) {
-        ip6addr_ntoa_r(&custodian_addr, custodian_str, sizeof(custodian_str));
-    } else {
-        strncpy(custodian_str, "NONE", sizeof(custodian_str));
-    }
+
+    // Address strings are log-only; build them now only if INFO is enabled.
+    // Rare failure branches below rebuild them just-in-time so WARN/ERROR logs
+    // keep their addresses even when INFO is suppressed.
+    bool addr_strings_built = dtn_log_enabled(DTN_LOG_LEVEL_INFO);
+    if (addr_strings_built)
+        dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
+    else
+        src_str[0] = dest_str[0] = custodian_str[0] = '\0';
 
     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY process incoming.", src_str, dest_str, custodian_str);
 
@@ -150,6 +175,8 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL to process as local.", src_str, dest_str, custodian_str);
             return DTN_CONTROLLER_PROCESS_INCOMING_LOCAL;
         }
+        if (!addr_strings_built)
+            dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
         DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to process as local, error: %d.", src_str, dest_str,
                   custodian_str, err);
         return DTN_CONTROLLER_PROCESS_INCOMING_ERR;
@@ -180,6 +207,8 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
                 return DTN_CONTROLLER_PROCESS_INCOMING_FORWARDED;
             }
             stat_dropped++;
+            if (!addr_strings_built)
+                dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
             DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward", src_str, dest_str, custodian_str);
             return DTN_CONTROLLER_PROCESS_INCOMING_ERR;
         }
@@ -204,6 +233,8 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
                 return DTN_CONTROLLER_PROCESS_INCOMING_FORWARDED;
             }
             stat_dropped++;
+            if (!addr_strings_built)
+                dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
             DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to send without CGR", src_str, dest_str, custodian_str);
             return DTN_CONTROLLER_PROCESS_INCOMING_ERR;
         }
@@ -218,18 +249,16 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct 
     Routing_Function* routing = global_dtn_module->routing;
     struct ip6_hdr* ip6hdr = (struct ip6_hdr*)p->payload;
 
+    // These strings are log-only; build lazily (the NO_ROUTE error path below
+    // rebuilds them if INFO was suppressed). has_custodian is needed regardless.
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX], custodian_str[IP6ADDR_STRLEN_MAX];
-    ip6_addr_t src_addr, dest_addr, custodian_addr;
-    ip6_addr_copy_from_packed(src_addr, ip6hdr->src);
-    ip6_addr_copy_from_packed(dest_addr, ip6hdr->dest);
-    ip6addr_ntoa_r(&src_addr, src_str, sizeof(src_str));
-    ip6addr_ntoa_r(&dest_addr, dest_str, sizeof(dest_str));
+    ip6_addr_t custodian_addr;
     bool has_custodian = dtn_extract_custodian_option(p, &custodian_addr);
-    if (has_custodian) {
-        ip6addr_ntoa_r(&custodian_addr, custodian_str, sizeof(custodian_str));
-    } else {
-        strncpy(custodian_str, "NONE", sizeof(custodian_str));
-    }
+    bool addr_strings_built = dtn_log_enabled(DTN_LOG_LEVEL_INFO);
+    if (addr_strings_built)
+        dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
+    else
+        src_str[0] = dest_str[0] = custodian_str[0] = '\0';
 
     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process outgoing.", src_str, dest_str, custodian_str);
 
@@ -242,6 +271,8 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct 
     // No route found
     if (routing_status != DTN_ROUTING_OK) {
         if (routing_status == DTN_ROUTING_NO_ROUTE) {
+            if (!addr_strings_built)
+                dtn_controller_format_addr_strings(ip6hdr, has_custodian, &custodian_addr, src_str, dest_str, custodian_str);
             DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || not route found.", src_str, dest_str, custodian_str);
         }
         return DTN_CONTROLLER_PROCESS_OUTGOING_ERR;
@@ -288,18 +319,18 @@ int dtn_controller_process_stored(void) {
     if (budget < 1) {
         return 1;
     }
-    if (budget > MAX_STORED_PACKETS_FORWARD) {
-        budget = MAX_STORED_PACKETS_FORWARD;
+    if (budget > MAX_STORED_PACKETS_FORWARD_PER_TICK) {
+        budget = MAX_STORED_PACKETS_FORWARD_PER_TICK;
     }
 
     int number_of_stored_packages = dtn_storage_count(storage);
 
-    Stored_Packet_Entry entries[MAX_STORED_PACKETS_FORWARD];
+    Stored_Packet_Entry entries[MAX_STORED_PACKETS_FORWARD_PER_TICK];
     int n = dtn_storage_get_ready_entries(storage, now_sec, entries, budget);
-    pacing_tokens -= n;
 
     DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f (budget %d)", number_of_stored_packages, n, now_sec, budget);
 
+    int forwarded = 0;  // packets actually sent this tick; charged against pacing_tokens below
     for (int i = 0; i < n; i++) {
         Stored_Packet_Entry* entry = &entries[i];
         struct pbuf* p = entry->p;
@@ -323,31 +354,34 @@ int dtn_controller_process_stored(void) {
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
         bool is_next_hop_active;
-        dtn_routing_result_t active_result = dtn_routing_is_next_hop_active(sys_now(), entry->routing_result, &is_next_hop_active);
+        dtn_routing_is_next_hop_active(sys_now(), entry->routing_result, &is_next_hop_active);
         if (is_next_hop_active) {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
             dtn_socket_result_t socket_result = dtn_controller_send(p, entry->routing_result);
             if (socket_result == DTN_SOCKET_OK) {
                 stat_fwd_stored++;
+                forwarded++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str, custodian_str);
                 if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
                     dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                 } else {
                     dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                 }
-                if (!has_custodian) {
+                // Continue draining the rest of the ready batch (no break): every
+                // entry's pbuf is freed at the end of the loop body below.
+                if (has_custodian) {
+                    dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+                    if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
+                        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send ICMPV6_PCK_FORWARDED for STORED", src_str,
+                                 dest_str, custodian_str);
+                    }
+                } else {
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.", src_str,
                              dest_str, custodian_str);
-                    break;
                 }
-                dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
-                if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
-                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send ICMPV6_PCK_FORWARDED for STORED", src_str,
-                             dest_str, custodian_str);
-                }
-                break;
+            } else {
+                DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
             }
-            DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
         } else {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || STORED NOT ACTIVE", src_str, dest_str, custodian_str);
             DtnRoutingResult routing_result;
@@ -358,7 +392,7 @@ int dtn_controller_process_stored(void) {
                     dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                     break;
                 case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-                    DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || TRY to UPDATE STORED", src_str, dest_str, custodian_str);
+                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to UPDATE STORED", src_str, dest_str, custodian_str);
                     dtn_storage_update_routing_result(storage, entry->db_id, &routing_result);
                     break;
                 case DTN_CONTROLLER_PROCESS_OUTGOING_ERR:
@@ -373,6 +407,18 @@ int dtn_controller_process_stored(void) {
         if (entry->p != NULL) {
             pbuf_free(entry->p);
             entry->p = NULL;
+        }
+    }
+
+    // Charge the pacing budget only for packets actually put on the wire.
+    pacing_tokens -= forwarded;
+
+    // Leak insurance: every entry should already be freed above, but guarantee it
+    // so any future early exit from the loop cannot leak the fetched pbufs.
+    for (int i = 0; i < n; i++) {
+        if (entries[i].p != NULL) {
+            pbuf_free(entries[i].p);
+            entries[i].p = NULL;
         }
     }
 

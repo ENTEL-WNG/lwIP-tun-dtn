@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /repo
 COPY . .
-# RUN make -C tests clean && make -C tests
-RUN make -C tests
+RUN make -C tests clean && make -C tests
+# RUN make -C tests
 
 FROM debian:bookworm-slim
 

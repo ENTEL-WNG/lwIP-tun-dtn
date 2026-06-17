@@ -88,6 +88,34 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
 }
 #else
 #define ETH_HDR_LEN 14
+
+// Parse a "xx:xx:xx:xx:xx:xx" string into 6 bytes. Returns 0 on success.
+static int parse_mac(const char* mac_str, uint8_t mac[6]);
+
+// Pre-parse an interface's static MAC/address strings into their cached binary
+// forms so the per-packet send path never re-parses them. Logs and returns
+// non-zero on malformed config (failing loudly at init, not silently per packet).
+static int dtn_interface_cache_parsed(DtnInterface* di) {
+    int rc = 0;
+    if (parse_mac(di->local_mac, di->local_mac_bytes) < 0) {
+        DTN_ERROR("Raw Socket: invalid local_mac '%s' for interface %s", di->local_mac, di->name);
+        rc = -1;
+    }
+    if (parse_mac(di->remote_mac, di->remote_mac_bytes) < 0) {
+        DTN_ERROR("Raw Socket: invalid remote_mac '%s' for interface %s", di->remote_mac, di->name);
+        rc = -1;
+    }
+    ip6_addr_t local_addr;
+    di->local_addr_valid = ip6addr_aton(di->local_addr, &local_addr);
+    if (di->local_addr_valid) {
+        memcpy(di->local_addr_bytes, local_addr.addr, sizeof(di->local_addr_bytes));
+    } else {
+        DTN_WARN("Raw Socket: could not parse local_addr '%s' for interface %s (custodian option will be skipped)", di->local_addr,
+                 di->name);
+    }
+    return rc;
+}
+
 dtn_socket_result_t dtn_init_raw_socket(void) {
     DTN_DEBUG("Initializing raw sockets...");
 
@@ -116,6 +144,11 @@ dtn_socket_result_t dtn_init_raw_socket(void) {
 
         dtn_config.interfaces[i].socket = raw_socket;
         dtn_config.interfaces[i].socket_index = ifr.ifr_ifindex;
+
+        // Cache parsed MAC/address forms so the send path never re-parses strings.
+        if (dtn_interface_cache_parsed(&dtn_config.interfaces[i]) < 0) {
+            return DTN_SOCKET_ERR_SEND;
+        }
     }
 
     for (int i = 0; i < dtn_config.interface_count; i++) {
@@ -259,19 +292,12 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnI
         return DTN_SOCKET_ERR_PKT_TOO_LARGE;
     }
 
-    uint8_t dst_mac[6], src_mac[6];
-    if (parse_mac(dtn_interface->remote_mac, dst_mac) < 0) {
-        DTN_ERROR("Failed to parse remote_mac '%s' for interface %s", dtn_interface->remote_mac, dtn_interface->name);
-        return DTN_SOCKET_ERR_SEND;
-    }
-    if (parse_mac(dtn_interface->local_mac, src_mac) < 0) {
-        DTN_ERROR("Failed to parse local_mac '%s' for interface %s", dtn_interface->local_mac, dtn_interface->name);
-        return DTN_SOCKET_ERR_SEND;
-    }
+    /* MACs were parsed once at init (dtn_interface_cache_parsed). */
+    const uint8_t* dst_mac = dtn_interface->remote_mac_bytes;
 
     /* Ethernet header: dst(6) + src(6) + ethertype(2) */
     memcpy(buf, dst_mac, 6);
-    memcpy(buf + 6, src_mac, 6);
+    memcpy(buf + 6, dtn_interface->local_mac_bytes, 6);
     buf[12] = 0x86;
     buf[13] = 0xDD; /* ETH_P_IPV6 */
 

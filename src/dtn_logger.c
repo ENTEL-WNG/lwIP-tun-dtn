@@ -39,6 +39,8 @@ void dtn_log_init(dtn_log_level_t level) {
     DTN_INFO("Logger initialized (Level: %s)", level_strings[global_log_level]);
 }
 
+bool dtn_log_enabled(dtn_log_level_t level) { return level <= global_log_level; }
+
 void dtn_log_write(dtn_log_level_t level, const char* file, int line, const char* fmt, ...) {
     if (level > global_log_level) {
         return;

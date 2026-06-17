@@ -48,7 +48,7 @@ typedef struct {
 #pragma pack()
 
 static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_t* src_addr, ip6_addr_t* dest_addr,
-                                                                 DtnInterface* dtn_interface, const struct pbuf* p,
+                                                                 const DtnInterface* dtn_interface, const struct pbuf* p,
                                                                  dtn_icmpv6_msg_type_t type, u8_t code, u8_t reason) {
     const struct ip6_hdr* orig_ip6hdr = (const struct ip6_hdr*)p->payload;
     struct pbuf* q;
@@ -118,7 +118,7 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
     ip6addr_ntoa_r(src_addr, src_str, sizeof(src_str));
     ip6addr_ntoa_r(dest_addr, dest_str, sizeof(dest_str));
     switch (outgoing_result) {
-        case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+        case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
             dtn_socket_result_t socket_result = dtn_raw_socket_send_via_interface(complete_pkt, dtn_interface);
             if (socket_result == DTN_SOCKET_OK) {
                 DTN_DEBUG("ICMPv6|| src: %s -> dest: %s | type %d | code %d || SUCESSFUL send message", src_str, dest_str, type, code);
@@ -129,18 +129,20 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
                       socket_result);
             result = DTN_ICMPV6_SEND_MESSAGE_ERR;
             break;
-
-        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-            dtn_storage_store_packet_result_t result = dtn_storage_store_packet(global_dtn_module->storage, complete_pkt, &routing_result);
-            if (result == DTN_STORAGE_STORE_OK) {
+        }
+        case DTN_CONTROLLER_PROCESS_OUTGOING_STORE: {
+            dtn_storage_store_packet_result_t store_result =
+                dtn_storage_store_packet(global_dtn_module->storage, complete_pkt, &routing_result);
+            if (store_result == DTN_STORAGE_STORE_OK) {
                 DTN_DEBUG("ICMPv6|| src: %s -> dest: %s | type %d | code %d || SUCESSFUL stored message", src_str, dest_str, type, code);
                 result = DTN_ICMPV6_SEND_MESSAGE_STORED;
                 break;
             }
             DTN_ERROR("ICMPv6|| src: %s -> dest: %s | type %d | code %d|| FAILED to store message error %d", src_str, dest_str, type, code,
-                      socket_result);
+                      store_result);
             result = DTN_ICMPV6_SEND_MESSAGE_STORED_ERR;
             break;
+        }
         default:
             result = DTN_ICMPV6_SEND_MESSAGE_ERR;
             break;
@@ -282,7 +284,7 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
             dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(p, &routing_result);
 
             switch (outgoing_result) {
-                case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+                case DTN_CONTROLLER_PROCESS_OUTGOING_OK: {
                     dtn_socket_result_t socket_result = dtn_raw_socket_send_to_node_id(p, routing_result.next_hop_node_id);
                     if (socket_result == DTN_SOCKET_OK) {
                         DTN_DEBUG("ICMPv6|| src: %s -> dest: %s | type %d | code %d || SUCESSFUL forwarded PCK_DELIVERED", src_str,
@@ -292,17 +294,18 @@ dtn_icmpv6_process_result_t dtn_icmpv6_process(struct pbuf* p) {
                     DTN_ERROR("ICMPv6|| src: %s -> dest: %s | type %d | code %d|| FAILED to forward PCK_DELIVERED, error: %d", src_str,
                               dest_str, icmp6hdr->type, icmp6hdr->code, socket_result);
                     return DTN_ICMPV6_PROCESS_ERR;
-
-                case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-                    dtn_storage_store_packet_result_t result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
-                    if (result == DTN_STORAGE_STORE_OK) {
+                }
+                case DTN_CONTROLLER_PROCESS_OUTGOING_STORE: {
+                    dtn_storage_store_packet_result_t store_result = dtn_storage_store_packet(global_dtn_module->storage, p, &routing_result);
+                    if (store_result == DTN_STORAGE_STORE_OK) {
                         DTN_DEBUG("ICMPv6|| src: %s -> dest: %s | type %d | code %d || SUCESSFUL stored message", src_str, dest_str,
                                   icmp6hdr->type, icmp6hdr->code);
                         return DTN_ICMPV6_PROCESS_OK;
                     }
                     DTN_ERROR("ICMPv6|| src: %s -> dest: %s | type %d | code %d|| FAILED to store PCK_DELIVERED, error: %d", src_str,
-                              dest_str, icmp6hdr->type, icmp6hdr->code, socket_result);
+                              dest_str, icmp6hdr->type, icmp6hdr->code, store_result);
                     return DTN_ICMPV6_PROCESS_ERR;
+                }
                 default:
                     return DTN_ICMPV6_PROCESS_ERR;
             }

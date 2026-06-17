@@ -632,7 +632,7 @@ def main():
         out_file.write_text(toml)
         print(f"  wrote {out_file}")
 
-    # generate_graph(data, node_data, out_dir / "topology.png")
+    generate_graph(data, node_data, out_dir / "topology.png")
 
     print("Generating docker-compose.yml...")
     cpus   = str(data.get("contact_plan", {}).get("cpus",   "1.0"))

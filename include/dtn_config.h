@@ -15,17 +15,17 @@
 #define FORWARD_BEST_DELIVERY_TIME 0
 
 #define MAX_STORED_PACKETS 1024 * 1024
-#define MAX_STORED_PACKETS_FORWARD 128
 
 #define CONTACT_CHECK_INTERVAL_MS 1000
-#define DTN_FORWARD_RATE_PKTS_PER_SEC 128
+#define DTN_FORWARD_RATE_PKTS_PER_SEC 256
 #define DTN_FORWARD_PACING_TICK_MS 10
+#define MAX_STORED_PACKETS_FORWARD_PER_TICK 32
 #define DTN_STATS_INTERVAL_MS 5000
 
 // Stored-packet retransmission. A forwarded stored packet is normally deleted by
 // the custody RECEIVED ACK; if that ACK (or the forward) is lost, re-forward the
 // packet after DTN_FORWARD_RETRY_MS, up to DTN_MAX_FORWARD_ATTEMPTS, then drop it.
-#define DTN_FORWARD_RETRY_MS 2000
+#define DTN_FORWARD_RETRY_MS 5000
 #define DTN_MAX_FORWARD_ATTEMPTS 5
 
 /* -------------------------------------------------------------------------
@@ -66,6 +66,13 @@ typedef struct {
     // Socket assigned in raw_socket
     int socket;
     int socket_index;
+
+    // Pre-parsed forms of the static config strings above, filled once in
+    // dtn_init_raw_socket() so the per-packet send path never re-parses them.
+    uint8_t local_mac_bytes[6];    // parsed from local_mac
+    uint8_t remote_mac_bytes[6];   // parsed from remote_mac
+    uint8_t local_addr_bytes[16];  // raw 16 bytes of local_addr (ip6_addr_t.addr)
+    bool local_addr_valid;         // false if local_addr failed to parse
 } DtnInterface;
 
 /* -------------------------------------------------------------------------
