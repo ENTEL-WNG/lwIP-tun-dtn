@@ -322,54 +322,52 @@ int dtn_controller_process_stored(void) {
 
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
-        // Reuse the routing decision computed when the packet was stored instead of
-        // re-running CGR. The contact window is already enforced by the
-        // READY_TIME_COL <= now filter in dtn_storage_get_ready_entries.
-        DtnRoutingResult routing_result = {
-            .next_hop_node_id = entry->next_hop_node_id,
-            .min_delivery_time = entry->min_delivery_time_in_sec,
-            .max_delivery_time = entry->max_delivery_time_in_sec,
-            .best_delivery_time = entry->best_delivery_time_in_sec,
-        };
-
-        dtn_controller_process_outgoing_result_t result = DTN_CONTROLLER_PROCESS_OUTGOING_OK;
-        switch (result) {
-            case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
-                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
-                dtn_socket_result_t socket_result = dtn_controller_send(p, routing_result);
-                if (socket_result == DTN_SOCKET_OK) {
-                    stat_fwd_stored++;
-                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
-                             custodian_str);
-                    if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
-                        dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
-                    } else {
-                        dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
-                    }
-                    if (!has_custodian) {
-                        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.",
-                                 src_str, dest_str, custodian_str);
-                        break;
-                    }
-                    dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
-                    if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
-                        DTN_INFO(
-                            "Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send "
-                            "ICMPV6_PCK_FORWARDED for STORED",
-                            src_str, dest_str, custodian_str);
-                    }
+        bool is_next_hop_active;
+        int active_result = dtn_routing_is_next_hop_active(sys_now(), entry->routing_result, &is_next_hop_active);
+        if (active_result) {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
+            dtn_socket_result_t socket_result = dtn_controller_send(p, entry->routing_result);
+            if (socket_result == DTN_SOCKET_OK) {
+                stat_fwd_stored++;
+                DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str, custodian_str);
+                if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
+                    dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                } else {
+                    dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
+                }
+                if (!has_custodian) {
+                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.", src_str,
+                             dest_str, custodian_str);
                     break;
                 }
-                DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
+                dtn_icmpv6_send_message_result_t icmp_result = dtn_icmpv6_send_pck_forwarded(p, ICMP6_CODE_DTN_NO_INFO);
+                if (icmp_result == DTN_ICMPV6_SEND_MESSAGE_OK) {
+                    DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL send ICMPV6_PCK_FORWARDED for STORED", src_str,
+                             dest_str, custodian_str);
+                }
                 break;
-            case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
-                DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || NEEDS to updated STORED", src_str, dest_str, custodian_str);
-                break;
-            case DTN_CONTROLLER_PROCESS_OUTGOING_ERR:
-                DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
-                break;
-            default:
-                break;
+            }
+            DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to forward STORED", src_str, dest_str, custodian_str);
+        } else {
+            DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || STORED NOT ACTIVE", src_str, dest_str, custodian_str);
+            DtnRoutingResult routing_result;
+            dtn_controller_process_outgoing_result_t result = dtn_controller_process_outgoing(p, &routing_result);
+            switch (result) {
+                case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
+                    DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || UNSUPPORTED STATE", src_str, dest_str, custodian_str);
+                    dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                    break;
+                case DTN_CONTROLLER_PROCESS_OUTGOING_STORE:
+                    DTN_WARN("Packet|| src: %s -> dest: %s | custodian: %s || TRY to UPDATE STORED", src_str, dest_str, custodian_str);
+                    dtn_storage_update_routing_result(storage, entry->db_id, &routing_result);
+                    break;
+                case DTN_CONTROLLER_PROCESS_OUTGOING_ERR:
+                    DTN_ERROR("Packet|| src: %s -> dest: %s | custodian: %s || FAILED to UPDATE STORED", src_str, dest_str, custodian_str);
+                    dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                    break;
+                default:
+                    break;
+            }
         }
 
         if (entry->p != NULL) {

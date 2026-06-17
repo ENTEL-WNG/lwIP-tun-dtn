@@ -435,10 +435,10 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         Stored_Packet_Entry* e = &out[n];
         e->db_id = db_id;
         e->stored_time_ms = stored_ms;
-        e->best_delivery_time_in_sec = deliv;
-        e->max_delivery_time_in_sec = max_deliv;
-        e->min_delivery_time_in_sec = min_deliv;
-        e->next_hop_node_id = next_hop;
+        e->routing_result.next_hop_node_id = next_hop;
+        e->routing_result.best_delivery_time = deliv;
+        e->routing_result.max_delivery_time = max_deliv;
+        e->routing_result.min_delivery_time = min_deliv;
         e->p = p;
         strncpy(e->src_addr, src_text, sizeof(e->src_addr) - 1);
         e->src_addr[sizeof(e->src_addr) - 1] = '\0';
@@ -479,6 +479,44 @@ int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec) {
     int has_ready = (sqlite3_step(stmt) == SQLITE_ROW);
     sqlite3_reset(stmt);
     return has_ready;
+}
+
+int dtn_storage_update_routing_result(Storage_Function* storage, int64_t db_id, const DtnRoutingResult* routing_result) {
+    if (!storage || !storage->db || db_id < 0 || !routing_result)
+        return 0;
+
+    const char* sql =
+        "UPDATE stored_packets"
+        " SET next_hop_node_id = ?,"
+        "     best_delivery_time_in_sec = ?,"
+        "     max_delivery_time_in_sec = ?,"
+        "     min_delivery_time_in_sec = ?"
+        " WHERE id = ?;";
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare UPDATE routing result: %s", sqlite3_errmsg(storage->db));
+        return 0;
+    }
+
+    sqlite3_bind_int(stmt, 1, routing_result->next_hop_node_id);
+    sqlite3_bind_double(stmt, 2, routing_result->best_delivery_time);
+    sqlite3_bind_double(stmt, 3, routing_result->max_delivery_time);
+    sqlite3_bind_double(stmt, 4, routing_result->min_delivery_time);
+    sqlite3_bind_int64(stmt, 5, (sqlite3_int64)db_id);
+
+    rc = sqlite3_step(stmt);
+    int ok = (rc == SQLITE_DONE);
+    if (!ok) {
+        DTN_ERROR("UPDATE routing result failed for row %" PRId64 ": %s", db_id, sqlite3_errmsg(storage->db));
+    } else {
+        DTN_INFO("Updated routing result for row %" PRId64 " (next_hop=%d, delivery_time=%.2f)", db_id, routing_result->next_hop_node_id,
+                 routing_result->best_delivery_time);
+    }
+
+    sqlite3_finalize(stmt);
+    return ok;
 }
 
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {

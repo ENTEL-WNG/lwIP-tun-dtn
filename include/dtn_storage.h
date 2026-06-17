@@ -34,10 +34,7 @@
 typedef struct Stored_Packet_Entry {
     int64_t db_id;
     u32_t stored_time_ms;
-    double best_delivery_time_in_sec;
-    double max_delivery_time_in_sec;
-    double min_delivery_time_in_sec;
-    int next_hop_node_id;
+    DtnRoutingResult routing_result;
     char src_addr[IP6ADDR_STRLEN_MAX];        // human-readable IPv6 string
     char dest_addr[IP6ADDR_STRLEN_MAX];       // human-readable IPv6 string
     char custodian_addr[IP6ADDR_STRLEN_MAX];  // valid only when has_custodian is true
@@ -82,6 +79,10 @@ int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec);
 // Read packets whose best_delivery_time_in_sec <= now_sec into out[].
 // Returns number of entries filled. Caller must pbuf_free each entry's p.
 int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count);
+
+// Update routing fields (next_hop, delivery times) for an existing stored packet.
+// Returns 1 on success, 0 on failure.
+int dtn_storage_update_routing_result(Storage_Function* storage, int64_t db_id, const DtnRoutingResult* routing_result);
 
 // Delete
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);

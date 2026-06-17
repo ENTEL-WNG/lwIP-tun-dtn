@@ -415,8 +415,8 @@ bool test_storage(void) {
     int n = dtn_storage_get_ready_entries(storage, 1000.0, entries, 10);
     ok &= TEST_ASSERT(n == 1, "get_ready_entries returns 1 for a past-due packet");
     if (n >= 1) {
-        ok &= TEST_ASSERT(entries[0].min_delivery_time_in_sec == 0.0, "delivery_time round-trips: expected 0.0, got %.2f",
-                          entries[0].min_delivery_time_in_sec);
+        ok &= TEST_ASSERT(entries[0].routing_result.min_delivery_time == 0.0, "delivery_time round-trips: expected 0.0, got %.2f",
+                          entries[0].routing_result.min_delivery_time);
         ok &= TEST_ASSERT(strcmp(entries[0].dest_addr, "FD00:4:5::5") == 0, "dest_addr: expected 'FD00:4:5::5', got '%s'",
                           entries[0].dest_addr);
         ok &=
@@ -507,26 +507,22 @@ int main() {
     ok &= test_routing();
     DTN_TEST("%s\n", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
 
-    // DTN_TEST("IS_LOCAL_ADDR TESTS");
-    // ok &= test_is_local_addr();
-    // DTN_TEST("%s\n", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
+    DTN_TEST("IS_LOCAL_ADDR TESTS");
+    ok &= test_is_local_addr();
+    DTN_TEST("%s\n", ok ? "IS_LOCAL_ADDR TESTS PASSED" : "IS_LOCAL_ADDR TESTS FAILED");
 
-    // DTN_TEST("CUSTODIAN / HASH TESTS");
-    // ok &= test_custodian();
-    // ok &= test_payload_length();
-    // DTN_TEST("%s\n", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
+    DTN_TEST("CUSTODIAN / HASH TESTS");
+    ok &= test_custodian();
+    ok &= test_payload_length();
+    DTN_TEST("%s\n", ok ? "CUSTODIAN / HASH TESTS PASSED" : "CUSTODIAN / HASH TESTS FAILED");
 
-    // DTN_TEST("ROUTING TESTS");
-    // ok &= test_routing();
-    // DTN_TEST("%s\n", ok ? "ROUTING TESTS PASSED" : "ROUTING TESTS FAILED");
+    DTN_TEST("STORAGE TESTS");
+    ok &= test_storage();
+    DTN_TEST("%s\n", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
 
-    // DTN_TEST("STORAGE TESTS");
-    // ok &= test_storage();
-    // DTN_TEST("%s\n", ok ? "STORAGE TESTS PASSED" : "STORAGE TESTS FAILED");
-
-    // DTN_TEST("DELETE-BY-HASH TESTS");
-    // ok &= test_delete_by_hash();
-    // DTN_TEST("%s\n", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
+    DTN_TEST("DELETE-BY-HASH TESTS");
+    ok &= test_delete_by_hash();
+    DTN_TEST("%s\n", ok ? "DELETE-BY-HASH TESTS PASSED" : "DELETE-BY-HASH TESTS FAILED");
 
     DTN_TEST("%s\n", ok ? "ALL TESTS PASSED" : "SOME TESTS FAILED");
 
