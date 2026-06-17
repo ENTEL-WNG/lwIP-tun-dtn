@@ -17,6 +17,7 @@
 #define DTN_ROUTING_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <time.h>
 
 #include "dtn_module.h"
@@ -52,7 +53,8 @@ typedef struct {
 
 typedef struct {
     int dest_node_id;
-    long packet_length_in_bits;
+    long length_bucket;  // package_length_in_bits / ROUTE_CACHE_LENGTH_BUCKET_BITS
+    uint32_t last_used;  // monotonic tick for LRU eviction (0 = empty slot)
     DtnRoutingResult result;
 } RouteCacheEntry;
 

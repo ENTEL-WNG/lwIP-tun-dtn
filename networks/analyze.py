@@ -223,8 +223,9 @@ def _net_rates(rows: list[dict]) -> list[dict]:
             continue
         rates.append({
             "ts":      curr["ts"],
-            "rx_kbps": (rx_c - rx_p) / dt / 1024,
-            "tx_kbps": (tx_c - tx_p) / dt / 1024,
+            # bytes/s -> kilobits/s (×8 bits, ÷1000 kilo)
+            "rx_kbps": (rx_c - rx_p) * 8 / dt / 1000,
+            "tx_kbps": (tx_c - tx_p) * 8 / dt / 1000,
         })
     return rates
 
@@ -496,8 +497,8 @@ def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict, start
             tx_mean = r.get("net_tx_kbps_mean")
             tx_peak = r.get("net_tx_kbps_peak")
             if rx_mean is not None:
-                lines.append(f"  {node}:  RX {rx_mean:.1f} KB/s avg  {rx_peak:.1f} peak"
-                             f"  |  TX {tx_mean:.1f} KB/s avg  {tx_peak:.1f} peak")
+                lines.append(f"  {node}:  RX {rx_mean:.1f} kbit/s avg  {rx_peak:.1f} peak"
+                             f"  |  TX {tx_mean:.1f} kbit/s avg  {tx_peak:.1f} peak")
             else:
                 lines.append(f"  {node}:  (no net rate data)")
     else:

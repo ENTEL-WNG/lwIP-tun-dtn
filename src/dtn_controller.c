@@ -322,10 +322,8 @@ void dtn_controller_process_stored(void) {
                     DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str,
                              custodian_str);
                     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
-                        // dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
-                        dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
+                        dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                     } else {
-                        // dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                         dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                     }
                     if (!has_custodian) {
@@ -354,11 +352,11 @@ void dtn_controller_process_stored(void) {
                 break;
         }
 
-        // dtn_controller_send never frees entry->p; the custodian-stamped copy
-        // (if any) is freed inside that function, so this is always safe.
         if (entry->p != NULL) {
             pbuf_free(entry->p);
             entry->p = NULL;
         }
     }
+
+    dtn_storage_purge_exhausted(global_dtn_module->storage);
 }

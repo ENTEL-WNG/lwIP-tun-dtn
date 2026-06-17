@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -17,8 +18,24 @@ static dtn_time_t global_time_format = SYS_TIME;
 // Map enum values to strings for printing
 static const char* level_strings[] = {"FATAL", "ERROR", "WARN ", "INFO ", "TEST ", "DEBUG"};
 
+// Map a DTN_LOG_LEVEL env string (e.g. "WARN", "INFO", "DEBUG") to its enum.
+// Returns @fallback if the variable is unset or unrecognised.
+static dtn_log_level_t level_from_env(dtn_log_level_t fallback) {
+    const char* s = getenv("DTN_LOG_LEVEL");
+    if (!s || !*s)
+        return fallback;
+    for (dtn_log_level_t lvl = DTN_LOG_LEVEL_FATAL; lvl <= DTN_LOG_LEVEL_DEBUG; lvl++) {
+        // Compare against the trimmed level string (strings are padded to 5 chars).
+        if (strncasecmp(s, level_strings[lvl], strlen(s)) == 0 && strlen(s) >= 4)
+            return lvl;
+    }
+    return fallback;
+}
+
 void dtn_log_init(dtn_log_level_t level) {
-    global_log_level = level;
+    // DTN_LOG_LEVEL env var overrides the compiled default — lets throughput runs
+    // drop to WARN (far fewer per-packet log syscalls) without a rebuild.
+    global_log_level = level_from_env(level);
     DTN_INFO("Logger initialized (Level: %s)", level_strings[global_log_level]);
 }
 

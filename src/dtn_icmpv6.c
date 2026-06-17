@@ -112,7 +112,6 @@ static dtn_icmpv6_send_message_result_t _dtn_icmpv6_send_message(const ip6_addr_
 
     DtnRoutingResult routing_result;
     dtn_controller_process_outgoing_result_t outgoing_result = dtn_controller_process_outgoing(complete_pkt, &routing_result);
-    // dtn_controller_process_outgoing_result_t outgoing_result = DTN_CONTROLLER_PROCESS_OUTGOING_OK;
 
     dtn_icmpv6_send_message_result_t result;
     char src_str[IP6ADDR_STRLEN_MAX], dest_str[IP6ADDR_STRLEN_MAX];
