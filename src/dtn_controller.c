@@ -323,8 +323,8 @@ int dtn_controller_process_stored(void) {
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
         bool is_next_hop_active;
-        int active_result = dtn_routing_is_next_hop_active(sys_now(), entry->routing_result, &is_next_hop_active);
-        if (active_result) {
+        dtn_routing_result_t active_result = dtn_routing_is_next_hop_active(sys_now(), entry->routing_result, &is_next_hop_active);
+        if (is_next_hop_active) {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
             dtn_socket_result_t socket_result = dtn_controller_send(p, entry->routing_result);
             if (socket_result == DTN_SOCKET_OK) {
