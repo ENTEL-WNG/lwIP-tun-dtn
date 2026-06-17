@@ -371,6 +371,10 @@ def generate_compose(node_data: dict, config_dir: Path, out_path: Path, cpus: st
             "environment": {
                 "DTN_CONFIG_PATH": container_config,
                 "TEST_CASE_NUMBER": "${TEST_CASE_NUMBER}",
+                # Override per-node log verbosity from the shell/.env. Defaults to
+                # INFO; set DTN_LOG_LEVEL=WARN for throughput runs (far fewer
+                # per-packet log syscalls).
+                "DTN_LOG_LEVEL": "${DTN_LOG_LEVEL:-INFO}",
             },
             # Mount the entire repo into the container so:
             #   1. The compiled lwip_tun binary is always up-to-date (or can be

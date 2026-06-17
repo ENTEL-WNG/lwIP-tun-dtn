@@ -18,6 +18,16 @@ sudo ./run_throughput_test.py \
   --wait-after 10 \
   --capture-interval 5
 
+python run_throughput_test.py \
+  --network contact_plan_throughput \
+  --rate 1 \
+  --size 1024 \
+  --sender-id 1 \
+  --receiver-id 6 \
+  --duration 30 \
+  --wait-after 10 \
+  --capture-interval 5
+
 sudo ./run_throughput_test.py \
   --network contact_plan_Iridium \
   --rate 1 \

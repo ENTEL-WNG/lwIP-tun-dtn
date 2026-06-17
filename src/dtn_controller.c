@@ -127,6 +127,7 @@ dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct 
 
     // Check if this is ICMPv6 and process it
     if (IP6H_NEXTH(ip6hdr) == IP6_NEXTH_ICMP6) {
+        DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process as ICMPv6.", src_str, dest_str, custodian_str);
         dtn_icmpv6_process_result_t result = dtn_controller_process_icmpv6(p);
         if (result == DTN_ICMPV6_PROCESS_OK) {
             DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL processed as ICMPv6.", src_str, dest_str, custodian_str);
@@ -257,27 +258,47 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct 
     return DTN_CONTROLLER_PROCESS_OUTGOING_OK;
 }
 
-void dtn_controller_process_stored(void) {
+int dtn_controller_process_stored(void) {
     if (!global_dtn_module || !global_dtn_module->storage || !global_dtn_module->routing) {
-        return;
+        return 0;
     }
 
     Storage_Function* storage = global_dtn_module->storage;
 
     double now_sec = sys_now() / 1000.0;
     if (!dtn_storage_any_ready_entries(storage, now_sec)) {
-        return;
+        return 0;
     }
+
+    static double pacing_tokens = 0.0;
+    static u32_t pacing_last_ms = 0;
+    const double tokens_per_ms = (double)DTN_FORWARD_RATE_PKTS_PER_SEC / 1000.0;
+    const double token_cap = tokens_per_ms * (double)DTN_FORWARD_PACING_TICK_MS * 2.0;
+
+    u32_t now_ms = sys_now();
+    if (pacing_last_ms != 0) {
+        pacing_tokens += (double)(now_ms - pacing_last_ms) * tokens_per_ms;
+    }
+    pacing_last_ms = now_ms;
+    if (pacing_tokens > token_cap) {
+        pacing_tokens = token_cap;
+    }
+
+    int budget = (int)pacing_tokens;
+    if (budget < 1) {
+        return 1;
+    }
+    if (budget > MAX_STORED_PACKETS_FORWARD) {
+        budget = MAX_STORED_PACKETS_FORWARD;
+    }
+
     int number_of_stored_packages = dtn_storage_count(storage);
 
-    // Load a small batch per callback to avoid exhausting the lwIP heap
-    // (MEM_SIZE) and the stack.  The timer fires again shortly so any
-    // remaining ready packets are forwarded in the next call.
-    int max_stored_packets = MAX_STORED_PACKETS_FORWARD;
     Stored_Packet_Entry entries[MAX_STORED_PACKETS_FORWARD];
-    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, MAX_STORED_PACKETS_FORWARD);
+    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, budget);
+    pacing_tokens -= n;
 
-    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f", number_of_stored_packages, n, now_sec);
+    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f (budget %d)", number_of_stored_packages, n, now_sec, budget);
 
     for (int i = 0; i < n; i++) {
         Stored_Packet_Entry* entry = &entries[i];
@@ -301,8 +322,17 @@ void dtn_controller_process_stored(void) {
 
         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to process STORED.", src_str, dest_str, custodian_str);
 
-        DtnRoutingResult routing_result;
-        dtn_controller_process_outgoing_result_t result = dtn_controller_process_outgoing(p, &routing_result);
+        // Reuse the routing decision computed when the packet was stored instead of
+        // re-running CGR. The contact window is already enforced by the
+        // READY_TIME_COL <= now filter in dtn_storage_get_ready_entries.
+        DtnRoutingResult routing_result = {
+            .next_hop_node_id = entry->next_hop_node_id,
+            .min_delivery_time = entry->min_delivery_time_in_sec,
+            .max_delivery_time = entry->max_delivery_time_in_sec,
+            .best_delivery_time = entry->best_delivery_time_in_sec,
+        };
+
+        dtn_controller_process_outgoing_result_t result = DTN_CONTROLLER_PROCESS_OUTGOING_OK;
         switch (result) {
             case DTN_CONTROLLER_PROCESS_OUTGOING_OK:
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || TRY to forward STORED.", src_str, dest_str, custodian_str);
@@ -313,6 +343,8 @@ void dtn_controller_process_stored(void) {
                              custodian_str);
                     if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
                         dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
+                    } else {
+                        dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);
                     }
                     if (!has_custodian) {
                         DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || no custodian so no ICMPV6_PCK_FORWARDED for STORED.",
@@ -340,11 +372,15 @@ void dtn_controller_process_stored(void) {
                 break;
         }
 
-        // dtn_controller_send never frees entry->p; the custodian-stamped copy
-        // (if any) is freed inside that function, so this is always safe.
         if (entry->p != NULL) {
             pbuf_free(entry->p);
             entry->p = NULL;
         }
     }
+
+    dtn_storage_purge_exhausted(global_dtn_module->storage);
+
+    // Tell the main loop to keep polling at the pacing tick while ready packets
+    // remain (e.g. we were budget-limited, or more became ready meanwhile).
+    return dtn_storage_any_ready_entries(storage, now_sec) ? 1 : 0;
 }

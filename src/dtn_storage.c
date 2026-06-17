@@ -34,7 +34,7 @@
 
 // Bump this whenever the schema changes. On mismatch the table is dropped and
 // recreated so old DBs don't cause INSERT/SELECT failures.
-#define SCHEMA_VERSION 2
+#define SCHEMA_VERSION 1
 
 static const char* CREATE_TABLE_SQL =
     "CREATE TABLE IF NOT EXISTS stored_packets ("
@@ -45,6 +45,8 @@ static const char* CREATE_TABLE_SQL =
     "  best_delivery_time_in_sec REAL    NOT NULL,"
     "  max_delivery_time_in_sec  REAL    NOT NULL,"
     "  min_delivery_time_in_sec  REAL    NOT NULL,"
+    "  number_of_forward_attempts INTEGER NOT NULL DEFAULT 0,"
+    "  last_attempt_ms           INTEGER NOT NULL DEFAULT 0,"
     "  src_addr                  TEXT    NOT NULL,"
     "  dest_addr                 TEXT    NOT NULL,"
     "  custodian_addr            TEXT,"
@@ -60,6 +62,36 @@ static const char* DROP_TABLE_SQL = "DROP TABLE IF EXISTS stored_packets;";
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+// Return a cached prepared statement for @sql (a string literal — keyed by its
+// stable address), preparing and caching it on first use. The statement is reset
+// and its bindings cleared, ready for the caller to bind and step. Callers must
+// sqlite3_reset() (not finalize) when done; statements are finalized in destroy.
+static sqlite3_stmt* db_stmt(Storage_Function* storage, const char* sql) {
+    for (int i = 0; i < storage->stmt_cache_count; i++) {
+        if (storage->stmt_sql[i] == sql) {
+            sqlite3_reset(storage->stmt_cache[i]);
+            sqlite3_clear_bindings(storage->stmt_cache[i]);
+            return storage->stmt_cache[i];
+        }
+    }
+
+    sqlite3_stmt* stmt = NULL;
+    if (sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        DTN_ERROR("Failed to prepare statement: %s", sqlite3_errmsg(storage->db));
+        return NULL;
+    }
+    if (storage->stmt_cache_count < DB_STMT_CACHE_SIZE) {
+        storage->stmt_sql[storage->stmt_cache_count] = sql;
+        storage->stmt_cache[storage->stmt_cache_count] = stmt;
+        storage->stmt_cache_count++;
+    } else {
+        // More distinct statements than the cache holds — should not happen.
+        // Finalize on the caller's behalf is impossible here, so warn loudly.
+        DTN_WARN("Statement cache full (%d) — leaking prepared statement", DB_STMT_CACHE_SIZE);
+    }
+    return stmt;
+}
 
 // Bind a human-readable IPv6 address string to a statement parameter.
 static void bind_ip6_addr_text(sqlite3_stmt* stmt, int col, const ip6_addr_t* addr) {
@@ -106,6 +138,15 @@ static int dtn_storage_init_db(Storage_Function* storage) {
         storage->db = NULL;
         return 0;
     }
+
+    // Throughput tuning. Stored packets are ephemeral per run, so we trade
+    // crash-durability for speed: no per-write fsync and an in-memory journal.
+    // Kept as a single DB file (no WAL -wal/-shm) so the read-only metrics
+    // collector's "mode=ro&nolock=1" access keeps working.
+    sqlite3_exec(storage->db, "PRAGMA synchronous=OFF;", NULL, NULL, NULL);
+    sqlite3_exec(storage->db, "PRAGMA journal_mode=MEMORY;", NULL, NULL, NULL);
+    sqlite3_exec(storage->db, "PRAGMA temp_store=MEMORY;", NULL, NULL, NULL);
+    sqlite3_exec(storage->db, "PRAGMA cache_size=-8000;", NULL, NULL, NULL);  // ~8 MB page cache
 
     // Check schema version; drop and recreate if stale.
     int version = 0;
@@ -164,6 +205,7 @@ Storage_Function* dtn_storage_create(DTN_Module* parent) {
     storage->parent_module = parent;
     storage->max_storage_bytes = 1024 * 1024;  // 1 MB limit (informational)
     storage->db = NULL;
+    storage->stmt_cache_count = 0;
 
     DTN_INFO("DTN Storage Function created (Max: %zu bytes, Max Packets: %d).", storage->max_storage_bytes, MAX_STORED_PACKETS);
 
@@ -181,6 +223,11 @@ void dtn_storage_destroy(Storage_Function* storage) {
         return;
     DTN_INFO("Destroying DTN Storage Function...");
 
+    for (int i = 0; i < storage->stmt_cache_count; i++) {
+        sqlite3_finalize(storage->stmt_cache[i]);
+    }
+    storage->stmt_cache_count = 0;
+
     if (storage->db) {
         sqlite3_close(storage->db);
         storage->db = NULL;
@@ -193,17 +240,14 @@ int dtn_storage_count(Storage_Function* storage) {
     if (!storage || !storage->db)
         return 0;
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, "SELECT COUNT(*) FROM stored_packets;", -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare COUNT: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, "SELECT COUNT(*) FROM stored_packets;");
+    if (!stmt)
         return 0;
-    }
 
     int count = 0;
     if (sqlite3_step(stmt) == SQLITE_ROW)
         count = sqlite3_column_int(stmt, 0);
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     return count;
 }
 
@@ -281,13 +325,12 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
         "  src_addr, dest_addr, custodian_addr, packet_data)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare INSERT: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, sql);
+    if (!stmt) {
         free(buf);
         return DTN_STORAGE_STORE_ERR;
     }
+    int rc;
 
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)pkt_hash);
     sqlite3_bind_int64(stmt, 2, (sqlite3_int64)sys_now());
@@ -314,7 +357,7 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
                  (int64_t)sqlite3_last_insert_rowid(storage->db), routing_result->best_delivery_time, dtn_storage_count(storage));
     }
 
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     free(buf);
     return ok ? DTN_STORAGE_STORE_OK : DTN_STORAGE_STORE_ERR;
 }
@@ -325,6 +368,21 @@ dtn_storage_store_packet_result_t dtn_storage_store_packet(Storage_Function* sto
 #define READY_TIME_COL "min_delivery_time_in_sec"
 #endif
 
+// A stored packet is (re)forwardable when its contact window is open (?1 = now_sec)
+// AND it has not exhausted its retransmission budget (?2 = DTN_MAX_FORWARD_ATTEMPTS)
+// AND it is either fresh or its retry window has elapsed (?3 = now_ms, ?4 = retry_ms).
+#define RETRY_PREDICATE                    \
+    " AND number_of_forward_attempts < ?2" \
+    " AND (number_of_forward_attempts = 0 OR ?3 - last_attempt_ms >= ?4)"
+
+// Bind the shared retry-predicate parameters (?2..?4) on a prepared statement
+// whose ?1 is already the contact-window time.
+static void bind_retry_params(sqlite3_stmt* stmt) {
+    sqlite3_bind_int(stmt, 2, DTN_MAX_FORWARD_ATTEMPTS);
+    sqlite3_bind_int64(stmt, 3, (sqlite3_int64)sys_now());
+    sqlite3_bind_int(stmt, 4, DTN_FORWARD_RETRY_MS);
+}
+
 int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Stored_Packet_Entry out[], int max_count) {
     if (!storage || !storage->db || !out || max_count <= 0)
         return 0;
@@ -334,18 +392,14 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         "       best_delivery_time_in_sec, max_delivery_time_in_sec, min_delivery_time_in_sec,"
         "       src_addr, dest_addr, custodian_addr, packet_data"
         " FROM stored_packets"
-        " WHERE " READY_TIME_COL
-        " <= ?"
-        " ORDER BY " READY_TIME_COL " ASC;";
+        " WHERE " READY_TIME_COL " <= ?1" RETRY_PREDICATE " ORDER BY " READY_TIME_COL " ASC;";
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare SELECT ready: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, sql);
+    if (!stmt)
         return 0;
-    }
 
     sqlite3_bind_double(stmt, 1, now_sec);
+    bind_retry_params(stmt);
 
     int n = 0;
     while (n < max_count && sqlite3_step(stmt) == SQLITE_ROW) {
@@ -404,7 +458,7 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
         n++;
     }
 
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     return n;
 }
 
@@ -414,19 +468,16 @@ int dtn_storage_any_ready_entries(Storage_Function* storage, double now_sec) {
 
     const char* sql =
         "SELECT 1 FROM stored_packets"
-        " WHERE " READY_TIME_COL " <= ?"
-        " LIMIT 1;";
+        " WHERE " READY_TIME_COL " <= ?1" RETRY_PREDICATE " LIMIT 1;";
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, sql, -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare any-ready query: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, sql);
+    if (!stmt)
         return 0;
-    }
 
     sqlite3_bind_double(stmt, 1, now_sec);
+    bind_retry_params(stmt);
     int has_ready = (sqlite3_step(stmt) == SQLITE_ROW);
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
     return has_ready;
 }
 
@@ -434,40 +485,74 @@ void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id) {
     if (!storage || !storage->db || db_id < 0)
         return;
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE id = ?;", -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare DELETE by id: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, "DELETE FROM stored_packets WHERE id = ?;");
+    if (!stmt)
         return;
-    }
 
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)db_id);
-    rc = sqlite3_step(stmt);
+    int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         DTN_ERROR("DELETE by id failed: %s", sqlite3_errmsg(storage->db));
     } else {
         DTN_INFO("Deleted DB row %" PRId64, db_id);
     }
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
 }
 
 void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash) {
     if (!storage || !storage->db || packet_hash == 0)
         return;
 
-    sqlite3_stmt* stmt = NULL;
-    int rc = sqlite3_prepare_v2(storage->db, "DELETE FROM stored_packets WHERE packet_hash = ?;", -1, &stmt, NULL);
-    if (rc != SQLITE_OK) {
-        DTN_ERROR("Failed to prepare DELETE by hash: %s", sqlite3_errmsg(storage->db));
+    sqlite3_stmt* stmt = db_stmt(storage, "DELETE FROM stored_packets WHERE packet_hash = ?;");
+    if (!stmt)
         return;
-    }
 
     sqlite3_bind_int64(stmt, 1, (sqlite3_int64)packet_hash);
-    rc = sqlite3_step(stmt);
+    int rc = sqlite3_step(stmt);
     if (rc != SQLITE_DONE) {
         DTN_ERROR("DELETE by hash failed: %s", sqlite3_errmsg(storage->db));
     } else {
         DTN_INFO("Deleted stored packet(s) with hash 0x%08x (%d rows)", packet_hash, sqlite3_changes(storage->db));
     }
-    sqlite3_finalize(stmt);
+    sqlite3_reset(stmt);
+}
+
+void dtn_storage_increment_forward_attempts(Storage_Function* storage, int64_t db_id) {
+    if (!storage || !storage->db || db_id < 0)
+        return;
+
+    sqlite3_stmt* stmt = db_stmt(storage,
+                                 "UPDATE stored_packets SET number_of_forward_attempts = number_of_forward_attempts + 1,"
+                                 " last_attempt_ms = ? WHERE id = ?;");
+    if (!stmt)
+        return;
+
+    sqlite3_bind_int64(stmt, 1, (sqlite3_int64)sys_now());
+    sqlite3_bind_int64(stmt, 2, (sqlite3_int64)db_id);
+    int rc = sqlite3_step(stmt);
+    if (rc != SQLITE_DONE) {
+        DTN_ERROR("UPDATE forward attempts failed: %s", sqlite3_errmsg(storage->db));
+    }
+    sqlite3_reset(stmt);
+}
+
+int dtn_storage_purge_exhausted(Storage_Function* storage) {
+    if (!storage || !storage->db)
+        return 0;
+
+    sqlite3_stmt* stmt = db_stmt(storage, "DELETE FROM stored_packets WHERE number_of_forward_attempts >= ?;");
+    if (!stmt)
+        return 0;
+
+    sqlite3_bind_int(stmt, 1, DTN_MAX_FORWARD_ATTEMPTS);
+    int rc = sqlite3_step(stmt);
+    int purged = (rc == SQLITE_DONE) ? sqlite3_changes(storage->db) : 0;
+    if (rc != SQLITE_DONE) {
+        DTN_ERROR("purge-exhausted failed: %s", sqlite3_errmsg(storage->db));
+    } else if (purged > 0) {
+        DTN_WARN("Purged %d stored packet(s) that exhausted %d forward attempts (custody ACK never arrived)", purged,
+                 DTN_MAX_FORWARD_ATTEMPTS);
+    }
+    sqlite3_reset(stmt);
+    return purged;
 }

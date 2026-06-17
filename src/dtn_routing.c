@@ -35,6 +35,15 @@
 #define ROUTE_CACHE_SIZE 32
 #define MAX_PY_OBJECTS 100
 
+// Coarse bucket for the packet length in the route-cache key (~512 bytes). CGR
+// may pick different routes by available volume, so we keep length in the key —
+// but bucketed, so normal size variation reuses one entry instead of thrashing.
+#define ROUTE_CACHE_LENGTH_BUCKET_BITS 4096
+#define LENGTH_BUCKET(bits) ((long)((bits) / ROUTE_CACHE_LENGTH_BUCKET_BITS))
+
+// Monotonic tick stamped on each cache hit/insert for LRU eviction.
+static uint32_t route_cache_tick = 0;
+
 static PyObject* py_registry[MAX_PY_OBJECTS];
 static int py_registry_count = 0;
 
@@ -312,20 +321,23 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
         DTN_ERROR("DTN Routing: Python not initialised — call dtn_routing_create first");
         return DTN_ROUTING_ERR;
     }
-    PyObject* py_cgr_yen = (PyObject*)g_routing->py_cgr_yen;
-    PyObject* py_fwd_candidate = (PyObject*)g_routing->py_fwd_candidate;
-    PyObject* py_ipv6_packet = (PyObject*)g_routing->py_ipv6_packet;
-    PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
     /* --- Route cache: skip Python CGR if we already know the answer --- */
+    const long length_bucket = LENGTH_BUCKET(package_length_in_bits);
     for (int i = 0; i < route_cache_count; i++) {
         RouteCacheEntry* cache_entry = &route_cache[i];
-        if (cache_entry->dest_node_id == dest_node_id && cache_entry->packet_length_in_bits == package_length_in_bits &&
+        if (cache_entry->dest_node_id == dest_node_id && cache_entry->length_bucket == length_bucket &&
             current_time_in_sec < cache_entry->result.max_delivery_time) {
+            cache_entry->last_used = ++route_cache_tick;
             *result = cache_entry->result;
             return DTN_ROUTING_OK;
         }
     }
+
+    PyObject* py_cgr_yen = (PyObject*)g_routing->py_cgr_yen;
+    PyObject* py_fwd_candidate = (PyObject*)g_routing->py_fwd_candidate;
+    PyObject* py_ipv6_packet = (PyObject*)g_routing->py_ipv6_packet;
+    PyObject* contact_plan = (PyObject*)g_routing->py_contact_plan;
 
     PyObject* args_yen = track_obj(PyTuple_New(6));
     PyTuple_SetItem(args_yen, 0, PyFloat_FromDouble(current_time_in_sec));
@@ -405,7 +417,7 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
 
     int cache_idx = -1;
     for (int i = 0; i < route_cache_count; i++) {
-        if (route_cache[i].dest_node_id == dest_node_id && route_cache[i].packet_length_in_bits == package_length_in_bits) {
+        if (route_cache[i].dest_node_id == dest_node_id && route_cache[i].length_bucket == length_bucket) {
             cache_idx = i;
             break;
         }
@@ -413,9 +425,19 @@ dtn_routing_result_t _dtn_routing_get_next_hop_node_id(double current_time_in_se
     if (cache_idx < 0 && route_cache_count < ROUTE_CACHE_SIZE) {
         cache_idx = route_cache_count++;
     }
+    if (cache_idx < 0) {
+        // Cache full and no matching entry — evict the least-recently-used slot
+        // instead of giving up (which previously forced a CGR run every packet).
+        cache_idx = 0;
+        for (int i = 1; i < route_cache_count; i++) {
+            if (route_cache[i].last_used < route_cache[cache_idx].last_used)
+                cache_idx = i;
+        }
+    }
     if (cache_idx >= 0) {
         route_cache[cache_idx].dest_node_id = (int)dest_node_id;
-        route_cache[cache_idx].packet_length_in_bits = package_length_in_bits;
+        route_cache[cache_idx].length_bucket = length_bucket;
+        route_cache[cache_idx].last_used = ++route_cache_tick;
         route_cache[cache_idx].result = *result;
         DTN_DEBUG(
             "Packet|| src_id: %ld -> dest_id: %ld | length_in_bits: %ld | min_delivery_time: %.2f | max_delivery_time: %.2f | "

@@ -212,11 +212,11 @@ def plot_throughput(by_node: dict, t0: float, out: Path, fmt: str) -> None:
         for ax, key in [(ax_tx, "net_tx_bytes"), (ax_rx, "net_rx_bytes")]:
             times, rates = _rate(recs, key)
             rel  = [t - t0 for t in times]
-            kbps = [r / 1024 for r in rates]
+            kbps = [r * 8 / 1000 for r in rates]  # bytes/s -> kbit/s
             ax.plot(rel, kbps, label=node, color=color)
     for ax, title in [(ax_tx, "TX Throughput"), (ax_rx, "RX Throughput")]:
         ax.set_xlabel("Time (s)")
-        ax.set_ylabel("KB/s")
+        ax.set_ylabel("kbit/s")
         ax.set_title(title)
         ax.legend(loc="upper right")
     fig.tight_layout()
@@ -261,11 +261,11 @@ def plot_iface_bytes(by_node: dict, t0: float, out: Path, fmt: str) -> None:
         for ax, key in [(ax_tx, "tx_bytes"), (ax_rx, "rx_bytes")]:
             times, rates = _iface_rate(recs, iface, key)
             rel  = [t - t0 for t in times]
-            kbps = [r / 1024 for r in rates]
+            kbps = [r * 8 / 1000 for r in rates]  # bytes/s -> kbit/s
             ax.plot(rel, kbps, label=label, color=color)
     for ax, title in [(ax_tx, "TX per Interface"), (ax_rx, "RX per Interface")]:
         ax.set_xlabel("Time (s)")
-        ax.set_ylabel("KB/s")
+        ax.set_ylabel("kbit/s")
         ax.set_title(title)
         ax.legend(loc="upper right", fontsize=7)
     fig.tight_layout()
@@ -350,7 +350,7 @@ def write_csvs(by_node: dict, t0: float, out: Path) -> None:
 
         for direction, key in [("tx", "net_tx_bytes"), ("rx", "net_rx_bytes")]:
             times, rates = _rate(recs, key)
-            rows = [(round(t - t0, 3), round(r / 1024, 3)) for t, r in zip(times, rates)]
+            rows = [(round(t - t0, 3), round(r * 8 / 1000, 3)) for t, r in zip(times, rates)]
             if rows:
                 _csv(csv_dir / f"throughput_{direction}_{node}.csv",
                      f"time,{direction}_kbps", rows)
@@ -376,7 +376,7 @@ def write_csvs(by_node: dict, t0: float, out: Path) -> None:
                          f"time,{direction}_pkts_per_sec", rows)
             for direction, key in [("tx", "tx_bytes"), ("rx", "rx_bytes")]:
                 times, rates = _iface_rate(recs, iface, key)
-                rows = [(round(t - t0, 3), round(r / 1024, 3)) for t, r in zip(times, rates)]
+                rows = [(round(t - t0, 3), round(r * 8 / 1000, 3)) for t, r in zip(times, rates)]
                 if rows:
                     _csv(csv_dir / f"iface_kbps_{direction}_{node}_{iface}.csv",
                          f"time,{direction}_kbps", rows)

@@ -27,8 +27,6 @@
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 
-#define MAX_STORED_PACKETS 1024 * 1024
-#define MAX_STORED_PACKETS_FORWARD 1024 * 8
 #define MAX_PATH_LENGTH 512
 
 // A single loaded packet entry returned by dtn_storage_get_ready_entries.
@@ -47,10 +45,18 @@ typedef struct Stored_Packet_Entry {
     struct pbuf* p;  // caller-owned; pbuf_free when done
 } Stored_Packet_Entry;
 
+// Cache of prepared statements, keyed by the SQL string-literal pointer, so the
+// per-packet hot paths don't re-compile SQL on every call.
+#define DB_STMT_CACHE_SIZE 16
+
 typedef struct Storage_Function {
     DTN_Module* parent_module;
     size_t max_storage_bytes;
     sqlite3* db;  // open DB handle; NULL until dtn_storage_create
+
+    const char* stmt_sql[DB_STMT_CACHE_SIZE];
+    sqlite3_stmt* stmt_cache[DB_STMT_CACHE_SIZE];
+    int stmt_cache_count;
 } Storage_Function;
 
 // Lifecycle
@@ -80,5 +86,13 @@ int dtn_storage_get_ready_entries(Storage_Function* storage, double now_sec, Sto
 // Delete
 void dtn_storage_delete_by_id(Storage_Function* storage, int64_t db_id);
 void dtn_storage_delete_by_hash(Storage_Function* storage, u32_t packet_hash);
+
+// Increment the forward-attempt counter for a stored packet (by row id) and
+// stamp its last-attempt time, so the retry window starts from this forward.
+void dtn_storage_increment_forward_attempts(Storage_Function* storage, int64_t db_id);
+
+// Delete stored packets that have exhausted DTN_MAX_FORWARD_ATTEMPTS without an
+// ACK. Returns the number of rows purged.
+int dtn_storage_purge_exhausted(Storage_Function* storage);
 
 #endif
