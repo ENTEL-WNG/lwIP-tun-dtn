@@ -569,6 +569,43 @@ def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict, start
 
 
 # ---------------------------------------------------------------------------
+# CSV report
+# ---------------------------------------------------------------------------
+
+def write_report_csv(path: str, traffic: dict, resources: dict) -> None:
+    """Write a per-node summary CSV.
+
+    Columns: node | RX avg/peak | TX avg/peak | CPU mean/max |
+             Mem mean/max | DB max | PDR (run-level, repeated per row).
+    """
+    header = [
+        "node",
+        "cpu_mean_pct", "cpu_max_pct",
+        "mem_mean_mb", "mem_max_mb",
+        "rx_kbps_avg", "rx_kbps_peak",
+        "tx_kbps_avg", "tx_kbps_peak",
+        "db_max",
+        "pdr",
+    ]
+    pdr = traffic.get("pdr") if "error" not in traffic else None
+    node_rows = resources if "error" not in resources else {}
+
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+        for node, r in sorted(node_rows.items()):
+            w.writerow([
+                node,
+                r.get("cpu_mean_pct"), r.get("cpu_max_pct"),
+                r.get("mem_mean_mb"), r.get("mem_max_mb"),
+                r.get("net_rx_kbps_mean"), r.get("net_rx_kbps_peak"),
+                r.get("net_tx_kbps_mean"), r.get("net_tx_kbps_peak"),
+                r.get("db_max_count"),
+                pdr,
+            ])
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -600,6 +637,10 @@ def main():
     with open(report_txt, "w") as f:
         f.write(txt)
     print(f"[analyze] wrote {report_txt}")
+
+    report_csv = os.path.join(d, "report.csv")
+    write_report_csv(report_csv, traffic, resources)
+    print(f"[analyze] wrote {report_csv}")
 
 
 if __name__ == "__main__":
