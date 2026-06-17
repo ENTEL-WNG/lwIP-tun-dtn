@@ -36,12 +36,7 @@ typedef enum {
 
 dtn_controller_process_incoming_result_t dtn_controller_process_incoming(struct pbuf* p, struct netif* inp_netif);
 dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct pbuf* p, DtnRoutingResult* out_routing_result);
-void dtn_controller_process_stored(void);
-
-// Interval (ms) between [STATS] heartbeat log lines.
-#define DTN_STATS_INTERVAL_MS 5000
-
-// Register the periodic stats timer.  Call once after dtn_module_init().
+int dtn_controller_process_stored(void);
 void dtn_controller_stats_timer_start(void);
 
 #endif

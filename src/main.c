@@ -52,7 +52,6 @@
 // Constants
 #define TUN_IFNAME "tun0"
 #define PACKET_BUF_SIZE 2048
-#define CONTACT_CHECK_INTERVAL_MS 1000
 
 DTN_Module* global_dtn_module = NULL;
 
@@ -332,6 +331,11 @@ int main() {
 
     DTN_INFO("Entering main loop...");
 
+    // Set by dtn_controller_process_stored() when a backlog of ready packets
+    // remains, so the loop polls at the pacing tick (instead of the 1 s idle
+    // interval) and the rate limiter can dribble packets out smoothly.
+    int forward_backlog = 0;
+
     while (1) {
         fd_set readfds;
         FD_ZERO(&readfds);
@@ -340,7 +344,7 @@ int main() {
         struct timeval tv;
         u32_t lwip_timeout_ms = sys_timeouts_sleeptime();
 
-        u32_t app_timeout_ms = CONTACT_CHECK_INTERVAL_MS;
+        u32_t app_timeout_ms = forward_backlog ? DTN_FORWARD_PACING_TICK_MS : CONTACT_CHECK_INTERVAL_MS;
         if (lwip_timeout_ms != SYS_TIMEOUTS_SLEEPTIME_INFINITE && lwip_timeout_ms < app_timeout_ms) {
             app_timeout_ms = lwip_timeout_ms;
         }
@@ -367,7 +371,7 @@ int main() {
             }
         }
 
-        dtn_controller_process_stored();
+        forward_backlog = dtn_controller_process_stored();
     }
 
     DTN_INFO("Shutting down...");

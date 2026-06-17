@@ -258,27 +258,47 @@ dtn_controller_process_outgoing_result_t dtn_controller_process_outgoing(struct 
     return DTN_CONTROLLER_PROCESS_OUTGOING_OK;
 }
 
-void dtn_controller_process_stored(void) {
+int dtn_controller_process_stored(void) {
     if (!global_dtn_module || !global_dtn_module->storage || !global_dtn_module->routing) {
-        return;
+        return 0;
     }
 
     Storage_Function* storage = global_dtn_module->storage;
 
     double now_sec = sys_now() / 1000.0;
     if (!dtn_storage_any_ready_entries(storage, now_sec)) {
-        return;
+        return 0;
     }
+
+    static double pacing_tokens = 0.0;
+    static u32_t pacing_last_ms = 0;
+    const double tokens_per_ms = (double)DTN_FORWARD_RATE_PKTS_PER_SEC / 1000.0;
+    const double token_cap = tokens_per_ms * (double)DTN_FORWARD_PACING_TICK_MS * 2.0;
+
+    u32_t now_ms = sys_now();
+    if (pacing_last_ms != 0) {
+        pacing_tokens += (double)(now_ms - pacing_last_ms) * tokens_per_ms;
+    }
+    pacing_last_ms = now_ms;
+    if (pacing_tokens > token_cap) {
+        pacing_tokens = token_cap;
+    }
+
+    int budget = (int)pacing_tokens;
+    if (budget < 1) {
+        return 1;
+    }
+    if (budget > MAX_STORED_PACKETS_FORWARD) {
+        budget = MAX_STORED_PACKETS_FORWARD;
+    }
+
     int number_of_stored_packages = dtn_storage_count(storage);
 
-    // Load a small batch per callback to avoid exhausting the lwIP heap
-    // (MEM_SIZE) and the stack.  The timer fires again shortly so any
-    // remaining ready packets are forwarded in the next call.
-    int max_stored_packets = MAX_STORED_PACKETS_FORWARD;
     Stored_Packet_Entry entries[MAX_STORED_PACKETS_FORWARD];
-    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, MAX_STORED_PACKETS_FORWARD);
+    int n = dtn_storage_get_ready_entries(storage, now_sec, entries, budget);
+    pacing_tokens -= n;
 
-    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f", number_of_stored_packages, n, now_sec);
+    DTN_INFO("%d packekts stored / %d packets ready for forwarding at %f (budget %d)", number_of_stored_packages, n, now_sec, budget);
 
     for (int i = 0; i < n; i++) {
         Stored_Packet_Entry* entry = &entries[i];
@@ -359,4 +379,8 @@ void dtn_controller_process_stored(void) {
     }
 
     dtn_storage_purge_exhausted(global_dtn_module->storage);
+
+    // Tell the main loop to keep polling at the pacing tick while ready packets
+    // remain (e.g. we were budget-limited, or more became ready meanwhile).
+    return dtn_storage_any_ready_entries(storage, now_sec) ? 1 : 0;
 }
