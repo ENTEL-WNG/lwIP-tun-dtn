@@ -580,14 +580,19 @@ def write_report_csv(path: str, traffic: dict, resources: dict) -> None:
     """
     header = [
         "node",
-        "cpu_mean_pct", "cpu_max_pct",
-        "mem_mean_mb", "mem_max_mb",
-        "rx_kbps_avg", "rx_kbps_peak",
-        "tx_kbps_avg", "tx_kbps_peak",
-        "db_max",
+        "cpuMeanPct", "cpuMaxPct",
+        "memMeanMb", "memMaxMb",
+        "rxMbpsAvg", "rxMbpsPeak",
+        "txMbpsAvg", "txMbpsPeak",
+        "dbMax",
         "pdr",
     ]
+
+    def _mbps(v):
+        return round(v / 1000, 2) if v is not None else None
+
     pdr = traffic.get("pdr") if "error" not in traffic else None
+    pdr_pct = round(pdr * 100, 2) if pdr is not None else None
     node_rows = resources if "error" not in resources else {}
 
     with open(path, "w", newline="") as f:
@@ -598,10 +603,10 @@ def write_report_csv(path: str, traffic: dict, resources: dict) -> None:
                 node,
                 r.get("cpu_mean_pct"), r.get("cpu_max_pct"),
                 r.get("mem_mean_mb"), r.get("mem_max_mb"),
-                r.get("net_rx_kbps_mean"), r.get("net_rx_kbps_peak"),
-                r.get("net_tx_kbps_mean"), r.get("net_tx_kbps_peak"),
+                _mbps(r.get("net_rx_kbps_mean")), _mbps(r.get("net_rx_kbps_peak")),
+                _mbps(r.get("net_tx_kbps_mean")), _mbps(r.get("net_tx_kbps_peak")),
                 r.get("db_max_count"),
-                pdr,
+                pdr_pct,
             ])
 
 
