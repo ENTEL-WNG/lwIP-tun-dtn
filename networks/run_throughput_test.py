@@ -205,7 +205,7 @@ def main() -> None:
         print()
         print("--- [3/5] Waiting for containers ---")
         wait_containers(compose_file, captures_dir)
-        time.sleep(3)  # let lwip_tun finish initialising
+        time.sleep(2)  # let lwip_tun finish initialising
 
         # -------------------------------------------------------------------------
         # Step 4 — Run traffic (via run_traffic.py)

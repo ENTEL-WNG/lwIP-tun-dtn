@@ -302,7 +302,9 @@ dtn_routing_result_t dtn_routing_get_next_hop_node_id(double start_time_in_ms, d
         "payload_length: %u - package_length: %u - package_length in bits: %ld.",
         src_string, dest_string, version, traffic_class, hoplim, dscp, payload_length, package_length, package_length_in_bits);
 
-    long deadline = hoplim * 1000;
+    // depending on contact plan
+    // long deadline = hoplim * 1000;
+    long deadline = dtn_config.contact_plan.max_time_in_sec;
     long curr_node_id = (long)dtn_config.id;
     long src_node_id = dtn_routing_ipv6_to_nodeid(src_string);
     long dest_node_id = dtn_routing_ipv6_to_nodeid(dest_string);

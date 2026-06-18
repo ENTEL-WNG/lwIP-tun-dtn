@@ -44,7 +44,7 @@ bidirected   = true
 from         = 2
 to           = 3
 start_in_sec = 10
-end_in_sec   = 20
+end_in_sec   = 30
 bidirected   = true
 
 [[edges]]
@@ -57,21 +57,21 @@ bidirected   = true
 [[edges]]
 from         = 3
 to           = 6
-start_in_sec = 15
+start_in_sec = 25
 end_in_sec   = 100
 bidirected   = true
 
 [[edges]]
 from         = 4
 to           = 5
-start_in_sec = 25
+start_in_sec = 40
 end_in_sec   = 100
 bidirected   = true
 
 [[edges]]
 from         = 5
 to           = 6
-start_in_sec = 30
+start_in_sec = 65
 end_in_sec   = 100
 bidirected   = true
 
