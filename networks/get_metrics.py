@@ -197,6 +197,9 @@ def _start_node_captures(containers: list) -> None:
     the process lifetime directly — avoids background-job (`&`) orphan issues
     when the exec shell exits.
     """
+    if not CAPTURE_DEBUG:
+        return
+
     if not PLAN_NAME:
         print("[metrics] PLAN_NAME not set — skipping node captures", flush=True)
         return
@@ -215,14 +218,13 @@ def _start_node_captures(containers: list) -> None:
             c.exec_run(["sh", "-c",
                         f"tcpdump -i any ip6 -nn -e -l -tttt > {base}.txt 2>&1"],
                        detach=True)
-            if CAPTURE_DEBUG:
-                # Binary pcap — written directly by tcpdump, no shell needed
-                c.exec_run(["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
-                           detach=True)
-                # Netfilter trace
-                c.exec_run(["sh", "-c",
-                            f"xtables-monitor --trace > {base}_trace.txt 2>&1"],
-                           detach=True)
+            # Binary pcap — written directly by tcpdump, no shell needed
+            c.exec_run(["tcpdump", "-i", "any", "ip6", "-nn", "-U", "-w", f"{base}.pcap"],
+                        detach=True)
+            # Netfilter trace
+            c.exec_run(["sh", "-c",
+                        f"xtables-monitor --trace > {base}_trace.txt 2>&1"],
+                        detach=True)
             print(f"[metrics] started capture for {c.name} (run={TEST_CASE_NUMBER}, "
                   f"pcap/trace={'on' if CAPTURE_DEBUG else 'off'})", flush=True)
         except Exception as exc:

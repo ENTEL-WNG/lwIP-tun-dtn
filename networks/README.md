@@ -18,19 +18,39 @@ sudo ./run_throughput_test.py \
   --wait-after 10 \
   --capture-interval 5
 
-python run_throughput_test.py \
+sudo python3 run_throughput_test.py \
   --network contact_plan_throughput \
   --rate 1 \
   --size 1024 \
   --sender-id 1 \
   --receiver-id 6 \
-  --duration 30 \
-  --wait-after 10 \
+  --duration 1 \
+  --wait-after 65 \
   --capture-interval 5
 
-python run_throughput_test.py \
+sudo python3 run_throughput_test.py \
   --network contact_plan_throughput \
   --rate 128 \
+  --size 1024 \
+  --sender-id 1 \
+  --receiver-id 6 \
+  --duration 60 \
+  --wait-after 40 \
+  --capture-interval 5
+
+sudo python3 run_throughput_test.py \
+  --network contact_plan_throughput \
+  --rate 256 \
+  --size 1024 \
+  --sender-id 1 \
+  --receiver-id 6 \
+  --duration 60 \
+  --wait-after 40 \
+  --capture-interval 5
+
+  sudo python3 run_throughput_test.py \
+  --network contact_plan_throughput \
+  --rate 512 \
   --size 1024 \
   --sender-id 1 \
   --receiver-id 6 \
