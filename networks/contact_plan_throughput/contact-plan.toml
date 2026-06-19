@@ -5,7 +5,7 @@ cpus   = "1.0"
 memory = "1g"
 
 [contact_plan.defaults]
-rate_in_bits_per_sec  = 1028
+rate_in_bits_per_sec  = 30000000
 range = 1
 
 # Node Definitions
@@ -64,7 +64,7 @@ bidirected   = true
 [[edges]]
 from         = 4
 to           = 5
-start_in_sec = 40
+start_in_sec = 45
 end_in_sec   = 100
 bidirected   = true
 
@@ -74,5 +74,3 @@ to           = 6
 start_in_sec = 65
 end_in_sec   = 100
 bidirected   = true
-
-

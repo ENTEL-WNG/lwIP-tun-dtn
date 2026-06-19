@@ -17,6 +17,7 @@
 #define RAW_SOCKET_H
 
 #include <netinet/in.h>
+#include <stdint.h>
 
 #include "dtn_config.h"
 #include "lwip/ip6_addr.h"
@@ -42,5 +43,9 @@ dtn_socket_result_t dtn_raw_socket_send_to_node_id(struct pbuf* p, int node_id);
 dtn_socket_result_t dtn_raw_socket_send(struct pbuf* p);
 dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p,
                                                       const DtnInterface* dtn_interface);
+
+// Copy the cumulative per-type count of DTN ICMPv6 messages transmitted on the
+// wire into out[0..3], indexed by (ICMPv6 type - 200) for types 200..203.
+void dtn_raw_socket_get_icmpv6_tx_counts(uint32_t out[4]);
 
 #endif

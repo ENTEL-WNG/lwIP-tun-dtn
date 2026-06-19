@@ -9,13 +9,13 @@ Reads the capture directory produced by a throughput test run and computes:
   - Per-node CPU %, memory, and network throughput
   - DB storage count over time
   - [STATS] counter timeline parsed from docker logs
-  - ICMPv6 200-203 event counts parsed from docker logs
+  - ICMPv6 200-203 sent counts parsed from per-node [ICMP_SENT] log lines
 
 Input files expected in <capture_dir>:
   sent.csv        — seq, sent_ts_us, size
   recv.csv        — seq, recv_ts_us
   metrics.jsonl   — per-second docker stats + DB snapshots (from get_metrics.py)
-  logs.txt        — docker compose logs (contains [STATS] and ICMPv6 lines)
+  logs.txt        — docker compose logs (contains [STATS] and [ICMP_SENT] lines)
 
 Output:
   <capture_dir>/report.txt  — human-readable summary
@@ -273,7 +273,14 @@ def analyze_metrics(metrics: list[dict]) -> dict:
 _STATS_RE = re.compile(
     r"\[STATS\]\s+fwd_now=(\d+)\s+fwd_stored=(\d+)\s+stored=(\d+)\s+dropped=(\d+)\s+db=(-?\d+)"
 )
-_ICMP_RE = re.compile(r"ICMPv6\|\|.*?type\s+(\d+)")
+# Each node periodically logs an [ICMP_SENT] line (from stats_timer_cb) carrying its
+# cumulative per-type count of DTN ICMPv6 messages actually transmitted on the wire.
+# Counting these is exact — it covers the freshly-generated, relayed, and
+# storage-replayed send paths — unlike grepping loose "ICMPv6||" lines, which also
+# match receive/process logs and miss the storage-replay path.
+_ICMP_SENT_RE = re.compile(
+    r"\[ICMP_SENT\]\s+t200=(\d+)\s+t201=(\d+)\s+t202=(\d+)\s+t203=(\d+)"
+)
 
 # Docker log line:  "node2 | 2026-06-09T14:45:49.341953343Z <message>"
 _LOG_LINE_RE = re.compile(r"^(\S+)\s*\|\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)Z\s*(.*)")
@@ -411,7 +418,10 @@ def analyze_startup_times(
 
 def analyze_logs(lines: list[str]) -> dict:
     stats_snapshots = []
-    icmpv6_counts   = defaultdict(int)
+    # Latest [ICMP_SENT] 4-tuple seen per node. Counters are cumulative/monotonic,
+    # so the last value per node is that node's final total; summing across nodes
+    # gives the run-wide count of ICMPv6 messages transmitted, per type.
+    icmp_sent_by_node: dict[str, tuple[int, int, int, int]] = {}
 
     for line in lines:
         m = _STATS_RE.search(line)
@@ -423,18 +433,36 @@ def analyze_logs(lines: list[str]) -> dict:
                 "dropped":    int(m.group(4)),
                 "db":         int(m.group(5)),
             })
-        m2 = _ICMP_RE.search(line)
+        m2 = _ICMP_SENT_RE.search(line)
         if m2:
-            icmpv6_counts[int(m2.group(1))] += 1
+            counts = tuple(int(m2.group(i)) for i in range(1, 5))
+            lm = _LOG_LINE_RE.match(line)
+            node = lm.group(1) if lm else "?"
+            icmp_sent_by_node[node] = counts
+
+    totals = [0, 0, 0, 0]
+    for counts in icmp_sent_by_node.values():
+        for i in range(4):
+            totals[i] += counts[i]
 
     return {
         "stats_snapshots": len(stats_snapshots),
         "final_counters":  stats_snapshots[-1] if stats_snapshots else {},
-        "icmpv6_events": {
-            "RECEIVED (200)":  icmpv6_counts.get(200, 0),
-            "FORWARDED (201)": icmpv6_counts.get(201, 0),
-            "DELIVERED (202)": icmpv6_counts.get(202, 0),
-            "DELETED (203)":   icmpv6_counts.get(203, 0),
+        # ICMPv6 messages transmitted on the wire (sum of per-node final counts).
+        "icmpv6_sent": {
+            "RECEIVED (200)":  totals[0],
+            "FORWARDED (201)": totals[1],
+            "DELIVERED (202)": totals[2],
+            "DELETED (203)":   totals[3],
+        },
+        "icmpv6_sent_by_node": {
+            node: {
+                "RECEIVED (200)":  c[0],
+                "FORWARDED (201)": c[1],
+                "DELIVERED (202)": c[2],
+                "DELETED (203)":   c[3],
+            }
+            for node, c in sorted(icmp_sent_by_node.items())
         },
     }
 
@@ -560,9 +588,19 @@ def make_text_report(traffic: dict, resources: dict, logs: dict, hw: dict, start
     else:
         lines.append("  (no [STATS] lines found in logs.txt)")
 
-    lines.append("\n--- ICMPv6 DTN Events ---")
-    for name, count in logs.get("icmpv6_events", {}).items():
-        lines.append(f"  {name}: {count}")
+    lines.append("\n--- ICMPv6 Messages Sent (TX, all nodes) ---")
+    sent = logs.get("icmpv6_sent", {})
+    if any(sent.values()):
+        for name, count in sent.items():
+            lines.append(f"  {name}: {count}")
+        by_node = logs.get("icmpv6_sent_by_node", {})
+        if by_node:
+            lines.append("  per node:")
+            for node, c in by_node.items():
+                lines.append(f"    {node}:  200={c['RECEIVED (200)']}  201={c['FORWARDED (201)']}  "
+                             f"202={c['DELIVERED (202)']}  203={c['DELETED (203)']}")
+    else:
+        lines.append("  (no [ICMP_SENT] lines found in logs.txt)")
 
     lines.append("")
     return "\n".join(lines)

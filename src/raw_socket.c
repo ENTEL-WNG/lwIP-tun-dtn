@@ -31,10 +31,34 @@
 
 #include "dtn_config.h"
 #include "dtn_logger.h"
+#include "dtn_utils.h"
 #include "lwip/ip6_addr.h"
 #include "lwip/pbuf.h"
 #include "lwip/prot/ip6.h"
 #include "raw_socket.h"
+
+// Per-type counter of DTN ICMPv6 messages actually put on the wire, indexed by
+// (ICMPv6 type - 200) for the four DTN types 200..203. Every transmit path —
+// freshly generated, relayed, and storage-replayed — funnels through
+// dtn_raw_socket_send_via_interface, so bumping this on each successful send
+// yields an exact per-type send count (unlike grepping loose "ICMPv6||" log
+// lines, which also match receive/process logs and miss the storage-replay
+// path). Single-threaded main loop, so no locking is needed.
+#define ICMPV6_TX_FIRST_TYPE 200
+#define ICMPV6_TX_NUM_TYPES 4
+static uint32_t icmpv6_tx_counts[ICMPV6_TX_NUM_TYPES];
+
+// Bump the per-type counter if p carries a DTN ICMPv6 message (200..203).
+// Non-ICMPv6 and non-DTN ICMPv6 packets are ignored.
+static void dtn_raw_socket_count_icmpv6_tx(const struct pbuf* p) {
+    u8_t type, code;
+    if (!dtn_utils_get_icmpv6_type(p, &type, &code))
+        return;
+    if (type >= ICMPV6_TX_FIRST_TYPE && type < ICMPV6_TX_FIRST_TYPE + ICMPV6_TX_NUM_TYPES)
+        icmpv6_tx_counts[type - ICMPV6_TX_FIRST_TYPE]++;
+}
+
+void dtn_raw_socket_get_icmpv6_tx_counts(uint32_t out[4]) { memcpy(out, icmpv6_tx_counts, sizeof(icmpv6_tx_counts)); }
 
 // #define USE_AF_INET6
 
@@ -277,6 +301,7 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnI
     }
     DTN_DEBUG("Successfully send via %s", dtn_interface->name);
 
+    dtn_raw_socket_count_icmpv6_tx(p);
     return DTN_SOCKET_OK;
 }
 #else
@@ -324,6 +349,7 @@ dtn_socket_result_t dtn_raw_socket_send_via_interface(struct pbuf* p, const DtnI
         return DTN_SOCKET_ERR_PARTIAL;
     }
 
+    dtn_raw_socket_count_icmpv6_tx(p);
     return DTN_SOCKET_OK;
 }
 #endif

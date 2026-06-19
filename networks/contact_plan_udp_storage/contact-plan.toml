@@ -1,9 +1,9 @@
 [contact_plan]
 name = "contact_plan_udp_storage"
-max_time_in_sec = 100
+max_time_in_sec = 1200
 
 [contact_plan.defaults]
-rate_in_bits_per_sec = 100
+rate_in_bits_per_sec = 30000000
 range = 1
 
 # Node Definitions
@@ -19,17 +19,28 @@ isDtnNode = true
 id = 3
 isDtnNode = true
 
+[[nodes]]
+id = 4
+isDtnNode = true
+
 # Edge Definitions
 [[edges]]
 from = 1
 to = 2
 start_in_sec = 0
-end_in_sec = 100
+end_in_sec = 1200
 bidirected = true
 
 [[edges]]
 from = 2
 to = 3
-start_in_sec = 10
-end_in_sec = 100
+start_in_sec = 0
+end_in_sec = 181
+bidirected = true
+
+[[edges]]
+from = 3
+to = 4
+start_in_sec = 200
+end_in_sec = 381
 bidirected = true

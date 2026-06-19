@@ -39,4 +39,10 @@ const char* dtn_utils_print_packet_payload(const struct pbuf* p);
 // Returns 0 only when p is NULL (0 is used as the "not stored" sentinel elsewhere).
 u32_t dtn_utils_compute_packet_hash(const struct pbuf* p);
 
+// If p is an ICMPv6 packet, writes its ICMPv6 type/code and returns true; returns
+// false otherwise. Any IPv6 extension headers (e.g. the custodian Hop-by-Hop
+// option) are skipped first, so this works on packets carrying a custodian.
+// type_out and code_out may be NULL.
+bool dtn_utils_get_icmpv6_type(const struct pbuf* p, u8_t* type_out, u8_t* code_out);
+
 #endif

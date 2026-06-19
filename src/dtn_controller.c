@@ -72,6 +72,9 @@ static void stats_timer_cb(void* arg) {
     int db_count = (global_dtn_module && global_dtn_module->storage) ? dtn_storage_count(global_dtn_module->storage) : -1;
     DTN_INFO("[STATS] fwd_now=%u fwd_stored=%u stored=%u cur_stored=%u dropped=%u db=%d", stat_fwd_immediate, stat_fwd_stored, stat_stored,
              stat_stored - stat_fwd_stored, stat_dropped, db_count);
+    uint32_t icmp_tx[4];
+    dtn_raw_socket_get_icmpv6_tx_counts(icmp_tx);
+    DTN_INFO("[ICMP_SENT] t200=%u t201=%u t202=%u t203=%u", icmp_tx[0], icmp_tx[1], icmp_tx[2], icmp_tx[3]);
 #if MEM_STATS
     DTN_INFO("[MEM]   used=%" U32_F " max=%" U32_F " avail=%" U32_F " err=%" U16_F, (u32_t)lwip_stats.mem.used, (u32_t)lwip_stats.mem.max,
              (u32_t)lwip_stats.mem.avail, (u16_t)lwip_stats.mem.err);
@@ -362,7 +365,10 @@ int dtn_controller_process_stored(void) {
                 stat_fwd_stored++;
                 forwarded++;
                 DTN_INFO("Packet|| src: %s -> dest: %s | custodian: %s || SUCCESSFUL forwarded STORED.", src_str, dest_str, custodian_str);
-                if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED) {
+                u8_t icmp_type;
+                bool is_dtn_icmpv6 = dtn_utils_get_icmpv6_type(p, &icmp_type, NULL) && icmp_type >= ICMP6_TYPE_DTN_PCK_RECEIVED &&
+                                     icmp_type <= ICMP6_TYPE_DTN_PCK_DELETED;
+                if (IS_DTN_ICMPV6_SEND_MESSAGE_DISABLED || is_dtn_icmpv6) {
                     dtn_storage_delete_by_id(storage, (u32_t)entry->db_id);
                 } else {
                     dtn_storage_increment_forward_attempts(storage, (u32_t)entry->db_id);

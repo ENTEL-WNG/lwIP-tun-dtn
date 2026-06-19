@@ -112,6 +112,40 @@ const char* dtn_utils_print_packet_payload(const struct pbuf* p) {
     return buf;
 }
 
+bool dtn_utils_get_icmpv6_type(const struct pbuf* p, u8_t* type_out, u8_t* code_out) {
+    if (!p || p->len < sizeof(struct ip6_hdr))
+        return false;
+
+    const struct ip6_hdr* ip6hdr = (const struct ip6_hdr*)p->payload;
+    uint8_t nexth = IP6H_NEXTH(ip6hdr);
+    uint16_t offset = sizeof(struct ip6_hdr);
+
+    /* Skip extension headers (Hop-by-Hop=0, Routing=43, Fragment=44,
+     * Dest Options=60) — same walk as dtn_utils_print_packet_payload. */
+    while (nexth == 0 || nexth == 43 || nexth == 44 || nexth == 60) {
+        uint8_t ext[2];
+        if (pbuf_copy_partial(p, ext, 2, offset) < 2)
+            return false;
+        uint16_t ext_len = (nexth == 44) ? 8 : ((uint16_t)(ext[1] + 1) * 8);
+        nexth = ext[0];
+        offset += ext_len;
+        if (offset >= p->tot_len)
+            return false;
+    }
+
+    if (nexth != IP6_NEXTH_ICMP6)
+        return false;
+
+    uint8_t hdr[2]; /* ICMPv6 type, code */
+    if (pbuf_copy_partial(p, hdr, 2, offset) < 2)
+        return false;
+    if (type_out)
+        *type_out = hdr[0];
+    if (code_out)
+        *code_out = hdr[1];
+    return true;
+}
+
 // IPv6 Hop-by-Hop next-header value
 #ifndef IP6_NEXTH_HOPOPTS
 #define IP6_NEXTH_HOPOPTS 0
