@@ -49,26 +49,180 @@ For deployment on nodes/environments with other characteristics, all correspondi
 
 For deployment, the interfaces accessed by the lwIP/DTN userpace module have to exist and be configured on the system. Moreover, the environment has to be configured to forward all traffic towards the address of the lwIP/DTN userpace module (fd00::2) over the tun interface fd00::1 (tun0).
 
-### Network Generation
+## TESTING
 
-install python
-install pip
-matplotlib
-networkx
+The project ships with three layers of testing, all driven through Docker so no
+host network configuration is required:
 
-docker install
+- **Unit tests** — run the DTN logic against a fixed config in a single container.
+- **Network tests** — bring up a full multi-node topology and run a traffic scenario (ping/UDP).
+- **Throughput tests** — measure end-to-end DTN throughput and generate metrics/plots.
 
-git submodule
+### Prerequisites
 
-Edit /etc/docker/daemon.json (create it if it doesn't exist):
+Install the host dependencies once:
 
+```bash
+# Docker engine + compose plugin
+sudo apt install docker.io docker-compose-plugin
+
+# Python tooling used by the network generator and plotting scripts
+sudo apt install python3 python3-pip
+pip3 install matplotlib networkx
+```
+
+#### Big Constellations more than 16 nodes
+
+The Docker default address pool must be widened, otherwise large topologies run
+out of subnets. Edit `/etc/docker/daemon.json` (create it if it doesn't exist):
+
+```json
 {
   "default-address-pools": [
-    {"base": "10.0.0.0/8", "size": 28}
+    { "base": "10.0.0.0/8", "size": 28 }
   ]
 }
+```
+
 Then restart Docker:
+
+```bash
 sudo systemctl restart docker
+```
+
+### Network Generation
+
+A complete test network is described by a single `contact-plan.toml` topology
+file (nodes, which of them are DTN-aware, and the time-bounded contact edges
+between them). `networks/generate_network.py` expands it into a runnable testbed:
+
+```bash
+cd networks
+# Default plan (contact_plan_throughput/contact-plan.toml)
+python3 generate_network.py
+
+# Or pass an explicit contact plan
+python3 generate_network.py contact_plan_ping/contact-plan.toml
+
+# Optional: override the in-container log capture interval (seconds)
+python3 generate_network.py contact_plan_ping/contact-plan.toml --capture-interval 10
+```
+
+For each plan it writes, into `networks/<plan_name>/`:
+
+- `nodeN.toml` — per-node config (interfaces, IPv6/MAC addresses, embedded contact plan)
+- `docker-compose.yml` — one service per node
+- `topology.png` — a rendered graph of the topology
+
+Addressing is derived automatically from the contact plan:
+
+- **IPv6 (ULA):** for a link between nodes A and B (`lo = min`, `hi = max`),
+  each endpoint gets `fd00:<lo_hex>:<hi_hex>::<node_id>`.
+- **MAC:** each endpoint gets `00:<lo_hex>:00:<hi_hex>:00:<node_id_hex>`.
+
+`init_node.py` is the container entrypoint: it configures kernel
+interfaces/routes/ip6tables, then either execs `lwip_tun` (for DTN nodes,
+`isDtnNode = true`) or keeps the container alive (for plain IPv6 nodes).
+
+### Unit Test
+
+Unit tests build `tests/lwip_tun_test` from `tests/test.c` and exercise the DTN
+logic against the fixed config in `tests/node_test.toml` (loaded via
+`DTN_CONFIG_PATH`). They run entirely inside one container — no host network or
+TUN device needed:
+
+```bash
+./run_unit_test.sh
+```
+
+This is a thin wrapper around:
+
+```bash
+docker compose -f tests/docker-compose.test.yml up --build --abort-on-container-exit
+docker compose -f tests/docker-compose.test.yml down --volumes --remove-orphans
+```
+
+The container exits with the test process's status code, so the run fails fast
+if any assertion fails.
+
+### Network Test
+
+Network tests run a full multi-node simulation end to end. Pass a contact plan,
+or omit it to use the default (`networks/contact_plan_ping/contact-plan.toml`):
+
+```bash
+# Default plan (contact_plan_ping)
+./run_network_test.sh
+
+# Or pass an explicit contact plan
+./run_network_test.sh networks/contact_plan_udp/contact-plan.toml
+```
+
+The script orchestrates the whole run:
+
+1. Generate per-node configs and `docker-compose.yml` from the contact plan.
+2. Build the images (build time recorded in `build_time.json`) and `docker compose up -d`.
+3. Wait until every container is running, then snapshot `container_inspect.json`.
+4. Run the plan's `networks/<plan>/test.sh` (e.g. issuing pings at scheduled times).
+5. Collect time-sorted `docker compose logs`.
+6. `docker compose down`.
+7. Merge the per-node tcpdump captures into a single time-sorted `tcpdump.txt`.
+
+Artifacts land in `networks/<plan>/captures/<run>/`:
+
+- `logs.txt` — merged, time-sorted container logs
+- `tcpdump.txt` — merged per-node traffic (human-readable)
+- `node*.pcap` / `node*.txt` — per-node binary and text captures
+- `build_time.json`, `container_inspect.json` — run metadata
+
+Available test networks under `networks/` include `contact_plan_ping`,
+`contact_plan_ping_cgr`, `contact_plan_icmpv6`, `contact_plan_udp`,
+`contact_plan_udp_cgr`, `contact_plan_throughput`, and `contact_plan_sateliot`.
+
+### Throughput Test
+
+`networks/run_throughput_test.py` automates an end-to-end throughput experiment:
+it generates the network, brings the containers up, drives UDP traffic from a
+sender to a receiver, drains the in-flight DTN packets, tears everything down,
+and renders metric plots.
+
+```bash
+cd networks
+sudo ./run_throughput_test.py --sender-id 1 --receiver-id 6
+```
+
+Common options (all forwarded to the traffic generator):
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--network DIR` | `contact_plan_throughput` | Network directory containing the contact plan |
+| `--rate N` | `100` | Packets per second |
+| `--duration N` | `30` | Sender run time (seconds) |
+| `--size N` | `512` | Payload size (bytes) |
+| `--sender-id N` / `--receiver-id N` | — | Override source/destination node IDs |
+| `--wait-after N` | `15` | Drain time after the sender stops (seconds) |
+| `--capture-interval N` | `30` | In-container log capture interval (seconds) |
+| `--no-plots` / `--no-analyze` | off | Skip plotting / analysis |
+| `--keep-up` | off | Leave containers running (skips plots) |
+
+Example (full evaluation run):
+
+```bash
+sudo ./run_throughput_test.py \
+  --network contact_plan_throughput \
+  --rate 128 --size 1024 \
+  --sender-id 1 --receiver-id 6 \
+  --duration 60 --wait-after 40 --capture-interval 5
+```
+
+Plots can also be regenerated from a previous run's captures:
+
+```bash
+python3 plot_metrics.py --captures contact_plan_throughput/captures/1
+```
+
+See `networks/README.md` for more ready-made command lines (Sateliot, Iridium,
+storage, and 24h experiments).
 
 ## PROJECT STRUCTURE
 

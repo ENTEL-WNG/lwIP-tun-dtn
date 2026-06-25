@@ -1,8 +1,14 @@
 #!/bin/bash
-# run_test.sh — Orchestrate a full test run for a contact plan.
+# run_network_test.sh — Orchestrate a full test run for a contact plan.
 #
-# Usage: bash run_test.sh [contact-plan.toml]
-#   Default contact plan: contact-plan-2.toml
+# Usage: bash run_network_test.sh [contact-plan.toml]
+#   Default contact plan: networks/contact_plan_ping/contact-plan.toml
+#
+# Each network lives in its own directory under networks/:
+#   networks/<plan>/contact-plan.toml   — topology / contact plan (input)
+#   networks/<plan>/nodeN.toml          — generated per-node configs
+#   networks/<plan>/docker-compose.yml  — generated compose file
+#   networks/<plan>/captures/<run>/     — run artifacts (logs, tcpdump, pcaps)
 #
 # Steps:
 #   1. Generate per-node configs and docker-compose from the contact plan
@@ -18,7 +24,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-CONTACT_PLAN="${1:-${SCRIPT_DIR}/networks/contact-plan-2.toml}"
+CONTACT_PLAN="${1:-${SCRIPT_DIR}/networks/contact_plan_ping/contact-plan.toml}"
 
 if [ ! -f "$CONTACT_PLAN" ]; then
     echo "ERROR: Contact plan not found: $CONTACT_PLAN" >&2
@@ -29,14 +35,14 @@ echo "=== Contact plan: $CONTACT_PLAN ==="
 
 # --- Step 1: Generate network configs ---
 echo "--- Generating network configs ---"
-GEN_OUTPUT=$(python3 generate-network.py "$CONTACT_PLAN")
+GEN_OUTPUT=$(python3 "${SCRIPT_DIR}/networks/generate_network.py" "$CONTACT_PLAN")
 echo "$GEN_OUTPUT"
 
 # Extract the output directory from the last OUTPUT_DIR=... line
 COMPOSE_DIR=$(echo "$GEN_OUTPUT" | grep '^OUTPUT_DIR=' | tail -1 | cut -d= -f2)
 
 if [ -z "$COMPOSE_DIR" ]; then
-    echo "ERROR: generate-network.py did not output OUTPUT_DIR" >&2
+    echo "ERROR: generate_network.py did not output OUTPUT_DIR" >&2
     exit 1
 fi
 
